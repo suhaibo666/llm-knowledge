@@ -11,7 +11,7 @@ title: "vLLM Engine 架构：一次请求怎样提交、执行并完成"
 
 ## 1. 已经拿到 token 输入，为什么还不能直接等一个结果？
 
-接续 [[04_vllm_request_semantics_analysis|请求语义]]，现在请求 R 已经有 token 输入与 `SamplingParams`，需要生成两个输出 token。假设它有 12 个 prompt tokens；这些数字只用于讲解，不指定实际模型分词。引擎需要回答四个不同的问题：谁接收 R 的结果、R 何时获得本步资源、模型是否算完这一批，以及用户是否已经收到最终输出。
+接续 [[03_vllm_request_semantics_analysis|请求语义]]，现在请求 R 已经有 token 输入与 `SamplingParams`，需要生成两个输出 token。假设它有 12 个 prompt tokens；这些数字只用于讲解，不指定实际模型分词。引擎需要回答四个不同的问题：谁接收 R 的结果、R 何时获得本步资源、模型是否算完这一批，以及用户是否已经收到最终输出。
 
 如果把这些问题都交给一个阻塞的 `generate` 循环，最容易理解的流程是“准备一批→等 GPU 返回→更新状态→准备下一批”。但当 CPU 需要解析新请求、GPU 执行上一批、多个 worker 协作时，等待会把这些工作串在一起。**当前 Engine 用 Client 隔离提交与等待，用 Core/Scheduler 统一决定和结算每步计划，用 Executor 适配设备执行拓扑。** 它允许已经安排的工作尚未返回，但必须记住“哪份结果属于哪份计划”。
 
@@ -45,7 +45,7 @@ MP 路径中，Client 把 `EngineCoreRequest` 编码为 ADD 消息；异步 Clie
 
 对 R，假设本步预算允许完整处理 12 个 prompt tokens：schedule 后它的 computed 已是 12、in-flight 是 12，Executor 尚未兑现结果；归并返回后这份 in-flight 份额归零，并可能追加第一个输出 token。下一步再消费这个 token 的模型输入位置，直到满足输出上限或其他停止条件。只分到部分 prompt 的 step 可以完成计算却没有新的用户 token。
 
-所以旧稿所说的“资源承诺”应该理解为 schedule 期间的一组相互匹配的变化：KV 分配已经改变 block 关联，随后请求进度和返回的计划也一起前进。它不是 `_update_after_schedule` 一行独自完成的数据库提交，也不保证失败后自动回滚所有副作用。预算与分配过程见 [[11_vllm_scheduler_analysis|Scheduler]]、[[12_vllm_kv_cache_management_analysis|KV Cache 管理]]；本页关注这份计划何时可交给 Executor，以及如何与返回结果保持对应。
+所以旧稿所说的“资源承诺”应该理解为 schedule 期间的一组相互匹配的变化：KV 分配已经改变 block 关联，随后请求进度和返回的计划也一起前进。它不是 `_update_after_schedule` 一行独自完成的数据库提交，也不保证失败后自动回滚所有副作用。预算与分配过程见 [[07_vllm_scheduler_analysis|Scheduler]]、[[08_vllm_kv_cache_management_analysis|KV Cache 管理]]；本页关注这份计划何时可交给 Executor，以及如何与返回结果保持对应。
 
 ### 2.3 Core 完成后，前端还要使结果对用户可见
 
@@ -101,7 +101,7 @@ UniProc 调用 driver worker；non-block 路径返回已完成 future，或把 `
 
 Multiproc 广播 collective RPC，从指定 output rank 取一个结果，或经 KV/EC aggregator 合并多 rank 元数据。`FutureWrapper` 维护 RPC future 队列；请求某个 future 的结果时，会先按顺序 drain 在它之前的响应。模型的算子、rank 通信和设备同步仍由 worker/runner 执行；本页没有把一个 Python Future 的完成自行等同于任意 CUDA stream 都已空闲。
 
-收益是 Core 可以保持相同的调度与归并规则，代价是 backend-specific 的广播、队列、汇总与异常等待。rank/group 和 collective 的详细顺序见 [[22_vllm_distributed_inference_analysis|分布式推理]]。
+收益是 Core 可以保持相同的调度与归并规则，代价是 backend-specific 的广播、队列、汇总与异常等待。rank/group 和 collective 的详细顺序见 [[18_vllm_distributed_inference_analysis|分布式推理]]。
 
 ## 4. batch queue 怎样让上一批没回来时继续安排下一批？
 
@@ -147,9 +147,9 @@ sequenceDiagram
 
 ### 4.3 输出依赖可以限制跑在前面的距离
 
-async scheduling 在发出 decode 后加入 output placeholders，表示尚未回传的输出位置；真实 token 返回后再结算，而不是先编造真实 token ids。若下一批 structured output 的 grammar mask 依赖前一批尚未返回的 token，`pending_structured_output_tokens` 会使 Core 暂缓这批 sampling：模型执行可先发出，先消费上一批并推进 grammar，之后再计算 mask、调用 `sample_tokens`，把延期项加入队列。启用 draft 时还要先把可用 draft ids 对应地更新/筛选，细节归 [[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
+async scheduling 在发出 decode 后加入 output placeholders，表示尚未回传的输出位置；真实 token 返回后再结算，而不是先编造真实 token ids。若下一批 structured output 的 grammar mask 依赖前一批尚未返回的 token，`pending_structured_output_tokens` 会使 Core 暂缓这批 sampling：模型执行可先发出，先消费上一批并推进 grammar，之后再计算 mask、调用 `sample_tokens`，把延期项加入队列。启用 draft 时还要先把可用 draft ids 对应地更新/筛选，细节归 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
 
-这段协作接续旧系统设计页的 async 主题：异步不是在同步循环外面套一个 Future，它改变“已安排进度”与“真实输出”的时序。设备侧怎样用持久 row、staged copy 和同步事件避免 CPU 改写 GPU 尚在读取的 host buffer，分别见 [[15_vllm_model_runner_v1_analysis|Model Runner V1]]、[[16_vllm_model_runner_v2_analysis|Model Runner V2]]；本页不以 batch queue 图替代这些内存算法。
+这段协作接续旧系统设计页的 async 主题：异步不是在同步循环外面套一个 Future，它改变“已安排进度”与“真实输出”的时序。设备侧怎样用持久 row、staged copy 和同步事件避免 CPU 改写 GPU 尚在读取的 host buffer，分别见 [[11_vllm_model_runner_v1_analysis|Model Runner V1]]、[[12_vllm_model_runner_v2_analysis|Model Runner V2]]；本页不以 batch queue 图替代这些内存算法。
 
 兼容性也会决定是否采用这条路径。显式开启 async 遇到不支持的 executor、speculative method、`disable_padded_drafter_batch` 或 ROCm DeepEP high-throughput DBO 会拒绝；自动配置会对不兼容组合关闭 async，pooling 因当前实现的性能负收益默认关闭。当前允许的 speculative 分支比旧注释“只支持EAGLE”更宽，代码还列出 MTP/Draft Model/NGram GPU/DSpark 对应类型；能力细项须按配置代码判断，不能拿旧02的版本描述当作新基线事实。
 
@@ -217,7 +217,7 @@ flowchart TB
 
 S2 的用户 token 可以因为 R 已结束而不再使用，但处理 S2 这个完成事件仍有内存生命周期意义。fence 是按非空 scheduled/processed step 维护的，不能用“当前剩余请求数为0”替代。源码对 deferred list 只排空头部已满足项；在可能提前一拍的 CoW retention fence 前，后面已安全的项可能多等一会儿，这影响回收时机而不授权提前复用。
 
-还要区分另一种延迟：KV/EC connector 的 `request_finished` 可以要求 `delay_free_blocks`，让 terminal Request 留在 map，等待传输完成后再执行真正 free。它与“GPU在途写入的step fence”是两层条件，可能同时存在。KV allocator、offload/partial tail 与connector具体释放算法见 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]，跨实例协作见 [[26_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]。
+还要区分另一种延迟：KV/EC connector 的 `request_finished` 可以要求 `delay_free_blocks`，让 terminal Request 留在 map，等待传输完成后再执行真正 free。它与“GPU在途写入的step fence”是两层条件，可能同时存在。KV allocator、offload/partial tail 与connector具体释放算法见 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]，跨实例协作见 [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]。
 
 ### 6.3 ZMQ 发送结束保护的是另一批内存
 
@@ -244,7 +244,7 @@ flowchart TB
 
 Executor 是故障传播边界，不是回滚器。Multiproc 在 permanent failed 状态拒绝新 RPC，等待响应可以因超时或worker错误失败；failure callback 可通知 Core。普通 `step` 在 future 等待处暴露异常；batch queue 保留 execute future，若 sample future 得到 `None`，再取原 execute 结果以抛出真正异常，而非把缺结果当正常空输出。
 
-输入socket的request预处理异常可产生请求级 ERROR 输出；媒体cache miss还可返回missing hashes供前端失效缓存后由客户端重试。Core/worker永久失败与前端异常队列传播则可能结束整个引擎。当前代码没有一个保证跨所有GPU和connector副作用自动回滚的统一事务；故障检测、进程监督、ready/shutdown与恢复策略见 [[17_vllm_serving_control_plane_analysis|Serving 控制面]]、[[27_vllm_observability_reliability_analysis|可靠性机制]]。
+输入socket的request预处理异常可产生请求级 ERROR 输出；媒体cache miss还可返回missing hashes供前端失效缓存后由客户端重试。Core/worker永久失败与前端异常队列传播则可能结束整个引擎。当前代码没有一个保证跨所有GPU和connector副作用自动回滚的统一事务；故障检测、进程监督、ready/shutdown与恢复策略见 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]、[[23_vllm_observability_reliability_analysis|可靠性机制]]。
 
 DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模型通信时，当前rank可能需要dummy pass。`DPEngineCoreProc` 在每个wave的**step 1以及 `dp_sync_interval` 的倍数step**同步全局unfinished与pause状态，其他step先保持running。默认interval为16，对应同步点1、16、32……；不是等完16步才第一次同步。这样idle pause可以在一个dummy batch后形成共识，避免额外空转一整段interval；源码测试覆盖此序列与step1 pause。全局空闲时发 `wave_complete`、递增wave并将step counter归零；单请求结束与整个DP wave停止仍是不同边界。
 
@@ -272,10 +272,10 @@ DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模�
 
 ## Related Pages
 
-- [[03_vllm_architecture_overview_analysis|架构概览]]：把本页Engine协作放回完整推理服务的模块分工。
-- [[04_vllm_request_semantics_analysis|请求语义]]：解释EngineCoreRequest之前的输入转换和core结果之后的用户可见输出。
-- [[11_vllm_scheduler_analysis|Scheduler]]：展开计划内部的budget、waiting/running与抢占算法。
-- [[12_vllm_kv_cache_management_analysis|KV Cache管理]]：解释block关联、allocator、缓存提交与延迟回收条件。
-- [[16_vllm_model_runner_v2_analysis|Model Runner V2]]：接续设备侧持久状态、当步输入和异步物化，补齐Core队列之外的执行机制。
-- [[17_vllm_serving_control_plane_analysis|Serving控制面]]：展开launcher、ready、路由、背压和进程故障拓扑。
-- [[22_vllm_distributed_inference_analysis|分布式推理]]：深入Executor后面的rank/group、并行轴与collective顺序。
+- [[02_vllm_architecture_overview_analysis|架构概览]]：把本页Engine协作放回完整推理服务的模块分工。
+- [[03_vllm_request_semantics_analysis|请求语义]]：解释EngineCoreRequest之前的输入转换和core结果之后的用户可见输出。
+- [[07_vllm_scheduler_analysis|Scheduler]]：展开计划内部的budget、waiting/running与抢占算法。
+- [[08_vllm_kv_cache_management_analysis|KV Cache管理]]：解释block关联、allocator、缓存提交与延迟回收条件。
+- [[12_vllm_model_runner_v2_analysis|Model Runner V2]]：接续设备侧持久状态、当步输入和异步物化，补齐Core队列之外的执行机制。
+- [[13_vllm_serving_control_plane_analysis|Serving控制面]]：展开launcher、ready、路由、背压和进程故障拓扑。
+- [[18_vllm_distributed_inference_analysis|分布式推理]]：深入Executor后面的rank/group、并行轴与collective顺序。

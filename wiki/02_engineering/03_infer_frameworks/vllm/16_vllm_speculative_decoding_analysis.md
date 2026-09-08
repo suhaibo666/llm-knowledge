@@ -6,7 +6,7 @@ title: "vLLM 投机解码：怎样验证一串草稿，又只提交正确前缀"
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
 > **主题**：从三词表、两步候选推导 standard/block verification 与 correction/bonus，再追踪候选分布、target 打分、GPU 前缀更新和 CPU 结算，解释接受更多 token 何时能省时间。
-> **适用范围**：自回归 propose → score → verify → rollback/commit、候选来源的执行接缝与成本；普通采样参数/grammar 归18，通用 KV block 生命周期归12。区分 V1/V2、精确校正与 synthetic 模拟，不把共享 spec 字段的其他任务当作同一算法。
+> **适用范围**：自回归 propose → score → verify → rollback/commit、候选来源的执行接缝与成本；普通采样参数/grammar 归14，通用 KV block 生命周期归08。区分 V1/V2、精确校正与 synthetic 模拟，不把共享 spec 字段的其他任务当作同一算法。
 > **最近更新**：2026-09-08。补 block 的阈值与残差演算、实际 proposer/Runner 覆盖、整请求分块及 adaptive GPU 边界。
 
 ## 1. 多算几个位置，为什么可能更快
@@ -254,7 +254,7 @@ Scheduler 在 schedule 结束时已把3加到 computed，并记录 in-flight tok
 
 ### 7.3 V1、抢占和在途结果的边界
 
-V1 不能直接套用图5全部函数顺序：padded GPU drafter 可以直接使用 GPU sampled tensor，在 CPU bookkeeping 完成前 propose；CPU n-gram/suffix 等要等 `_bookkeeping_sync()` 得到有效 token list 后才 propose。输入不适配 drafter 时清掉旧候选，避免下一轮误用；带模型 collectives 的 DP 路径还需 dummy run 保持各 rank 一致。共同要求是只把验证后有效 token 作为新上下文，compact row 与状态发布细节接15。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.sample_tokens`、`propose_draft_token_ids`。
+V1 不能直接套用图5全部函数顺序：padded GPU drafter 可以直接使用 GPU sampled tensor，在 CPU bookkeeping 完成前 propose；CPU n-gram/suffix 等要等 `_bookkeeping_sync()` 得到有效 token list 后才 propose。输入不适配 drafter 时清掉旧候选，避免下一轮误用；带模型 collectives 的 DP 路径还需 dummy run 保持各 rank 一致。共同要求是只把验证后有效 token 作为新上下文，compact row 与状态发布细节接11。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.sample_tokens`、`propose_draft_token_ids`。
 
 抢占释放请求 blocks、重置 computed、清空未验证草稿，但普通 async 在途结果默认仍按序交付，只禁止 stale rejection 修改已重置 counters。新基线还存在明确的 drop-stale 模式，用于 reset-prefix 同步恢复及需要有效 KV 交付的 connector 情形，不能概括成“stale 总丢”或“stale 永不丢”。多模态 E 也要等 confirmed progress（computed 减 output placeholders）再加上 drafter lookahead 确认越过 span 才释放，免得拒绝回退后 gather 读到已逐出的图片。依据：`vllm/v1/core/sched/scheduler.py::Scheduler._preempt_request`、`_free_encoder_inputs`、`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_request_with_output`；`tests/v1/core/test_scheduler.py::test_free_encoder_inputs_respects_unconfirmed_placeholders`。
 
@@ -327,10 +327,10 @@ CPU `compact_batch()` 可以用均分 placeholder 保持总 token 数，真实�
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] — 定义 p 的普通采样约束，以及 grammar preview、mask 与实际输出 advance。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 展开 token/input budget、抢占和异步在途请求；本页提供候选与拒绝结算规则。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 接续逻辑边界之外的物理 block 分配、引用、复用及释放。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] — 说明 compact batch、CPU/GPU proposer 时序与验证结果发布。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 说明 stable row、GPU finalize、PP 与输出拷贝的设备执行接缝。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接续 draft/target 宽度与 graph bucket、piecewise/eager 的成本跳变。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 把接受长度、各阶段时间与 KV 压力接到诊断信号，避免只用单一接受率判断收益。
+- [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] — 定义 p 的普通采样约束，以及 grammar preview、mask 与实际输出 advance。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] — 展开 token/input budget、抢占和异步在途请求；本页提供候选与拒绝结算规则。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 接续逻辑边界之外的物理 block 分配、引用、复用及释放。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] — 说明 compact batch、CPU/GPU proposer 时序与验证结果发布。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] — 说明 stable row、GPU finalize、PP 与输出拷贝的设备执行接缝。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接续 draft/target 宽度与 graph bucket、piecewise/eager 的成本跳变。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 把接受长度、各阶段时间与 KV 压力接到诊断信号，避免只用单一接受率判断收益。

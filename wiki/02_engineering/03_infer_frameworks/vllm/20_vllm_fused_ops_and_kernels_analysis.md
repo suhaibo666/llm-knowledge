@@ -6,7 +6,7 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-08）
 > **主题**：用 residual+RMSNorm+quant 和两专家 MoE 重建融合改变的数值步骤、数据布局与中间存储。随后解释 provider 选择、scratch复用及失败边界。
-> **适用范围**：拥有融合收益、provider/Kernel family、workspace与fallback；量化ABI归21、IR改写归25、图生命周期归23，EP通信与EPLB归22。
+> **适用范围**：拥有融合收益、provider/Kernel family、workspace与fallback；量化ABI归17、IR改写归21、图生命周期归19，EP通信与EPLB归18。
 > **最近更新**：2026-09-08。重新核验本地kernel与选择器，补算例并纠正一次遍历、scratch命名和clamp过滤的旧结论。
 
 ## 1. 一行残差输入：融合究竟省在哪里？
@@ -26,7 +26,7 @@ $$
 
 本例 `u=(2,2,2,2)`，平方和16、均方4、倒数平方根0.5，故 `y=(1,2,1,2)`。两个结果都必须交付：更新残差u供后续子层使用，归一化y供当前后继使用。不能只保留y而把residual副作用删掉。
 
-若继续做对称、无 `scale_ub` 的逐token INT8量化，本例absmax为2，scale为 `2/127`；量化先除scale再最近舍入并饱和，理想结果 `q=(64,127,64,127)`。反量化后首/第三项为 `128/127`，而非精确1。一般kernel还对scale设正下界；FP8使用其格式上限与转换规则，不能把127和INT8舍入搬过去。详细scale、pack ABI见 [[21_vllm_quantization_analysis|量化设计]]。
+若继续做对称、无 `scale_ub` 的逐token INT8量化，本例absmax为2，scale为 `2/127`；量化先除scale再最近舍入并饱和，理想结果 `q=(64,127,64,127)`。反量化后首/第三项为 `128/127`，而非精确1。一般kernel还对scale设正下界；FP8使用其格式上限与转换规则，不能把127和INT8舍入搬过去。详细scale、pack ABI见 [[17_vllm_quantization_analysis|量化设计]]。
 
 源码中数值顺序比实数公式更具体。IR native把x与r转FP32后求和与均方，更新残差单独cast回输入dtype；归一化值先cast到weight dtype再相乘。vLLM C的 fused-add kernel先在输入标量类型形成和、写回residual，再做FP32归约与后续归一化。FP16/BF16的加法/乘法舍入点和归约宽度因此可能不同，测试按容差比对，**不是逐bit等价承诺**。该基线已支持 `weight=None` 的无权重路径；Oink不支持时可走其他provider，AITER会构造全1权重。
 
@@ -93,7 +93,7 @@ flowchart TB
 
 `CustomOp` 被禁用时走可选编译的 `forward_native`；启用时按当前 build platform 绑定 `forward_hip/cpu/tpu/xpu/oot/cuda`，源码明确说明这里不支持动态 platform dispatch。其注释还指出：在 opaque custom op 内部编译 native 并不能得到跨 op fusion，所以能展开时仍应展开。这解释了为何“专用 Kernel 边界”和“编译器可见边界”要同时保留，而不能把所有算子都包成 opaque op。
 
-`IrOp` 则在 priority 中逐项检查 `supports_args`；没有显式 priority 时用 native，priority 中没有全参数 provider 时会自动在末尾补 native 并告警。平台默认还会考虑执行上下文：CUDA 在 Inductor 编译时默认 native，非 codegen 时默认 `vllm_c → native`，可选 Oink 再插到前面；ROCm 只在 CUDA Graph、AITER flags 与设备条件同时成立时把 AITER RMSNorm 提到默认前面。这是 provider 选择的执行上下文，不是 IR pass 顺序；后者仍由 [[25_vllm_ir_and_fusion_passes_analysis|IR与融合Pass]] 拥有。
+`IrOp` 则在 priority 中逐项检查 `supports_args`；没有显式 priority 时用 native，priority 中没有全参数 provider 时会自动在末尾补 native 并告警。平台默认还会考虑执行上下文：CUDA 在 Inductor 编译时默认 native，非 codegen 时默认 `vllm_c → native`，可选 Oink 再插到前面；ROCm 只在 CUDA Graph、AITER flags 与设备条件同时成立时把 AITER RMSNorm 提到默认前面。这是 provider 选择的执行上下文，不是 IR pass 顺序；后者仍由 [[21_vllm_ir_and_fusion_passes_analysis|IR与融合Pass]] 拥有。
 
 ### 2.3 约束：fallback 的末项必须覆盖全部实参
 
@@ -163,7 +163,7 @@ $$
 
 ### 4.2 图2：按专家成组，但按原slot写回
 
-图规格：Mermaid以相同A/B和routing开头。左路展开modular Triton：四slot→两expert block含哨兵→GEMM1 gate/up→SiLU乘法→GEMM2带权按slot存储→每token求和。右路为monolithic对照：输入对应router logits与同一权重，跨虚线框交给FlashInfer routing+experts，再由finalize返回相同数学目标；右路不伪造外部库内部排列。橙色标padding与scratch成本，蓝色标真实算术转换；图无网络箭头，EP通信由22负责。
+图规格：Mermaid以相同A/B和routing开头。左路展开modular Triton：四slot→两expert block含哨兵→GEMM1 gate/up→SiLU乘法→GEMM2带权按slot存储→每token求和。右路为monolithic对照：输入对应router logits与同一权重，跨虚线框交给FlashInfer routing+experts，再由finalize返回相同数学目标；右路不伪造外部库内部排列。橙色标padding与scratch成本，蓝色标真实算术转换；图无网络箭头，EP通信由18负责。
 
 ```mermaid
 flowchart TB
@@ -310,12 +310,12 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 | monolithic外部边界与选择 | `vllm/model_executor/layers/fused_moe/experts/trtllm_bf16_moe.py::TrtLlmBf16ExpertsMonolithic.apply`；`vllm/model_executor/layers/fused_moe/modular_kernel.py::FusedMoEKernelMonolithicImpl.apply / FusedMoEExperts.is_supported_config`；`vllm/model_executor/layers/fused_moe/oracle/unquantized.py::_get_priority_backends / select_unquantized_moe_backend`；`vllm/model_executor/layers/fused_moe/oracle/fp8.py::_get_priority_backends`；`tests/kernels/moe/test_unquantized_backend_selection.py::test_select_cuda_flashinfer_trtllm_modular_backend / test_select_cuda_deepep_ht_falls_back_from_trtllm` |
 | 成本比较入口 | `benchmarks/fused_kernels/layernorm_rms_benchmarks.py::get_bench_params / unfused_int8_impl / fused_impl`；`benchmarks/kernels/benchmark_moe_defaults.py::benchmark_config` |
 
-陌生读者应能先复算u/y/q，再从四个routing slot重建两个token输出；实际验证则先跑语义/guard测试，再测支持shape下的provider数值、scratch/capture生命周期与benchmark。EP的dispatch/combine、shared专家重叠、EPLB及在线换权布局约束继续到 [[22_vllm_distributed_inference_analysis|分布式推理]] 与 [[29_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不能把单卡算例外推为分布式完成保证。
+陌生读者应能先复算u/y/q，再从四个routing slot重建两个token输出；实际验证则先跑语义/guard测试，再测支持shape下的provider数值、scratch/capture生命周期与benchmark。EP的dispatch/combine、shared专家重叠、EPLB及在线换权布局约束继续到 [[18_vllm_distributed_inference_analysis|分布式推理]] 与 [[25_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不能把单卡算例外推为分布式完成保证。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化设计]] — 拥有 weight/scale/zero 与 pack ABI；本页从已提交的表示接手 Kernel family 选择。
-- [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 拥有 pattern、alias/functionalization、pass 顺序与 lowering；本页只解释其产物怎样选择 provider。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 解释 native/codegen、opaque op、workspace 地址与 capture/replay 的生命周期边界。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — attention metadata/KV layout 的能力协商在此；本页不把 attention backend 重列成 Kernel family。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 TP/DP/EP 与 collective 顺序；本页只使用 local shape 和 parallel feature 作为 Kernel compatibility 输入。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化设计]] — 拥有 weight/scale/zero 与 pack ABI；本页从已提交的表示接手 Kernel family 选择。
+- [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 拥有 pattern、alias/functionalization、pass 顺序与 lowering；本页只解释其产物怎样选择 provider。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 解释 native/codegen、opaque op、workspace 地址与 capture/replay 的生命周期边界。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — attention metadata/KV layout 的能力协商在此；本页不把 attention backend 重列成 Kernel family。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 TP/DP/EP 与 collective 顺序；本页只使用 local shape 和 parallel feature 作为 Kernel compatibility 输入。

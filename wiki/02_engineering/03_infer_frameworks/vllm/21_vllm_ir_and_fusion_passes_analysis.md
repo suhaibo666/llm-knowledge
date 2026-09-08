@@ -8,14 +8,14 @@ title: "vLLM IR 与融合 Pass：让语义先稳定，再让实现安全落地"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-08）。
 > **主题**：IR 图变换、donation 与 lowering 的正确性边界。
 > **中心命题**：vLLM IR 不是另造一套脱离 FX 的执行后端，而是在 FX 中保留一层“语义已定、实现未定”的 dialect：native reference、schema、fake result 与 mutation 声明先固定 observable contract；pre-grad pass 把 `maybe_inplace` 收敛为 functional op 并传递 donation 证据；post-grad passes 只在各自的 shape、dtype、能力和 compile-range 前提内改写；最后 lowering 对 inplace provider 先插 clone，再由受限的 clone elimination 回收局部冗余 copy；它尚不是一般 alias 证明。
-> **适用范围**：本页拥有 IR stable semantics、donation / alias metadata、functionalization、canonicalization / fusion / lowering 顺序及其正确性边界。whole-model dynamic-shape 分区、compile/cache/capture/replay 生命周期归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]；某个 provider、Kernel family 的收益、workspace 与硬件选择归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]。
+> **适用范围**：本页拥有 IR stable semantics、donation / alias metadata、functionalization、canonicalization / fusion / lowering 顺序及其正确性边界。whole-model dynamic-shape 分区、compile/cache/capture/replay 生命周期归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]；某个 provider、Kernel family 的收益、workspace 与硬件选择归 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]。
 > **最近更新**：2026-09-08。重新核对源码与测试；补入双输出图变换、buffer 状态重放、SP 的 shape 改写与未解决的 alias / scale 边界。
 
 ## 1. 从一个 residual block 看为什么要延迟选择实现
 
 一次模型计算刚得到 branch `x=(1,2,3,4)`，旧 residual 为 `r=(1,0,-1,-2)`，权重 `w=(1,2,1,2)`。先相加得到 `u=(2,2,2,2)`，再沿最后一维做 RMSNorm；用当前 pattern 注册的 `epsilon=1e-6`，FP32 手算得到 `y≈(0.999999875,1.999999750,0.999999875,1.999999750)`。这个 block 必须交给下一层**两个结果 `(y,u)`**：只把 norm 输出保留下来，会丢掉 residual 链。
 
-现在有两个独立问题。图改写能否把 `add → rms_norm` 收敛为一个仍返回 `(y,u)` 的 IR 节点？稍后选到会写输入的 C provider 时，调用者还需要旧的 `x,r` 吗？前者决定 matcher 看见什么，后者决定是否必须复制输入。IR 把这两项决定分开；减少 IR 节点本身不保证少一个 GPU kernel，真正的实现与中间内存成本见 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]]。
+现在有两个独立问题。图改写能否把 `add → rms_norm` 收敛为一个仍返回 `(y,u)` 的 IR 节点？稍后选到会写输入的 C provider 时，调用者还需要旧的 `x,r` 吗？前者决定 matcher 看见什么，后者决定是否必须复制输入。IR 把这两项决定分开；减少 IR 节点本身不保证少一个 GPU kernel，真正的实现与中间内存成本见 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]]。
 
 这里的四元素例子是**根据本地 reference 手算的语义缩影**，不是实际 BF16 pattern trace / GPU 运行记录。`AddRMSNormPattern.get_inputs` 用 BF16 `(5,16)` tracing，测试用 `(2,7,32)`；低精度 add 的舍入点与 fused reference 的 FP32 add 并不完全相同，因此正确性目标是规定容差内一致，不能由下面的实数值推出逐 bit 相等（`vllm/ir/ops/layernorm.py::fused_add_rms_norm`；`vllm/compilation/passes/fusion/add_rms_fusion.py::AddRMSNormPattern`）。
 
@@ -37,7 +37,7 @@ title: "vLLM IR 与融合 Pass：让语义先稳定，再让实现安全落地"
 | implementation registration | provider function + capability predicates → 同语义候选 | provider schema 必须与 native 的参数名、类型和默认值完全一致；`inplace=True` 只能挂在允许 inplace 的 op 上 | schema、`supports_args` 签名或 inplace 能力不合同时在注册阶段失败 | `vllm/ir/op.py::IrOp / IrOpImpl / IrOpInplaceOverload` |
 | dispatch policy | priority + 当前实参 → 一个实现 | priority 顺序是 policy；`supported` 是静态可用性，`supports_args` 是当前实参兼容性 | priority 末尾没有覆盖全部实参的实现时抛错；设置 priority 时则过滤静态 unsupported 并在需要时补 native | `vllm/ir/op.py::IrOp / IrOpImpl / IrOpInplaceOverload` |
 
-这四层把“同名”升级成可检查的合同。注册时的 schema 等价只证明调用形状一致，不自动证明数值等价；`supports_args` 也只决定候选是否合法，不证明它比别的实现更快。数值、layout 与 provider 性能验证属于 reference tests 和 page 24 的 Kernel 选择账本，本页只拥有这些证据何时进入 IR/lowering。
+这四层把“同名”升级成可检查的合同。注册时的 schema 等价只证明调用形状一致，不自动证明数值等价；`supports_args` 也只决定候选是否合法，不证明它比别的实现更快。数值、layout 与 provider 性能验证属于 reference tests 和 page 20 的 Kernel 选择账本，本页只拥有这些证据何时进入 IR/lowering。
 
 ### 2.2 为什么 default overload 必须保持 functional
 
@@ -188,7 +188,7 @@ flowchart TB
   AR ==> SP
 ```
 
-`FirstAllReduceRMSNormPattern.register` 的返回值确实从 `(rmsnorm, all_reduce)` 变为 `(all_gather, reduce_scatter)`。逐行 RMS 不依赖其他 token，因而可在 reduce-scatter 后计算；all-gather 按原 token 顺序恢复 norm 输入给下一段 GEMM。每 rank 的 norm 行数从 4 降到 2，但多出显式分片/聚合并不自动保证加速；源码强调它为后续 `AsyncTPPass` 的 GEMM+通信融合准备图形态。collective 的实现与 rank 语义由 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] 接手。
+`FirstAllReduceRMSNormPattern.register` 的返回值确实从 `(rmsnorm, all_reduce)` 变为 `(all_gather, reduce_scatter)`。逐行 RMS 不依赖其他 token，因而可在 reduce-scatter 后计算；all-gather 按原 token 顺序恢复 norm 输入给下一段 GEMM。每 rank 的 norm 行数从 4 降到 2，但多出显式分片/聚合并不自动保证加速；源码强调它为后续 `AsyncTPPass` 的 GEMM+通信融合准备图形态。collective 的实现与 rank 语义由 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] 接手。
 
 这不是可把任意局部子图单独替换的等价式：residual 的内部合同已改变，所以 `SequenceParallelismPass.is_applicable_for_range` 对 piecewise splitting 硬 assert，只允许 Inductor partition 或空 `splitting_ops` 的 whole graph；range.start 必须达到有效 `sp_min_token_num`。当前自动阈值在 H100/Blackwell 要 hidden size 至少 8192，per-GPU 数据阈值分别为 8/32 MiB；XPU 使用 4096 和 8 MiB，其他能力可能返回 `None`。pass 还把 token 阈值钳到 scheduler 的 max batch tokens。实际是否启用以该配置值和 range 为准，不由玩具图决定。
 
@@ -204,16 +204,16 @@ vLLM 的通用 `VllmFusionPatternMatcherPass.register` 用 fake mode trace patte
 2. **静态能力门**：只为 backend 自陈支持的 layer / quant scheme 注册 pattern；找不到 attention layer 时只注册零个 pattern并告警（`vllm/compilation/passes/fusion/attn_quant_fusion.py::AttnFp8StaticQuantPattern / AttnQuantFusionPass`）。
 3. **实参与 range 门**：extra checks 比较 dtype，pass 的 `is_applicable_for_range` 再按 token interval决定是否运行；QK-Norm+RoPE+KV 还拒绝 unsupported head dim 与 `head_size_v != head_size`（`vllm/compilation/passes/fusion/rms_quant_fusion.py::_rms_input_weight_dtype_match / RMSNormStaticQuantPattern`；`vllm/compilation/passes/fusion/qk_norm_rope_kvcache_fusion.py::QkNormRopeKvCacheFusionPass`）。
 
-不满足这些门时，正确结果通常是“保持未融合 functional graph”，不是强行选另一个 fused provider。是否有未融合/native execution path由 op contract与 page 24 负责；本页只要求 pass 的 non-match 不破坏原语义。
+不满足这些门时，正确结果通常是“保持未融合 functional graph”，不是强行选另一个 fused provider。是否有未融合/native execution path由 op contract与 page 20 负责；本页只要求 pass 的 non-match 不破坏原语义。
 
-同样可以用输出 buffer 重建 quant fusion。`RMSNormStaticQuantPattern` 原图为 `rms_norm(x,w) → quant(y,scale)[0]`；replacement 按 `x.shape` 新建 quant dtype 的 `result`，把 `result,x,w,scale,epsilon` 交给 `auto_functionalized(FUSED_OP)`，取 `at[1]` 作为输出。若 x 为 `(2,4)`，这个结果仍为 `(2,4)`，scale 仍是同一个输入；被消去的是高精度 y 的显式节点/物化机会，具体 kernel 的遍历与舍入见 page 24。`SiluMulFp8StaticQuantPattern` 则把输入末维 2d 变成输出 d，并保留 scale。没有末维收缩或 scale 账本的“只少一个节点”不足以描述这项替换。
+同样可以用输出 buffer 重建 quant fusion。`RMSNormStaticQuantPattern` 原图为 `rms_norm(x,w) → quant(y,scale)[0]`；replacement 按 `x.shape` 新建 quant dtype 的 `result`，把 `result,x,w,scale,epsilon` 交给 `auto_functionalized(FUSED_OP)`，取 `at[1]` 作为输出。若 x 为 `(2,4)`，这个结果仍为 `(2,4)`，scale 仍是同一个输入；被消去的是高精度 y 的显式节点/物化机会，具体 kernel 的遍历与舍入见 page 20。`SiluMulFp8StaticQuantPattern` 则把输入末维 2d 变成输出 d，并保留 scale。没有末维收缩或 scale 账本的“只少一个节点”不足以描述这项替换。
 
 attention+static-FP8 的改写是另一种输出合同：原先 attention 写高精度 `output_attn` 后 reshape 并 quant；replacement 新建 FP8 `(T,num_heads,head_size)` output，把同一个 scale 作为 `output_scale` 传入 attention，再 reshape 为 `(T,num_heads*head_size)`。`kv_cache_dummy_dep` 仍从原图流入该 attention 节点，不能因它不参加数值运算就删除，否则 KV 写与读的先后可能失去图依赖。当前 `AttnQuantFusionPass` 除 static FP8 外，还会在 CUDA 且 `_C.scaled_fp4_quant` 存在时按 capability 注册 NVFP4 pattern；类注释“currently only static fp8”已经窄于实际注册逻辑。PyTorch 新版的 layer-name wildcard 分支只为匹配结构注册一次，不能把静态能力检查的边界从源码推成所有混合 backend layer 都已独立证明。
 
 两个已知窄处决定读者不能把 non-match 一概解释成已证安全的 fallback：
 
 - `SplitCoalescingPass.__call__` 的 key 只比较同一 input 和相同 split sizes，**没有比较 split dim**；已读 `test_split_coalescing` 的三个 split 全是 `dim=-1`。它服务这种 QKV 图；不同轴的同 size split 并非数学等价，本次未运行反例，也没有证据可将此 pass 宣称为通用跨轴 CSE。
-- `test_fusion_rmsnorm_quant` 对 BF16 + DeepGEMM UE8M0 路径显式 skip：注释记录 B200 packed int32 scale 与当前 FP32-scale pattern / fused output layout 不一致时会有 NaN，TODO 要同时补 packed scale 输出与 pattern。**这是未覆盖路径及已记录风险，不是 runtime 拒绝或自动回退的证明**。scale ABI 继续由 [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|量化设计]] 与 page 24 管理。
+- `test_fusion_rmsnorm_quant` 对 BF16 + DeepGEMM UE8M0 路径显式 skip：注释记录 B200 packed int32 scale 与当前 FP32-scale pattern / fused output layout 不一致时会有 NaN，TODO 要同时补 packed scale 输出与 pattern。**这是未覆盖路径及已记录风险，不是 runtime 拒绝或自动回退的证明**。scale ABI 继续由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化设计]] 与 page 20 管理。
 
 ### 5.1 `FixFunctionalizationPass` 的特殊风险
 
@@ -227,7 +227,7 @@ lowering 对每个 IR node 读取 fake args，复用 eager dispatch 的 priority
 
 实现选择也是 cache correctness 的一部分。lowering UUID 包含每个 IR op 的 priority 与 priority 中 implementation source UUID；post-grad manager UUID 再包含 pass config、实际 pass 序列、两次 cleanup、lowering、clone elimination、final functionalization 及 compile range（`vllm/compilation/passes/ir/lowering_pass.py::VllmIRLoweringPass`；`vllm/compilation/passes/pass_manager.py::PostGradPassManager`）。测试确认只改变 fusion config 或重复添加同一个 pass 都会改变 manager UUID（`tests/compile/passes/test_pass_manager.py::test_pass_manager_uuid`）。
 
-因此“pass 顺序或 provider priority 改了，但复用旧 compiled artifact”不是允许的性能优化。它会让可观察实现与配置不一致；这里的 UUID 将已列举的 policy、pass 类与 implementation 文件内容纳入 identity；它不证明任意外部依赖或环境变化都已纳入 hash。whole-model cache 文件如何建立与复用仍归 page 23，本页只拥有 pass/lowering 对 cache identity 的贡献。
+因此“pass 顺序或 provider priority 改了，但复用旧 compiled artifact”不是允许的性能优化。它会让可观察实现与配置不一致；这里的 UUID 将已列举的 policy、pass 类与 implementation 文件内容纳入 identity；它不证明任意外部依赖或环境变化都已纳入 hash。whole-model cache 文件如何建立与复用仍归 page 19，本页只拥有 pass/lowering 对 cache identity 的贡献。
 
 ## 7. 验收：按不变量测，而不是只看 match count
 
@@ -271,8 +271,8 @@ lowering 对每个 IR node 读取 fake args，复用 eager dispatch 的 priority
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接手本页产出的 lowered graph，解释 whole-model compile、partition、cache、capture 与 replay 生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 拥有 provider / Kernel family 的收益、workspace、硬件能力与 fallback 账本。
-- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化设计]] — 定义 quant key、scale 与 pack ABI；本页只解释这些合同怎样约束 fusion pattern。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 attention metadata、KV 副作用与 backend capability；本页只保留其 functional dependency 与 fusion guard。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 collective 与 rank 语义；本页只解释 sequence-parallel / async-TP pass 怎样改写其图表示。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接手本页产出的 lowered graph，解释 whole-model compile、partition、cache、capture 与 replay 生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 拥有 provider / Kernel family 的收益、workspace、硬件能力与 fallback 账本。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化设计]] — 定义 quant key、scale 与 pack ABI；本页只解释这些合同怎样约束 fusion pattern。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 attention metadata、KV 副作用与 backend capability；本页只保留其 functional dependency 与 fusion guard。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 collective 与 rank 语义；本页只解释 sequence-parallel / async-TP pass 怎样改写其图表示。

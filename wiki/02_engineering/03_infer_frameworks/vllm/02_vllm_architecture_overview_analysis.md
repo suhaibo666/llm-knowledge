@@ -83,7 +83,7 @@ HTTP 路由把请求交给聊天服务处理器。处理器通过 Renderer 应�
 
 新基线还允许前端按配置的队列阈值拒绝请求：`AsyncLLM.check_admission` 检查未完成请求数以及仍在 prefill 的请求所对应的提示词 token 总量。**这是前端过载控制；本步能不能获得计算和 KV 空间，仍要由资源调度决定。** 两者不能合并成“请求已被接收，所以已经可以执行”。
 
-协议差异、池化任务和输入输出转换继续阅读 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]]。
+协议差异、池化任务和输入输出转换继续阅读 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|请求语义]]。
 
 ### 3.2 调度：一条请求通常会跨越很多步
 
@@ -112,7 +112,7 @@ flowchart TB
 
 图中有两个直观结果：B 不必在一步内处理完全部输入；A 结束后，C 可以在后续调度步加入，而不必等待 B 的整个回答结束。每步总量仍受预算约束，KV 不足时还可能需要等待或抢占。因此连续组批提供的是动态安排工作的能力，不保证每个新请求都立即运行。
 
-这一例子的决策依据来自 `Scheduler.schedule` 的 running/waiting 处理和 token 裁剪逻辑；它不是 GPU 运行记录。具体的公平性、预算相互影响和抢占代价分别见 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] 与 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+这一例子的决策依据来自 `Scheduler.schedule` 的 running/waiting 处理和 token 裁剪逻辑；它不是 GPU 运行记录。具体的公平性、预算相互影响和抢占代价分别见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]] 与 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 
 ### 3.3 执行：逻辑计划还不是 GPU 输入
 
@@ -224,7 +224,7 @@ Scheduler 的计划以请求为单位变化，GPU 输入则需要适当的 tenso
 
 MRV2 的 `execute_model` 先处理完成、释放、新增与更新，再应用暂存的 block 写入，准备设备输入及 attention metadata，选择图执行路径。持久状态复用和临时传输 buffer 的生命周期必须配套，否则 CPU 改写的数据可能仍在被 GPU 异步读取。这里的收益依据设计与实现分析；本页没有测量两代 Runner 的速度。
 
-源码的 MRV2 设计文档解释了 persistent state 与逐步输入分离的动机。两代的内部布局和异步细节分别见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]]、[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]。
+源码的 MRV2 设计文档解释了 persistent state 与逐步输入分离的动机。两代的内部布局和异步细节分别见 [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]]。
 
 ### 4.6 模型与算子：逐层处理模型、权重与硬件差异
 
@@ -234,7 +234,7 @@ ModelRegistry 负责模型实现与能力解析，loader 负责构造和权重�
 
 Attention selector 根据 head size、dtype、KV 格式、滑窗或 MLA 等条件选择 backend；按 KV 类型的显式设置可以覆盖全局选择。EngineCore 在实际分配前收集设备支持的 KV layout 并确定兼容布局，使逻辑 block 在执行侧有一致解释。参数的 shape 正确还不够：分片、scale 和布局语义也必须一致。
 
-LoRA 也依赖这个模型接合点：基础模型上的可替换层、packed 参数命名和 adapter wrapper 要相互匹配；当步每个请求选用哪个 adapter，则还需与 Runner 的批输入配合。接合机制继续阅读 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|模型库与 LoRA 接合]]。
+LoRA 也依赖这个模型接合点：基础模型上的可替换层、packed 参数命名和 adapter wrapper 要相互匹配；当步每个请求选用哪个 adapter，则还需与 Runner 的批输入配合。接合机制继续阅读 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|模型库与 LoRA 接合]]。
 
 这些适配提高了模型与硬件复用能力，也带来组合限制。专用 kernel、CUDA Graph 与低精度路径都只能在适用条件下启用；进入回退路径可能仍然得到正确结果，但性能与内存成本会改变。具体数学变换、kernel 行为和第三方内部实现不在此概览中展开。
 
@@ -247,11 +247,11 @@ LoRA 也依赖这个模型接合点：基础模型上的可替换层、packed �
 | 场景 | 真实入口与前提 | 如何结束或交付结果 | 继续阅读 |
 |---|---|---|---|
 | 离线文本生成 | `LLM.generate` / `LLM.chat`；已加载可生成模型，提供 prompts 或 messages | 同步返回与输入顺序对应的结果列表；内部仍多步调度 | [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|现有使用与优化指南]] |
-| 在线文本服务 | `vllm serve`；Python launcher 创建 AsyncLLM，协议路由消费结果 | HTTP 完整响应或增量流；取消与异常有独立结束路径 | [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] |
-| Embedding、分类等池化任务 | `AsyncLLM.encode` / 对应公开接口；模型声明相应 pooling task | 交付 tensor、向量或分数，不走反复采样的文本输出循环 | [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求与任务语义]] |
-| 多模态、转录、实时音频 | 对应媒体接口与兼容模型；额外预处理、encoder 或流式输入状态 | 输出形式由任务决定，不能都视为一次普通文本请求 | [[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|多模态执行]] |
-| 多卡、多实例或前后端分离 | serve 的部署分支与 Executor 选择；需要对应拓扑和通信环境 | 多 rank 协作完成一次执行，或多个 Engine 分担请求；headless 进程不直接提供 HTTP API | [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] |
-| 独立渲染服务 | `vllm launch render`；准备模型对应的模板和预处理配置 | 提供不执行模型 GPU 推理的前后处理服务，render 任务不进入普通生成循环 | [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|Render 与请求语义]] |
+| 在线文本服务 | `vllm serve`；Python launcher 创建 AsyncLLM，协议路由消费结果 | HTTP 完整响应或增量流；取消与异常有独立结束路径 | [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]] |
+| Embedding、分类等池化任务 | `AsyncLLM.encode` / 对应公开接口；模型声明相应 pooling task | 交付 tensor、向量或分数，不走反复采样的文本输出循环 | [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|请求与任务语义]] |
+| 多模态、转录、实时音频 | 对应媒体接口与兼容模型；额外预处理、encoder 或流式输入状态 | 输出形式由任务决定，不能都视为一次普通文本请求 | [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]] |
+| 多卡、多实例或前后端分离 | serve 的部署分支与 Executor 选择；需要对应拓扑和通信环境 | 多 rank 协作完成一次执行，或多个 Engine 分担请求；headless 进程不直接提供 HTTP API | [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] |
+| 独立渲染服务 | `vllm launch render`；准备模型对应的模板和预处理配置 | 提供不执行模型 GPU 推理的前后处理服务，render 任务不进入普通生成循环 | [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|Render 与请求语义]] |
 | 文件批任务、评测与诊断工具 | CLI 注册的 `run-batch`、`bench`、`collect-env`，以及访问已有服务的 `chat` / `complete`；输入和依赖各异 | 批结果、测量报告、环境信息或交互式文本响应；它们不是新的模型执行核心 | [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|工具使用与评测入口]] |
 
 `vllm serve` 还包含 gRPC、Rust 前端、headless 和多 API server 等条件分支；CLI 可将 `--omni` 委托给另外安装的 vLLM-Omni。它们属于可选入口或外部依赖边界，本页核对了入口分支，未验证这些部署的端到端运行。具体命令与组合限制应进入对应使用或部署专题。
@@ -260,10 +260,10 @@ LoRA 也依赖这个模型接合点：基础模型上的可替换层、packed �
 
 | 能力 | 为什么需要跨模块 | 必须区分的结果 | 专题 |
 |---|---|---|---|
-| KV transfer / offload | Scheduler 决定逻辑进度，设备或传输实现负责实际搬运；不同 offload 路径不一定共用一个 connector | 请求结束不代表异步传输已结束；block 可能延迟释放 | [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|本地 KV]]、[[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|跨实例 KV]] |
-| 在线权重更新 | 前端发起更新，各 rank 执行，Engine 记录版本标签 | `finish_weight_update` 先等待 worker 完成，再按需写版本；版本可单独修改，不能证明多 rank 原子回滚或 cache 已处理 | [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|在线权重更新]] |
-| 插件 | 平台、I/O、endpoint 和统计扩展作用于不同位置 | general plugin 的加载保护是进程内一次；endpoint 插件仅在前端，并需显式允许 | [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|扩展与插件]] |
-| 观测与故障处理 | 核心产生调度统计，前端汇总请求结果，执行器与客户端分别检测故障 | 指标收到、进程存活、请求成功是不同事实；output handler 异常也会向等待请求传播 | [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|可观测性与可靠性]] |
+| KV transfer / offload | Scheduler 决定逻辑进度，设备或传输实现负责实际搬运；不同 offload 路径不一定共用一个 connector | 请求结束不代表异步传输已结束；block 可能延迟释放 | [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|本地 KV]]、[[02_engineering/03_infer_frameworks/vllm/22_vllm_disaggregated_kv_serving_analysis|跨实例 KV]] |
+| 在线权重更新 | 前端发起更新，各 rank 执行，Engine 记录版本标签 | `finish_weight_update` 先等待 worker 完成，再按需写版本；版本可单独修改，不能证明多 rank 原子回滚或 cache 已处理 | [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|在线权重更新]] |
+| 插件 | 平台、I/O、endpoint 和统计扩展作用于不同位置 | general plugin 的加载保护是进程内一次；endpoint 插件仅在前端，并需显式允许 | [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|扩展与插件]] |
+| 观测与故障处理 | 核心产生调度统计，前端汇总请求结果，执行器与客户端分别检测故障 | 指标收到、进程存活、请求成功是不同事实；output handler 异常也会向等待请求传播 | [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|可观测性与可靠性]] |
 
 ### 5.3 阅读源码时容易混淆的四个边界
 
@@ -348,22 +348,22 @@ Engine 运行：跨进程 ADD 消息
 | 想进一步理解的问题 | 下一页 |
 |---|---|
 | 先亲手完成一次模型调用？ | [[01_vllm_feature_optimizations_guide|使用指南]] |
-| 服务已经能用，怎样测量和调优？ | [[05_vllm_performance_tuning_guide|性能评测与调优]] |
-| 报错、卡住或输出异常，怎样定位？ | [[06_vllm_debugging_troubleshooting_guide|调试与排障]] |
-| 输入、任务、停止条件和协议输出为何不同？ | [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] |
-| 请求怎样在客户端与核心之间推进？ | [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 架构]] |
-| 长短请求怎样混合调度，显存紧张时怎么办？ | [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache]] |
-| 模型怎样加载，attention 实现怎样选？ | [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|模型库]]、[[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|Attention Backend]] |
-| 如何减少生成步数或设备提交成本？ | [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]]、[[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
-| 量化、融合算子和编译 Pass 怎样配合？ | [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|量化]]、[[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|融合算子]]、[[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] |
+| 服务已经能用，怎样测量和调优？ | [[04_vllm_performance_tuning_guide|性能评测与调优]] |
+| 报错、卡住或输出异常，怎样定位？ | [[05_vllm_debugging_troubleshooting_guide|调试与排障]] |
+| 输入、任务、停止条件和协议输出为何不同？ | [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|请求语义]] |
+| 请求怎样在客户端与核心之间推进？ | [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|Engine 架构]] |
+| 长短请求怎样混合调度，显存紧张时怎么办？ | [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache]] |
+| 模型怎样加载，attention 实现怎样选？ | [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|模型库]]、[[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]] |
+| 如何减少生成步数或设备提交成本？ | [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]]、[[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
+| 量化、融合算子和编译 Pass 怎样配合？ | [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]]、[[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|融合算子]]、[[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] |
 
 本轮各专题已统一源码基线；从上表进入具体机制，适用条件与验证边界以相应正文为准。
 
 ## Related Pages
 
 - [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] — 按读者问题选择全部专题及阅读依赖。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] — 用逐步预算与抢占案例展开动态请求的资源约束。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] — 深入紧凑 persistent batch 的输入组织与异步处理。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 深入状态行与本步设备输入分离的实现。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] — 展开执行组织中的 rank、并行轴和通信顺序。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|可观测性与可靠性]] — 从用户症状回溯调度、设备执行和进程故障。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]] — 用逐步预算与抢占案例展开动态请求的资源约束。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] — 深入紧凑 persistent batch 的输入组织与异步处理。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] — 深入状态行与本步设备输入分离的实现。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] — 展开执行组织中的 rank、并行轴和通信顺序。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|可观测性与可靠性]] — 从用户症状回溯调度、设备执行和进程故障。

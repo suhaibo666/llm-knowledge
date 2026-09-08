@@ -13,7 +13,7 @@ title: "vLLM Model Runner V2：固定请求行怎样生成每步输入并异步�
 
 假设 worker 最多保存 4 条请求，free list 初始为 `[0,1,2,3]`。依次加入 A、X、B 时，`pop()` 从末尾分配，三者进入 state row 3、2、1。X 完成后 row 2 归还，A 和 B 都留在原行。现在 Scheduler 批准 B 计算 1 个 token、A 计算 2 个 token；本步执行顺序是 `[B,A]`，runner 只生成 `idx_mapping=[1,3]`：batch row 0 读 state row 1，batch row 1 读 state row 3。
 
-这是与 MRV1 的关键差异。两者都利用连续 batch 高度重合，只更新增量；MRV1 的持久 batch 同时承担当步输入排列，空洞需压紧，改序需交换 row-local 状态。MRV2 把长期存放位置和本步执行顺序分开，接受 GPU gather 的成本，避免为改序搬动整套 token、block table 和采样状态。MRV1 还以 `CachedRequestState` 保留 batch 外的请求镜像，并记录异步投机的 draft 历史；这些细节由 15 展开。这里的成本权衡是结合设计文档和实现的**分析推断**，并非一次实测性能结论。
+这是与 MRV1 的关键差异。两者都利用连续 batch 高度重合，只更新增量；MRV1 的持久 batch 同时承担当步输入排列，空洞需压紧，改序需交换 row-local 状态。MRV2 把长期存放位置和本步执行顺序分开，接受 GPU gather 的成本，避免为改序搬动整套 token、block table 和采样状态。MRV1 还以 `CachedRequestState` 保留 batch 外的请求镜像，并记录异步投机的 draft 历史；这些细节由 11 展开。这里的成本权衡是结合设计文档和实现的**分析推断**，并非一次实测性能结论。
 
 以下使用普通 causal attention，无 LoRA、投机或 context parallel。A 的 prompt/prefill 长度都是 20，已计算 18，token id 取 `100 + position`；B 的 prompt/prefill 长度是 5，已计算 5，上一步已采出 token 205，所以 B 的总 token 数是 6。它们的块表分别为 `[12,13]`、`[28]`，与 attention 页的小例衔接。以上容量、token id、块号均为教学值。
 
@@ -22,7 +22,7 @@ title: "vLLM Model Runner V2：固定请求行怎样生成每步输入并异步�
 
 `RequestState.remove_request()` 只删双向映射并归还槽位，不做 condense。新 C 可复用刚归还的 row 2；仅本步未调度的请求仍保留长期行。finish/preemption 才移除，resume 重新加入，不能保证回到旧行。runner 按排序后的 finished/preempted id 清理，保持 TP ranks 的槽位分配顺序一致。
 
-源码落点：`vllm/v1/worker/gpu/states.py::RequestState.add_request`、`RequestState.remove_request`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.finish_requests`、`sort_batch_req_ids`；设计理由见 `docs/design/model_runner_v2.md`，MRV1 的搬移过程见 [[15_vllm_model_runner_v1_analysis|Model Runner V1]]。
+源码落点：`vllm/v1/worker/gpu/states.py::RequestState.add_request`、`RequestState.remove_request`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.finish_requests`、`sort_batch_req_ids`；设计理由见 `docs/design/model_runner_v2.md`，MRV1 的搬移过程见 [[11_vllm_model_runner_v1_analysis|Model Runner V1]]。
 
 ## 2. 固定的是地址，CPU、GPU 和本步 view 的值仍有阶段差别
 
@@ -67,9 +67,9 @@ flowchart TB
 
 真实 `execute_model()` 依次处理上一步 PP 输出、finished/preempted 请求、本地释放、新请求、cached request 更新，最后统一 apply block-table writes；之后才 gather 本步请求和输入。新请求的 request/model/sampler 初值在 add 路径提交；cached 更新还追加块号并维护 CPU 进度上界。
 
-`update_requests()` 先清零要求初始化的 KV blocks，再处理 `SchedulerOutput.kv_cache_block_copies`，调用实际块复制 helper；随后本步 attention 才会读取或续写这些地址。copy helper 处理共享 storage 去重、独立 head groups，以及将多个虚拟 kernel blocks 折回 scheduler block 维度后复制。本页只追踪执行顺序，复制的布局规则衔接 [[14_vllm_attention_backends_analysis|Attention Backend]]。
+`update_requests()` 先清零要求初始化的 KV blocks，再处理 `SchedulerOutput.kv_cache_block_copies`，调用实际块复制 helper；随后本步 attention 才会读取或续写这些地址。copy helper 处理共享 storage 去重、独立 head groups，以及将多个虚拟 kernel blocks 折回 scheduler block 维度后复制。本页只追踪执行顺序，复制的布局规则衔接 [[10_vllm_attention_backends_analysis|Attention Backend]]。
 
-Scheduler 的 `_apply_cow()` 已把请求尾块改为私有 dst，并用 src hit-ref 与 dst 额外引用保护收集复制任务前的调度期。取走复制任务时，普通配置立即归还临时引用；启用延期释放的配置才按复制 step 的 fence 等待。不能概括成所有配置都持有到 copy 完成。引用/分配算法归 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]；worker helper 返回也不表示 CPU 等到了 GPU 完成，后续依赖由执行流顺序保证。
+Scheduler 的 `_apply_cow()` 已把请求尾块改为私有 dst，并用 src hit-ref 与 dst 额外引用保护收集复制任务前的调度期。取走复制任务时，普通配置立即归还临时引用；启用延期释放的配置才按复制 step 的 fence 等待。不能概括成所有配置都持有到 copy 完成。引用/分配算法归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]；worker helper 返回也不表示 CPU 等到了 GPU 完成，后续依赖由执行流顺序保证。
 
 没有 token 的 step 仍可能要执行上述状态或 connector 工作，但不会伪造普通 forward。dummy step 则跳过真实请求 add/remove/update，用单独的占位输入路径。
 
@@ -116,13 +116,13 @@ flowchart TB
 | 上一步采样输入 | 把 row1 的 last_sampled=205 写 flat 0 | 本步仍在 prefill 边界内，保留 prompt token | `input_ids=[205,118,119]` |
 | 本步要采样的 hidden state | 本请求最后 q 在 flat 0 | 本请求最后 q 在 flat 2 | `logits_indices=[0,2]` |
 
-这些数组的含义与 MRV1 相同，但来源不同：MRV2 在 GPU 上从稳定行读取 prompt/真实进度/last sampled，不需先在 CPU 拿到 205 再填回输入。block table 同样按 `[1,3]` gather，得到 `[B 的块表,A 的块表]`；slot mapping 再结合 positions 计算。KV 写入和完整历史读取的演算归 [[14_vllm_attention_backends_analysis|Attention Backend]]。
+这些数组的含义与 MRV1 相同，但来源不同：MRV2 在 GPU 上从稳定行读取 prompt/真实进度/last sampled，不需先在 CPU 拿到 205 再填回输入。block table 同样按 `[1,3]` gather，得到 `[B 的块表,A 的块表]`；slot mapping 再结合 positions 计算。KV 写入和完整历史读取的演算归 [[10_vllm_attention_backends_analysis|Attention Backend]]。
 
 ### 5.2 排序和扩展字段不能悄悄换一套请求顺序
 
 `sort_batch_req_ids()` 先把有 draft 的 verification 请求放前面，再偏好 `num_scheduled_tokens == decode_query_len` 的请求，其余按 q 数排序；相同 key 保持原顺序。它不是 MRV1 的四区域重排算法。`uniform_decode` 还检查没有 prefill，避免短 prefill 恰好 q 数相同就被判为纯 decode。
 
-本例无 draft，每请求一个 logits，累计 logits 计数为 `[0,1,2]`，expanded mapping 与普通 mapping 相同。有 draft 时，一个请求可展开成多条 logits/采样位置；runner 生成累计 logits 数、expanded state index 与 local position，且断言 scheduled q 足以容纳这些 logits，防止错误索引读到前一个请求的 hidden state。adaptive verification 还会在设备侧压缩输入，CPU metadata 上界与最终真实 token 数必须分清。验证/接受算法归 [[20_vllm_speculative_decoding_analysis|投机解码]]。
+本例无 draft，每请求一个 logits，累计 logits 计数为 `[0,1,2]`，expanded mapping 与普通 mapping 相同。有 draft 时，一个请求可展开成多条 logits/采样位置；runner 生成累计 logits 数、expanded state index 与 local position，且断言 scheduled q 足以容纳这些 logits，防止错误索引读到前一个请求的 hidden state。adaptive verification 还会在设备侧压缩输入，CPU metadata 上界与最终真实 token 数必须分清。验证/接受算法归 [[16_vllm_speculative_decoding_analysis|投机解码]]。
 
 LoRA 的长期 adapter id 也按 state row 保存，再用 `idx_mapping` 找到本步请求的 adapter，并按各请求 q 数重复成 token mapping。PCP 会分区输入，DCP 生成本 rank 的局部 seq length；padding 改变执行容量，不能变更请求身份。多模态 encoder/embedding、模型专用 positions 和非首 PP rank 的 intermediate tensors 分别进入 model-state/模型输入接缝，不能假定所有模型都只消费上表三个数组。
 
@@ -175,7 +175,7 @@ flowchart TB
 
 源码先建立异步输出复制，再排 row postprocess，使 D2H 不必等待后者。`AsyncOutput` 保留设备结果引用，copy stream 等生产依赖，复制 tokens、计数、logprobs、prompt logprobs、可选诊断/故障信息，再记录 event；`get_output()` 等 event 后裁剪有效长度、转 CPU 结果，并处理错误。worker 主分支还须完成 model-state postprocess、可选 draft proposal 与 connector 后处理，才返回这个包装对象；copy event 单独就绪不是 Engine 已拿到输出的充分条件。GPU 状态已推进不意味着 Engine 已读到结果；CPU 读到结果也不是下一步 GPU token 的必经回填步骤。
 
-这实现了 CPU 准备下一步与设备本步工作重叠的设计意图，但不能推导出所有配置的整条路径“绝无 CPU 等待”：Engine 结果等待、DP 协商、微批线程 join、诊断和 offload 等仍有各自同步边界。Engine 的 batch queue 与 Scheduler placeholder/stale-output 协议由 [[11_vllm_scheduler_analysis|Scheduler]] 及架构链路承接。
+这实现了 CPU 准备下一步与设备本步工作重叠的设计意图，但不能推导出所有配置的整条路径“绝无 CPU 等待”：Engine 结果等待、DP 协商、微批线程 join、诊断和 offload 等仍有各自同步边界。Engine 的 batch queue 与 Scheduler placeholder/stale-output 协议由 [[07_vllm_scheduler_analysis|Scheduler]] 及架构链路承接。
 
 源码落点：`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.sample`、`GPUModelRunner.sample_tokens`、`GPUModelRunner.postprocess_sampled`；`vllm/v1/worker/gpu/input_batch.py::post_update`；`vllm/v1/worker/gpu/async_utils.py::AsyncOutput`、`AsyncPoolingOutput`。
 
@@ -231,7 +231,7 @@ runner 选择通过不代表异步调度一定开启。当前 async 判断也区
 
 | 阶段 | 本地 runner 的实际动作 | 失败/退出边界 |
 |---|---|---|
-| resolve | KV/attention 初始化后，结合各组 graph support、decode q、TP/cache 形态解析 mode，建立 manager | attention 能力限制模式；全局降级规则归 23 |
+| resolve | KV/attention 初始化后，结合各组 graph support、decode q、TP/cache 形态解析 mode，建立 manager | attention 能力限制模式；全局降级规则归 19 |
 | capture | 构造候选 descriptor，按 PIECEWISE 再 FULL 预热/capture；需要时重建 capture metadata | piecewise 既无 compiled submodule 又未启用 breakable graph 时明确报错 |
 | dispatch | 找 token/request 容量、uniform 条件、最大 q、有效 LoRA bucket、`num_ubatches` 兼容的候选 | 未 capture、无匹配或主动 profile/动态 encoder 限制则选 `NONE` |
 | replay | FULL 直接 replay 绑定固定 buffer 的 graph；PIECEWISE 调用相应 runner；NONE 正常调用模型，仍可能经过 compiled callable | FULL 切入前等待 offload copy，防止静态 buffer 被旧传输覆盖 |
@@ -244,7 +244,7 @@ runner 选择通过不代表异步调度一定开启。当前 async 判断也区
 
 graph memory profiling 使用临时 pool 和少量捕获样本外推，而非永久留下第二套图；成功与失败路径都清理图、model/attention 缓存、临时 manager 和绑定，并恢复原 pool。测试覆盖禁用、采样/外推、piecewise-only 和 capture 抛错后的 teardown。这里的分离降低了多义 dummy 入口的语义混淆，不能据此宣称所有相关错误已被消除。
 
-更广的编译策略、全局 capability 降级与启动时间/显存成本由 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] 承接。本页只保留稳定输入地址怎样成为 graph 的条件，以及哪些本地入口会拒绝或退出 replay。
+更广的编译策略、全局 capability 降级与启动时间/显存成本由 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] 承接。本页只保留稳定输入地址怎样成为 graph 的条件，以及哪些本地入口会拒绝或退出 replay。
 
 源码落点：`vllm/v1/worker/gpu/input_batch.py::InputBuffers`、`InputBatch.make_dummy`；`vllm/v1/worker/gpu/cudagraph_utils.py::_is_compatible`、`CudaGraphManager.capture`、`CudaGraphManager.dispatch`、`CudaGraphManager.run_fullgraph`、`prepare_inputs_to_capture`、`profile_cudagraph_memory`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.capture_model`；`vllm/v1/worker/gpu_worker.py::Worker.compile_or_warm_up_model`。
 
@@ -263,10 +263,10 @@ graph memory profiling 使用临时 pool 和少量捕获样本外推，而非永
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页设备步骤放回 Engine、调度和分布式执行的完整链路。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|vLLM Model Runner V1]] —— 对照 compact row、condense/swap、共享 host buffer 保护和 dummy 入口。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本页消费的 token 计划、抢占，以及异步 placeholder 与结果接纳。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开块表背后的分配、共享、CoW 临时引用和回收时序。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 接续本步 metadata、KV 写入/历史读取及 backend 能力约束。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 展开多 logits、draft 验证与 accepted/rejected 后状态推进。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释编译/capture 全局策略、能力降级和启动成本。
+- [[02_engineering/03_infer_frameworks/vllm/02_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页设备步骤放回 Engine、调度和分布式执行的完整链路。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|vLLM Model Runner V1]] —— 对照 compact row、condense/swap、共享 host buffer 保护和 dummy 入口。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本页消费的 token 计划、抢占，以及异步 placeholder 与结果接纳。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开块表背后的分配、共享、CoW 临时引用和回收时序。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 接续本步 metadata、KV 写入/历史读取及 backend 能力约束。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 展开多 logits、draft 验证与 accepted/rejected 后状态推进。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释编译/capture 全局策略、能力降级和启动成本。

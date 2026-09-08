@@ -1994,4 +1994,4 @@ with torch.no_grad():
 ## Related Pages
 
 - [[02_engineering/01_pytorch/index]]
-- [[23_vllm_compilation_cudagraph_analysis]] — CUDA 侧对照:vLLM 分段 CUDA Graph（`CUDAGraphWrapper`/`CudagraphDispatcher`）的生产实现
+- [[19_vllm_compilation_cudagraph_analysis]] — CUDA 侧对照:vLLM 分段 CUDA Graph（`CUDAGraphWrapper`/`CudagraphDispatcher`）的生产实现

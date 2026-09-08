@@ -135,7 +135,7 @@ resolver registry 对同名项采用“告警并覆盖”，不是拒绝重复�
 
 ### 3.6 Stat logger：接收类工厂，不是 general 的零参回调
 
-自定义指标出口使用 `vllm.stat_logger_plugins`。`load_stat_logger_plugin_factories()` 要求 entry point 导入的是 `StatLoggerBase` 子类，不合要求直接 `TypeError`；`AsyncLLM` 将它与显式传入的工厂合并，再由 `StatLoggerManager` 构造 logger。逐 engine 与跨 engine 聚合 logger 接收的 engine 索引参数不同。即使 `disable_log_stats=True` 关闭内置 logger，自定义 logger 仍可以启用统计路径；对应集成测试检查了这个组合。指标的事件、时钟和聚合原理继续读 [[27_vllm_observability_reliability_analysis|可观测性机制]]，本节只拥有注册、类型与构造边界。
+自定义指标出口使用 `vllm.stat_logger_plugins`。`load_stat_logger_plugin_factories()` 要求 entry point 导入的是 `StatLoggerBase` 子类，不合要求直接 `TypeError`；`AsyncLLM` 将它与显式传入的工厂合并，再由 `StatLoggerManager` 构造 logger。逐 engine 与跨 engine 聚合 logger 接收的 engine 索引参数不同。即使 `disable_log_stats=True` 关闭内置 logger，自定义 logger 仍可以启用统计路径；对应集成测试检查了这个组合。指标的事件、时钟和聚合原理继续读 [[23_vllm_observability_reliability_analysis|可观测性机制]]，本节只拥有注册、类型与构造边界。
 
 ## 4. 约束与失败边界：没有通用事务，也没有通用 teardown
 
@@ -180,8 +180,8 @@ resolver registry 对同名项采用“告警并覆盖”，不是拒绝重复�
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 承接 OOT model 注册之后的模型解析、构造和权重提交；本页不展开内置 registry。
-- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 解释 API、EngineCore 与 worker 的进程拓扑，以及插件初始化必须对齐的 ready/failure 边界。
-- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — 拥有 endpoint 与 IO plugin 所接入的协议、render、input/output 转换语义。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 给出 rank、worker 与 executor 的真实进程范围，用于审计 general plugin 的可见性。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 承接 plugin import/init 失败、进程分叉和 endpoint 暴露面的生产信号与故障归因。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 承接 OOT model 注册之后的模型解析、构造和权重提交；本页不展开内置 registry。
+- [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 解释 API、EngineCore 与 worker 的进程拓扑，以及插件初始化必须对齐的 ready/failure 边界。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|vLLM 请求语义]] — 拥有 endpoint 与 IO plugin 所接入的协议、render、input/output 转换语义。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 给出 rank、worker 与 executor 的真实进程范围，用于审计 general plugin 的可见性。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 承接 plugin import/init 失败、进程分叉和 endpoint 暴露面的生产信号与故障归因。

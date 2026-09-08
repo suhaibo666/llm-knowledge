@@ -6,7 +6,7 @@ title: "vLLM 量化执行：一个低精度数怎样穿过 Pack、Scale、TP 与
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（只读 main 快照，2026-09-07 UTC）。
 > **主题**：低精度整数或浮点编码怎样恢复参与矩阵乘法的数；配置、分片、加载转换与 Kernel 选择怎样保持同一解释。
-> **适用范围**：本页展开量化数值、config → per-layer method → pack/scale 参数 → post-load → dispatch/fallback；通用模型构造与 checkpoint 写入接 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|13]]，Kernel 内部 tile/provider 接 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24]]，KV scale 仅保留名称与能力接缝，完整 layout/attention 协商归 12/14。
+> **适用范围**：本页展开量化数值、config → per-layer method → pack/scale 参数 → post-load → dispatch/fallback；通用模型构造与 checkpoint 写入接 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]，Kernel 内部 tile/provider 接 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]，KV scale 仅保留名称与能力接缝，完整 layout/attention 协商归 08/10。
 > **最近更新**：2026-09-08。
 
 ## 1. 一个 int32 为什么不能直接当作八个权重
@@ -130,7 +130,7 @@ MoE 不能直接套“所有 TP group 都 MAX”：`amax_for_moe_weight_quant` �
 
 skip matcher 会展开 fused prefix 检查 constituent shards；部分 skip 直接报错。当前还先检查 checkpoint 是否直接列了 fused 名字，如 `self_attn.qkv_proj`，若直接匹配就整体 skip，避免明明配置了 fused 名却因展开而漏过。online targets 的一致性是同一原则的另一实现，并非所有 config 都共享一个 matcher。
 
-KV scale 保留窄边界：base mapper 把旧 `.kv_scale` 映到 `.attn.k_scale`，ModelOpt 的 k/v projection scale、fused QKV 与常规 q/k/v scale/zero-point 名也映到 attention 参数。旧 fused 名只直接映 k，不能说这一行同时创造独立 k/v scale；backend 的最终解释接 14。通用名称遍历、packed shard copy 和 TP slice 接 13。
+KV scale 保留窄边界：base mapper 把旧 `.kv_scale` 映到 `.attn.k_scale`，ModelOpt 的 k/v projection scale、fused QKV 与常规 q/k/v scale/zero-point 名也映到 attention 参数。旧 fused 名只直接映 k，不能说这一行同时创造独立 k/v scale；backend 的最终解释接 10。通用名称遍历、packed shard copy 和 TP slice 接 09。
 
 源码收束：`vllm/model_executor/model_loader/utils.py::configure_quant_config`；`vllm/model_executor/models/interfaces.py::SupportsQuant._maybe_apply_model_mapping`；`vllm/model_executor/models/llama.py::LlamaForCausalLM.packed_modules_mapping`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::is_layer_skipped`；`vllm/model_executor/layers/quantization/base_config.py::QuantizationConfig.get_cache_scale_mapper`。
 
@@ -151,7 +151,7 @@ AutoGPTQ 用 `MPLinearLayerConfig` 保存 full/local `[K,N]`、weight/activation
 
 启用 `desc_act` 后，weight 的 K 顺序与 group 对应不能只用局部整除还原；scale 会复制完整 global group 表，即本例 `[8,512]`，`g_idx` 指明每个输入属于哪组。group size=-1 表示每 output channel 覆盖完整 K，row parallel 也需复制该 scale；一般无 act-order 的 groupwise row partition 才沿 group 维分片。`desc_act=True` 且 group=-1 没有重排分组收益，config 会规范化为 False。这里 scale 的复制不同于 §2 现场计算 amax 的 MAX collective：预量化 scale 已由 checkpoint 给出。
 
-方法在分配前让 `choose_mp_linear_kernel` 筛选兼容候选，然后创建上述 Parameter 与选定 Kernel 实例；Parameter 的 input/output/packed 维度、pack factor 与 loader 使 checkpoint copy 有明确目标。流式文件枚举与名字分片归 13，本页不把“copy 成功”当成已经可执行。
+方法在分配前让 `choose_mp_linear_kernel` 筛选兼容候选，然后创建上述 Parameter 与选定 Kernel 实例；Parameter 的 input/output/packed 维度、pack factor 与 loader 使 checkpoint copy 有明确目标。流式文件枚举与名字分片归 09，本页不把“copy 成功”当成已经可执行。
 
 源码收束：`vllm/model_executor/layers/linear.py::LinearBase.__init__`、`ReplicatedLinear.__init__`、`ReplicatedLinear.forward`；`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQLinearMethod.create_weights`、`AutoGPTQConfig.__init__`；`vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py::MPLinearLayerConfig`；`vllm/model_executor/layers/quantization/utils/marlin_utils.py::marlin_repeat_scales_on_all_ranks`。
 
@@ -258,8 +258,8 @@ batch-invariant 模式还有有意的执行退路：在线 per-tensor FP8 若是
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 接模型构造、checkpoint 枚举、名称映射和 TP 参数写入；本页从低精度参数解释接手，不把 loader 的 loaded-name 检查泛化为完整性证明。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 接 provider、tile、Kernel 内部优化；本页解释重排必须保持的数值与选择条件。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 接 TP/EP rank 与 collective；本页解释 scale 为什么只在归约维度被切开时要求共同统计。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接 KV dtype、scale 与 attention backend 的能力协商，量化 config 的名称归一化不替它选择 backend。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 接模型构造、checkpoint 枚举、名称映射和 TP 参数写入；本页从低精度参数解释接手，不把 loader 的 loaded-name 检查泛化为完整性证明。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 接 provider、tile、Kernel 内部优化；本页解释重排必须保持的数值与选择条件。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 接 TP/EP rank 与 collective；本页解释 scale 为什么只在归约维度被切开时要求共同统计。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接 KV dtype、scale 与 attention backend 的能力协商，量化 config 的名称归一化不替它选择 backend。
 - [[02_engineering/07_training_reliability/20_batch_invariance_guide|Batch Invariance]] — 接确定性执行目标与验证，本页给出为此保留已量化权重、放弃低精度 GEMM 的具体分支。

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {example,hex,unpack,render} from './vllm_w2_21_pack_layout.mjs';
-const page=readFileSync(new URL('../../../wiki/02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis.md',import.meta.url),'utf8');
+const page=readFileSync(new URL('../../../wiki/02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis.md',import.meta.url),'utf8');
 test('AWQ reverse indexing and input packing preserve the complete logical matrix',()=>{
  const d=example(); assert.deepEqual(d.recovered,d.codes);
  for(let n=0;n<8;n++) assert.deepEqual(unpack(d.standardWords[n]),d.codes.map(row=>row[n]));

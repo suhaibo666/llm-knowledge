@@ -1,5 +1,7 @@
 # vLLM 第二批：解释主线交付与迁移记录
 
+> 编号说明（2026-09-08 后续整理）：本文记录交付过程，正文中的裸编号保留当时口径；文件名、链接路径已同步为连续编号后的当前值，当前导航以 vLLM 域索引为准。
+
 日期：2026-09-08。本文件记录第二批核验、迁移和交付证据；正文及导航的唯一权威仍是 `wiki/02_engineering/03_infer_frameworks/vllm/`，本文件不建立另一套内容目录。
 
 ## 范围与执行约束
@@ -72,18 +74,18 @@ vLLM域索引将原五类入口、四组owner表、四条路线和症状表合�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 04_vllm_request_semantics_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 聊天往返、stop跨增量缓冲和媒体offset配对可重放；Render三路互斥且保留目标校验 |
-| 10_vllm_engine_architecture_analysis | pass | pass | pass | timing | pass | 3/3 | PASS | 原计划与future配对；普通/drop stale及GPU fence/传输tracker分别解释 |
-| 11_vllm_scheduler_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 五图独立目视；补全抢占撤回、checkpoint判定并修复宽图；failed load不等同普通stale |
-| 12_vllm_kv_cache_management_analysis | pass | pass | pass | transform, timing, layout | pass | 3/3 | PASS | 七图独立目视；pool/partial/Mamba/CPU完成时刻分开；packed与共同边界可复算 |
-| 13_vllm_model_library_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | Q/K/V与gate/up分别分片再写本地融合段；IPC copy与zero_copy完成边界可追踪 |
-| 14_vllm_attention_backends_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 槽453/210/211与manager64虚拟拆分可复算；布局协商与局部能力guard分开 |
-| 15_vllm_model_runner_v1_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 三图独立目视；真实行与token索引同例可复算；专属图文一致性测试3/3通过 |
-| 16_vllm_model_runner_v2_analysis | pass | pass | pass | transform, timing, layout | pass | 3/3 | PASS | 五图独立目视，图文测试4/4；UVA窗口与微批历史边界、worker/copy合流均清楚 |
-| 18_vllm_sampling_structured_output_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 概率比/尾部质量/指数竞赛/Gumbel可复算；grammar只按实际保留输出永久推进 |
-| 19_vllm_multimodal_execution_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | dense/sparse span、缓存miss、整item与本步切片、M-RoPE坐标均可重放 |
-| 20_vllm_speculative_decoding_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 六图独立目视；9条proposal链精确枚举等于完整两token目标分布；synthetic另列目标 |
-| 21_vllm_quantization_analysis | pass | pass | pass | transform, layout | pass | 3/3 | PASS | 四图独立目视；AWQ/FP8/TP逐步复算与测试2/2；latebias总量不冒充完整性保证 |
+| 03_vllm_request_semantics_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 聊天往返、stop跨增量缓冲和媒体offset配对可重放；Render三路互斥且保留目标校验 |
+| 06_vllm_engine_architecture_analysis | pass | pass | pass | timing | pass | 3/3 | PASS | 原计划与future配对；普通/drop stale及GPU fence/传输tracker分别解释 |
+| 07_vllm_scheduler_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 五图独立目视；补全抢占撤回、checkpoint判定并修复宽图；failed load不等同普通stale |
+| 08_vllm_kv_cache_management_analysis | pass | pass | pass | transform, timing, layout | pass | 3/3 | PASS | 七图独立目视；pool/partial/Mamba/CPU完成时刻分开；packed与共同边界可复算 |
+| 09_vllm_model_library_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | Q/K/V与gate/up分别分片再写本地融合段；IPC copy与zero_copy完成边界可追踪 |
+| 10_vllm_attention_backends_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 槽453/210/211与manager64虚拟拆分可复算；布局协商与局部能力guard分开 |
+| 11_vllm_model_runner_v1_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 三图独立目视；真实行与token索引同例可复算；专属图文一致性测试3/3通过 |
+| 12_vllm_model_runner_v2_analysis | pass | pass | pass | transform, timing, layout | pass | 3/3 | PASS | 五图独立目视，图文测试4/4；UVA窗口与微批历史边界、worker/copy合流均清楚 |
+| 14_vllm_sampling_structured_output_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 概率比/尾部质量/指数竞赛/Gumbel可复算；grammar只按实际保留输出永久推进 |
+| 15_vllm_multimodal_execution_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | dense/sparse span、缓存miss、整item与本步切片、M-RoPE坐标均可重放 |
+| 16_vllm_speculative_decoding_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 六图独立目视；9条proposal链精确枚举等于完整两token目标分布；synthetic另列目标 |
+| 17_vllm_quantization_analysis | pass | pass | pass | transform, layout | pass | 3/3 | PASS | 四图独立目视；AWQ/FP8/TP逐步复算与测试2/2；latebias总量不冒充完整性保证 |
 
 ## 门禁与验证边界
 
@@ -109,7 +111,7 @@ vLLM域索引将原五类入口、四组owner表、四条路线和症状表合�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 04_vllm_request_semantics_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 聊天往返、stop跨增量缓冲和媒体offset配对可重放；Render三路互斥且保留目标校验 |
+| 03_vllm_request_semantics_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 聊天往返、stop跨增量缓冲和媒体offset配对可重放；Render三路互斥且保留目标校验 |
 
 正式抽查：`vllm/renderers/hf.py::resolve_chat_template`；`vllm/entrypoints/serve/utils/api_utils.py::get_max_tokens`；`vllm/v1/engine/detokenizer.py::check_stop_strings`及BaseIncrementalDetokenizer更新/公开逻辑。
 
@@ -125,7 +127,7 @@ vLLM域索引将原五类入口、四组owner表、四条路线和症状表合�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 10_vllm_engine_architecture_analysis | pass | pass | pass | timing | pass | 3/3 | PASS | 原计划与future配对；普通/drop stale及GPU fence/传输tracker分别解释 |
+| 06_vllm_engine_architecture_analysis | pass | pass | pass | timing | pass | 3/3 | PASS | 原计划与future配对；普通/drop stale及GPU fence/传输tracker分别解释 |
 
 正式抽查：`vllm/v1/engine/core.py::EngineCore.step_with_batch_queue`；`vllm/v1/core/sched/scheduler.py::Scheduler._free_request_blocks/_drain_deferred_frees`及构造gate；`vllm/v1/engine/core.py::EngineCoreProc._send_msg_tracking_payload`。另打开VllmConfig.max_concurrent_batches、test_engine_core_concurrent_batches、前端登记与Scheduler.update_from_output等主路径。
 
@@ -147,7 +149,7 @@ vLLM域索引将原五类入口、四组owner表、四条路线和症状表合�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 13_vllm_model_library_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | Q/K/V与gate/up分别分片再写本地融合段；IPC copy与zero_copy完成边界可追踪 |
+| 09_vllm_model_library_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | Q/K/V与gate/up分别分片再写本地融合段；IPC copy与zero_copy完成边界可追踪 |
 
 正式抽查：`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight/load_merged_column_weight`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader.track_weights_loading`；`vllm/model_executor/model_loader/weight_cache/ipc_loader.py::IpcModelLoader.load_model/_build_model`。均实际打开，支持切片、普通linear可能豁免和已处理模式后处理的正文结论。
 
@@ -163,7 +165,7 @@ vLLM域索引将原五类入口、四组owner表、四条路线和症状表合�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 14_vllm_attention_backends_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 槽453/210/211与manager64虚拟拆分可复算；布局协商与局部能力guard分开 |
+| 10_vllm_attention_backends_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 槽453/210/211与manager64虚拟拆分可复算；布局协商与局部能力guard分开 |
 
 正式抽查：`vllm/model_executor/layers/attention/attention.py::Attention.forward/unified_attention_with_output`与KV dummy dependency；`vllm/v1/worker/utils.py::select_common_block_size`；`vllm/v1/kv_cache_interface.py::create_kv_cache_views`。另打开layout resolver、EngineCore初始化顺序、CUDA selector/validator、index_kpool alignment；selector可整除谓词与实际kernel整数相等规则没有混淆。
 
@@ -185,7 +187,7 @@ beat2=pass；hop-walk=pass；delete-code=pass；figure-trigger=transform,timing�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 18_vllm_sampling_structured_output_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 概率比/尾部质量/指数竞赛/Gumbel可复算；grammar只按实际保留输出永久推进 |
+| 14_vllm_sampling_structured_output_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | 概率比/尾部质量/指数竞赛/Gumbel可复算；grammar只按实际保留输出永久推进 |
 
 正式抽查：`vllm/v1/sample/logits_processor/builtin.py::MinTokensLogitsProcessor._mask_stop_token_logits`与MRV2 `_bias_kernel`/对应test_gpu_logit_bias；`vllm/v1/worker/gpu/sample/gumbel.py::gumbel_noised_argmax`；`vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output`的stop→trim→accept→error分支。
 
@@ -201,7 +203,7 @@ beat2=pass；hop-walk=pass；delete-code=pass；figure-trigger=transform,timing�
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 19_vllm_multimodal_execution_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | dense/sparse span、缓存miss、整item与本步切片、M-RoPE坐标均可重放 |
+| 15_vllm_multimodal_execution_analysis | pass | pass | pass | transform, timing | pass | 3/3 | PASS | dense/sparse span、缓存miss、整item与本步切片、M-RoPE坐标均可重放 |
 
 正式抽查：`vllm/multimodal/inputs.py::PlaceholderRange.get_embeds_indices_in_range`；`vllm/v1/core/sched/scheduler.py::Scheduler._try_schedule_encoder_inputs`；`vllm/model_executor/models/qwen2_vl.py::Qwen2VLForConditionalGeneration.get_mrope_input_positions/iter_mm_grid_thw`。另打开receiver汇总miss、Core ERROR发送、Async invalidate、EncoderRunner.gather_mm_embeddings完整路径及重复identifier最后occurrence释放。确认can_allocate在稀疏空窗与EC remote-hit之前，P0 miss恢复需要调用方重试。
 

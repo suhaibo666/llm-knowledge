@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {replay,draw} from './vllm_w2_15_compact_rows.mjs';
-const page=readFileSync(new URL('../../../wiki/02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis.md',import.meta.url),'utf8');
+const page=readFileSync(new URL('../../../wiki/02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis.md',import.meta.url),'utf8');
 const list=a=>'['+a.join(',')+']';
 test('compact/swap carry record identity and prose matches the replay',()=>{
  const r=replay();

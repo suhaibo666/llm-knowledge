@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {replay,drawStable,drawUbatch} from './vllm_w2_16_state_views.mjs';
 const root=new URL('../../../wiki/02_engineering/03_infer_frameworks/vllm/',import.meta.url);
-const page=readFileSync(new URL('16_vllm_model_runner_v2_analysis.md',root),'utf8');
+const page=readFileSync(new URL('12_vllm_model_runner_v2_analysis.md',root),'utf8');
 const arr=x=>'['+x.join(',')+']';
 test('remove leaves state holes; step order is an indirection',()=>{
  const r=replay();assert.deepEqual(r.map,{A:3,B:1});assert.deepEqual(r.free,[0,2]);assert.deepEqual(r.idx,[1,3]);

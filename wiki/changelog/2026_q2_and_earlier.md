@@ -72,7 +72,7 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
   - [[dspark_analysis]]（论文深挖，exemplar）：两大部件——**半自回归生成**（并行 DFlash 骨干 + Markov/RNN 串行头，Eq.4-6；接受长度相对 Eagle3 +30.9%、DFlash +16.3%）+ **置信度调度验证**（置信头 Eq.7-8 + STS 校准 + 硬件感知前缀调度器 Alg.1，按 SPS 负载曲线全局贪心、早停保无偏）。生产相对 MTP-1 提速 60%–85%（V4-Flash）/57%–78%（V4-Pro）。
   - [[deepspec_codebase_analysis]]（源码级）：一套 `Qwen3DSparkTrainer` 同产三草稿模型——**DFlash = DSpark 关掉串行/置信头的消融**（`config/dflash/*:18-26`，无独立 modeling）；训练前向链、三项损失 ↔ Eq.9-12、推理拒绝采样路径。**关键边界**：开源仓只到「置信头 + 静态阈值裁剪 + bsz=1」，Algorithm 1 多请求调度器/异步 ZOS/变长内核是生产专属。
 
-**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[20_vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[12_deepseek_v3_analysis]]（MTP 起源）、[[13_deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
+**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；`[[20_vllm_speculative_decoding_analysis]]`（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[12_deepseek_v3_analysis]]（MTP 起源）、[[13_deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
 
 ---
 
@@ -359,10 +359,10 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
 
 **Type**: Expand（沉淀对话中的源码级追问:图模式 pass 机制 / vllm_ir 自定义算子 / RMSNorm+quant 融合全程 / prefill-decode 切换与 PD 分离;源码核对 @ vLLM `485bbe1c6`）
 
-- **新增** [[25_vllm_ir_and_fusion_passes_analysis]]([[24_vllm_fused_ops_and_kernels_analysis]] 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
-- **扩充** [[11_vllm_scheduler_analysis]] §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
+- **新增** `[[25_vllm_ir_and_fusion_passes_analysis]]`(`[[24_vllm_fused_ops_and_kernels_analysis]]` 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
+- **扩充** `[[11_vllm_scheduler_analysis]]` §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
 
-**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[./index|总索引]](推理框架 14 / vLLM 13)计数同步;[[24_vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
+**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[./index|总索引]](推理框架 14 / vLLM 13)计数同步;`[[24_vllm_fused_ops_and_kernels_analysis]]` 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
 
 ---
 
@@ -380,11 +380,11 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
 
 ## 2026-06-22: vLLM 系列补「算子融合与 Triton Kernel」专页(系列增至 11 篇 + index)
 
-**Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[24_vllm_fused_ops_and_kernels_analysis]] 填补真空）
+**Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 `[[24_vllm_fused_ops_and_kernels_analysis]]` 填补真空）
 
-新增 [[24_vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获)、[[21_vllm_quantization_analysis]](量化 GEMM)、[[14_vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
+新增 `[[24_vllm_fused_ops_and_kernels_analysis]]`(「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 `[[23_vllm_compilation_cudagraph_analysis]]`(图捕获)、`[[21_vllm_quantization_analysis]]`(量化 GEMM)、`[[14_vllm_attention_backends_analysis]]`(Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
 
-**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[./index|总索引]] 计数同步;[[23_vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
+**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[./index|总索引]] 计数同步;`[[23_vllm_compilation_cudagraph_analysis]]` 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
 
 ---
 
@@ -394,9 +394,9 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
 
 新建目录 `wiki/02_engineering/03_infer_frameworks/vllm/`,按用户视角的「调度 → 模型库 → 特性优化」三支柱,每篇以「Overview → Quick Start → Deep Dive」三维展开,所有非平凡论断带 `file.py:line` 出处:
 
-- **调度(3 篇)**:[[10_vllm_engine_architecture_analysis]](脊梁篇:解耦双进程 + `EngineCore.step()` 四段忙循环 + ZMQ IPC + Executor→Worker 扇出)、[[11_vllm_scheduler_analysis]](连续批处理 token 级、`schedule()` 先 running 后 waiting、分块预填充、抢占/重算)、[[12_vllm_kv_cache_management_analysis]](分页块、BlockPool 引用计数/LRU 驱逐、`allocate_slots`、块哈希前缀缓存、混合 KV、显存 profiling 定块数)
-- **模型库(2 篇)**:[[13_vllm_model_library_analysis]](模型定义约定 `*ForCausalLM`、懒注册表、惰性流式权重加载 + `packed_modules_mapping`、TP 感知层库)、[[14_vllm_attention_backends_analysis]]("写 KV + 调后端"两步走、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA)
-- **特性优化(5 篇)**:[[01_vllm_feature_optimizations_guide]](特性总表 + 深挖结构化输出/LoRA/分离式 KV 连接器/KV 卸载)、[[20_vllm_speculative_decoding_analysis]](draft+verify、n-gram/EAGLE/Medusa/MTP、拒绝采样无偏、调度 lookahead/回退)、[[21_vllm_quantization_analysis]](`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/FP4、加载期 Marlin repack、KV 量化)、[[22_vllm_distributed_inference_analysis]](5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator`、PP `batch_queue` 虚拟流水线、MoE DP-attention+EP+EPLB)、[[23_vllm_compilation_cudagraph_analysis]](`@support_torch_compile`→VllmBackend(Inductor)、**分段 CUDA Graph** 注意力切出、`cudagraph_mode` 五态、运行时按形状 dispatch replay)
+- **调度(3 篇)**:`[[10_vllm_engine_architecture_analysis]]`(脊梁篇:解耦双进程 + `EngineCore.step()` 四段忙循环 + ZMQ IPC + Executor→Worker 扇出)、`[[11_vllm_scheduler_analysis]]`(连续批处理 token 级、`schedule()` 先 running 后 waiting、分块预填充、抢占/重算)、`[[12_vllm_kv_cache_management_analysis]]`(分页块、BlockPool 引用计数/LRU 驱逐、`allocate_slots`、块哈希前缀缓存、混合 KV、显存 profiling 定块数)
+- **模型库(2 篇)**:`[[13_vllm_model_library_analysis]]`(模型定义约定 `*ForCausalLM`、懒注册表、惰性流式权重加载 + `packed_modules_mapping`、TP 感知层库)、`[[14_vllm_attention_backends_analysis]]`("写 KV + 调后端"两步走、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA)
+- **特性优化(5 篇)**:[[01_vllm_feature_optimizations_guide]](特性总表 + 深挖结构化输出/LoRA/分离式 KV 连接器/KV 卸载)、`[[20_vllm_speculative_decoding_analysis]]`(draft+verify、n-gram/EAGLE/Medusa/MTP、拒绝采样无偏、调度 lookahead/回退)、`[[21_vllm_quantization_analysis]]`(`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/FP4、加载期 Marlin repack、KV 量化)、`[[22_vllm_distributed_inference_analysis]]`(5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator`、PP `batch_queue` 虚拟流水线、MoE DP-attention+EP+EPLB)、`[[23_vllm_compilation_cudagraph_analysis]]`(`@support_torch_compile`→VllmBackend(Inductor)、**分段 CUDA Graph** 注意力切出、`cudagraph_mode` 五态、运行时按形状 dispatch replay)
 
 **HEAD 关键事实(各页据 `485bbe1c6` 源码核实,与多数旧博客不符)**:
 - **V0 独立引擎已移除**:`vllm/engine/llm_engine.py:6` 现仅为 `LLMEngine = V1LLMEngine` 别名;今天 `from vllm import LLMEngine` 拿到的是 V1 兼容外壳,底层跑 V1 `EngineCore`。

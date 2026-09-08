@@ -85,8 +85,8 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 | [AOTAutograd 的 Joint/Forward/Backward Graph](wiki/02_engineering/01_pytorch/02_compile_stack/02_aot_autograd/11_aotautograd_joint_forward_backward_graphs_analysis.md) | 编译栈里正反向图怎么被切出来 |
 | [Inductor Scheduler 依赖图与 Fusion](wiki/02_engineering/01_pytorch/02_compile_stack/04_inductor/13_scheduler_dependency_graph_fusion_and_ordering_analysis.md) | 融合决策与执行顺序 |
 | [符号形状、Guards 与图复用](wiki/02_engineering/01_pytorch/02_compile_stack/01_dynamo/20_symbolic_shapes_guards_and_graph_reuse_analysis.md) | 动态 shape 为什么能复用图 |
-| [vLLM KV Cache 管理](wiki/02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis.md) | 分页不是索引技巧，而是物理块所有权协议 |
-| [vLLM 架构概览](wiki/02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis.md) | 六层责任与状态所有权，一条请求在其上的状态移交主线 |
+| [vLLM KV Cache 管理](wiki/02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis.md) | 分页不是索引技巧，而是物理块所有权协议 |
+| [vLLM 架构概览](wiki/02_engineering/03_infer_frameworks/vllm/02_vllm_architecture_overview_analysis.md) | 六层责任与状态所有权，一条请求在其上的状态移交主线 |
 | [verl 端到端训练迭代](wiki/02_engineering/04_posttrain_frameworks/verl/10_verl_end_to_end_iteration_analysis.md) | RL 后训练框架的主循环 |
 | [slime 权重同步](wiki/02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis.md) | Megatron→SGLang 跨异构分片的提交协议 |
 | [GPU Kernel 开发](wiki/02_engineering/05_gpu_kernel/01_gpu_kernel_guide.md) | Kernel 域入口：访存、Tiling、FlashAttention |

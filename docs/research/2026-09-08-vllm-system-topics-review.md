@@ -1,5 +1,7 @@
 # vLLM 第三批系统专题：非作者独立复核
 
+> 编号说明（2026-09-08 后续整理）：本文记录交付过程，正文中的裸编号保留当时口径；文件名、链接路径已同步为连续编号后的当前值，当前导航以 vLLM 域索引为准。其中“旧02”始终指已合并删除的系统设计原则页。
+
 日期：2026-09-08。复核者不编辑被审正文。本文件只记录证据审计与逐页结论；功能树与页面内容仍以 wiki 为权威。
 
 ## 范围与证据合同
@@ -40,14 +42,14 @@
 
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
-| 17_vllm_serving_control_plane_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 30/20与15/20评分、启动就绪层次和完成计数闭合 |
-| 22_vllm_distributed_inference_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | TP/PCP/DCP数值、PP lifetime及EPLB/微批完成点闭合 |
-| 23_vllm_compilation_cudagraph_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 已补实际ModelCudaGraphManager输出切片边界并复读 |
-| 24_vllm_fused_ops_and_kernels_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | norm/quant与MoE数值闭合，workspace和外部provider边界明确 |
-| 25_vllm_ir_and_fusion_passes_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | donation/clone、双输出变换和SP分片合同可重放 |
-| 26_vllm_disaggregated_kv_serving_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | 已修NIXL整组失败与Scheduler单块反例，WRITE本地ACK及store引用闭合 |
-| 28_vllm_extension_plugin_system_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | client 建立与插件注入时序已修正并复读 |
-| 29_vllm_weight_transfer_online_update_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | pause/session/version、三数据通路及partial failure闭合 |
+| 13_vllm_serving_control_plane_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 30/20与15/20评分、启动就绪层次和完成计数闭合 |
+| 18_vllm_distributed_inference_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | TP/PCP/DCP数值、PP lifetime及EPLB/微批完成点闭合 |
+| 19_vllm_compilation_cudagraph_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | 已补实际ModelCudaGraphManager输出切片边界并复读 |
+| 20_vllm_fused_ops_and_kernels_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | norm/quant与MoE数值闭合，workspace和外部provider边界明确 |
+| 21_vllm_ir_and_fusion_passes_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | donation/clone、双输出变换和SP分片合同可重放 |
+| 22_vllm_disaggregated_kv_serving_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | 已修NIXL整组失败与Scheduler单块反例，WRITE本地ACK及store引用闭合 |
+| 24_vllm_extension_plugin_system_analysis | pass | pass | pass | transform | pass | 3/3 | PASS | client 建立与插件注入时序已修正并复读 |
+| 25_vllm_weight_transfer_online_update_analysis | pass | pass | pass | transform, coupled-planes | pass | 3/3 | PASS | pause/session/version、三数据通路及partial failure闭合 |
 
 ### 17：独立复核 PASS
 

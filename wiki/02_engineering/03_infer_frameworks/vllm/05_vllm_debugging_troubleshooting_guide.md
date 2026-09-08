@@ -15,7 +15,7 @@ title: "vLLM 调试与故障排查：从症状到恢复验证"
 
 本文采用的操作顺序是：保存原始症状和启动条件，找到最早的具体异常，用一个可撤销改动缩小范围，再通过新的请求结果验收。这是诊断方法上的分析建议。它的依据是当前实现有不同的校验与观察边界：容量检查在初始化阶段直接抛错，健康检查读取 Engine 的错误状态，完成请求才产生相应的请求统计。把所有现象归为“GPU 不够”会把这些边界混在一起。
 
-先认识整体模块可读 [[03_vllm_architecture_overview_analysis|架构概览]]。本页只消费这些模块暴露的信号；信号如何产生、跨进程传递，以及异常怎样到达等待者，由 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 解释。
+先认识整体模块可读 [[02_vllm_architecture_overview_analysis|架构概览]]。本页只消费这些模块暴露的信号；信号如何产生、跨进程传递，以及异常怎样到达等待者，由 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]] 解释。
 
 ## 2. 贯穿案例：权重加载后退出，HTTP 服务没有就绪
 
@@ -54,7 +54,7 @@ curl -sS --max-time 5 -i http://127.0.0.1:8000/health
 
 普通 GPU 路径先由 Worker 估算模型执行占用与可留给 KV 的内存，再由 EngineCore 收集各 worker 的 KV 规格和可用内存，生成 KV 配置并检查容量。检查目标是能否容纳**至少一条 `max_model_len` 请求**，不是眼下尚未发送的短测试请求能否运行。因此，把首次请求的 `max_tokens` 改小并不能修复这个启动校验。
 
-当前 `get_kv_cache_configs` 的容量校验还预留了 block pool 的 null block；不能把日志中的总块数全部当作请求可用块。测试用 512 token、每块 16 token 的简化规格证明：总计 32 块仍少一块可用空间，33 块才通过。这里只用这一边界解释错误，不展开 KV 分组和容量算法；其 owner 是 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+当前 `get_kv_cache_configs` 的容量校验还预留了 block pool 的 null block；不能把日志中的总块数全部当作请求可用块。测试用 512 token、每块 16 token 的简化规格证明：总计 32 块仍少一块可用空间，33 块才通过。这里只用这一边界解释错误，不展开 KV 分组和容量算法；其 owner 是 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 
 两个相似的显存报错需要相反方向的检查：
 
@@ -78,7 +78,7 @@ VLLM_LOGGING_LEVEL=DEBUG vllm serve /models/text-model \
 
 4096 和 2048 都是教学输入，不能照搬到别的模型；以本次错误估计和新启动结果为准。`--max-model-len -1` 在当前实现另有自动适配路径，但会按各 worker 能容纳的长度调整配置，仍须检查最终上限。自动适配不等于保留原来的服务能力。
 
-如果业务必须保留 8192，降低到 2048 只能证明容量方向，不能算业务故障已解决。后续要增加实际可用资源或改变模型/并行配置，再恢复原来的长度要求。此类方案的收益与成本由 [[05_vllm_performance_tuning_guide|性能评测与调优指南]] 负责。
+如果业务必须保留 8192，降低到 2048 只能证明容量方向，不能算业务故障已解决。后续要增加实际可用资源或改变模型/并行配置，再恢复原来的长度要求。此类方案的收益与成本由 [[04_vllm_performance_tuning_guide|性能评测与调优指南]] 负责。
 
 ### 2.5 验证：就绪、生成、统计更新是三个证据
 
@@ -138,7 +138,7 @@ rg '^vllm:(num_requests_running|num_requests_waiting|num_requests_waiting_by_rea
 | KV 使用率高且 preemption 增加 | 检查上下文/并发是否把缓存推向压力区；`kv_cache_usage_perc=1` 才表示 100%，不是 1% |
 | counters 不再前进，health 仍为 200 | 联合进程日志、真实请求和线程/设备观测判断 hang；不能仅从旧值推出“没有流量” |
 
-没有某条时序不等于值为零：先核对统计是否禁用、模型/engine 标签、端点是否正确、功能开关及版本。指标含义与生成时间归 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]]，如何用它们建立性能对照实验归性能指南。
+没有某条时序不等于值为零：先核对统计是否禁用、模型/engine 标签、端点是否正确、功能开关及版本。指标含义与生成时间归 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]]，如何用它们建立性能对照实验归性能指南。
 
 ### 3.3 Profiler：当问题已经收敛到执行阶段
 
@@ -167,7 +167,7 @@ curl -sS -i -X POST http://127.0.0.1:8000/stop_profile
 
 如只需短 worker 窗口，可增加 `delay_iterations`、`max_iterations`，Torch 模式配合 `ignore_frontend=true`，避免前端仍采集整个范围。这里的 iteration 是 Engine 执行步，不是请求数；有 delay 时 start 成功只代表会话已激活，尚未开始记录。测试覆盖了延迟启动、自动停止后再次启动的区别。
 
-当前配置还支持 `cuda` 和 `proton`；后者有 NVIDIA CUDA 平台及禁用 CUDA Graph 的显式校验，不能把它当成所有设备上的同义替换。Nsight/Proton 的详细采集方案从同基线 `docs/contributing/profiling.md` 继续，执行图和编译机制见 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
+当前配置还支持 `cuda` 和 `proton`；后者有 NVIDIA CUDA 平台及禁用 CUDA Graph 的显式校验，不能把它当成所有设备上的同义替换。Nsight/Proton 的详细采集方案从同基线 `docs/contributing/profiling.md` 继续，执行图和编译机制见 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
 
 ### 3.4 请求 Trace：把某次慢请求关联到区间
 
@@ -190,8 +190,8 @@ span 经批量 exporter 发送；同基线测试会等待 `llm_request` 出现�
 | 安装/import 报错，设备无法推断 | 保存 `collect-env`、`pip check`、最早 import traceback；以 DEBUG 重试平台检测 | 核对当前解释器、wheel/驱动/硬件组合；平台探测日志会保留插件检测异常。包依赖检查通过不证明二进制能加载 |
 | 下载或加载权重长时间无进展 | 保留下载/磁盘/CPU 内存证据；本地已有完整模型时使用本地路径作对照；必要时仅在测试实例加 `--load-format dummy` | Dummy loader 跳过真实权重下载并初始化随机权重，但配置/tokenizer 等仍可能访问外部资源。它只能隔离真实权重路径，不能验证结果质量；模型加载由模型库专题接续 |
 | `failed to be inspected` 或 architecture 不支持 | 先读模型 inspection 之前的 import 异常，再核对 checkpoint 的 architecture 与当前注册表 | 当前 registry 区分已登记但 inspection 失败、已移除、迁往外部插件和未知架构；不要把这几种都当成模型根本不受支持 |
-| completion 可用但 chat 报模板错，或角色格式不符 | 保存原消息、tokenizer/revision 和实际模板；检查显式模板、processor、tokenizer 与内建 fallback 的选择，必要时通过 `--chat-template /path/to/model-template.jinja` 提供模型对应模板 | 当前 HF renderer 确实有 fallback 选择；不能仅凭 tokenizer 无模板就判定必报错。所有来源都未解析出模板时才抛模板解析错误；不要随意套别的模型模板来换取 HTTP 成功，请求语义见 `04` |
-| 加载、profile、KV 校验或运行中 OOM | 先按最早错误划分阶段；KV 校验按本页案例操作；其他阶段减少对应工作量后重测 | 模型权重、执行峰值和 KV 预算不同。`kv_cache_memory_bytes` 显式指定后不再服从利用率预算，必须核对是否启用了这一分支；后续由 `12`、性能指南及模型专题解释 |
+| completion 可用但 chat 报模板错，或角色格式不符 | 保存原消息、tokenizer/revision 和实际模板；检查显式模板、processor、tokenizer 与内建 fallback 的选择，必要时通过 `--chat-template /path/to/model-template.jinja` 提供模型对应模板 | 当前 HF renderer 确实有 fallback 选择；不能仅凭 tokenizer 无模板就判定必报错。所有来源都未解析出模板时才抛模板解析错误；不要随意套别的模型模板来换取 HTTP 成功，请求语义见 `03` |
+| 加载、profile、KV 校验或运行中 OOM | 先按最早错误划分阶段；KV 校验按本页案例操作；其他阶段减少对应工作量后重测 | 模型权重、执行峰值和 KV 预算不同。`kv_cache_memory_bytes` 显式指定后不再服从利用率预算，必须核对是否启用了这一分支；后续由 `08`、性能指南及模型专题解释 |
 | 报错落在编译或 graph replay | 先单独加 `--enforce-eager` 重现；若恢复，再分别用 `--compilation-config '{"cudagraph_mode":"none"}'` 与 `'{"mode":"none","cudagraph_mode":"none"}'` 作对照 | 当前 `--enforce-eager` 同时关闭 torch.compile 与 CUDA Graph，成功只能定位到被关闭路径的组合。改变图模式会改变调度/执行表现，不能据此单独认定编译器 bug；下一 owner 是 `23` |
 | traceback 位于 `torch/_inductor`、Triton 或 PTX 工具链 | 按官方 troubleshooting 中的最小 `torch.compile` CUDA 脚本脱离 vLLM 测试，保留同一环境的失败 | 如果最小脚本也失败，先收敛 PyTorch/Triton/工具链环境；外部依赖的具体根因还需对应源码或实验，不从目录名推断 |
 | 初始化多进程报 bootstrap/spawn 错误 | 离线 Python 入口使用 `if __name__ == '__main__':` 保护创建引擎的代码，记录实际启动方法 | 当前 `_maybe_force_spawn` 在 CUDA 已初始化等条件下会切到 spawn；不要为了通过而盲目强制 fork |
@@ -220,9 +220,9 @@ span 经批量 exporter 发送；同基线测试会等待 `llm_request` 出现�
 ## Related Pages
 
 - [[01_vllm_feature_optimizations_guide|vLLM 使用指南]] — 建立首次安装、离线生成和在线服务的最小可用路径。
-- [[05_vllm_performance_tuning_guide|vLLM 性能评测与调优指南]] — 在功能恢复后开展负载对照、性能归因与参数验收。
-- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 帮助把日志里的前端、Engine、调度器和 Worker 放回整体请求路径。
-- [[04_vllm_request_semantics_analysis|vLLM 请求语义]] — 解释消息、模板、输入校验和输出约定，接续协议与模板类故障。
-- [[12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 解释本页启动容量错误背后的 block 与缓存配置机制。
-- [[23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接续 eager 对照之后的编译、捕获和重放机制定位。
-- [[27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 定义指标、事件、Trace 和故障状态的产生、传播及解释边界。
+- [[04_vllm_performance_tuning_guide|vLLM 性能评测与调优指南]] — 在功能恢复后开展负载对照、性能归因与参数验收。
+- [[02_vllm_architecture_overview_analysis|vLLM 架构概览]] — 帮助把日志里的前端、Engine、调度器和 Worker 放回整体请求路径。
+- [[03_vllm_request_semantics_analysis|vLLM 请求语义]] — 解释消息、模板、输入校验和输出约定，接续协议与模板类故障。
+- [[08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 解释本页启动容量错误背后的 block 与缓存配置机制。
+- [[19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接续 eager 对照之后的编译、捕获和重放机制定位。
+- [[23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 定义指标、事件、Trace 和故障状态的产生、传播及解释边界。

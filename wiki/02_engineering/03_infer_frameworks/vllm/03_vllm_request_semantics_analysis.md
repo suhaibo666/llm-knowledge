@@ -56,7 +56,7 @@ Render 后才知道真正的 prompt 长度，Chat handler 据此调用 `get_max_
 
 设例子的 render 后 prompt 长度为 20，上下文上限 128，模型默认输出长度 16，没有平台限制。请求显式要求 32，就得到 32，而不是被模型默认 16 截断；若服务显式设置硬上限 24，就得到 24；若请求省略输出长度，则默认 16 生效。这里 20、128 等只是演示值。Render/tokenization 自身也会校验长度，不能把 `get_max_tokens` 的取最小值误读为任意过长请求都会自动成功。
 
-随后 `ChatCompletionRequest.to_sampling_params` 归一 temperature、top-p/top-k/min-p、penalties、seed、stop、logprobs、structured outputs 等字段。普通 chat 的 `stream=true` 对应 `DELTA`，非流式对应 `FINAL_ONLY`；服务默认 `stop_token_ids` 会与请求值合并。`InputProcessor` 再 clone 这份参数；若 `max_tokens` 仍为 `None`，补为剩余上下文，并补 EOS/stop 信息与 bad words 的 token 表示。**这一步不是再次用 generation config 覆盖所有显式采样值。** token 如何从 logits 中选出、grammar 如何约束候选，见 [[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
+随后 `ChatCompletionRequest.to_sampling_params` 归一 temperature、top-p/top-k/min-p、penalties、seed、stop、logprobs、structured outputs 等字段。普通 chat 的 `stream=true` 对应 `DELTA`，非流式对应 `FINAL_ONLY`；服务默认 `stop_token_ids` 会与请求值合并。`InputProcessor` 再 clone 这份参数；若 `max_tokens` 仍为 `None`，补为剩余上下文，并补 EOS/stop 信息与 bad words 的 token 表示。**这一步不是再次用 generation config 覆盖所有显式采样值。** token 如何从 logits 中选出、grammar 如何约束候选，见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
 
 ### 2.3 InputProcessor 构造 EngineCoreRequest，但尚未取得计算资源
 
@@ -75,7 +75,7 @@ Render 后才知道真正的 prompt 长度，Chat handler 据此调用 `get_max_
 
 `AsyncLLM.add_request` 用 `assign_request_id` 保留用户 id，默认附加随机后缀作为内部 id，避免重复外部 id 混淆输出。`n > 1` 会建立 parent 和多个 child；多 prompt 协议也可能拆分请求。因而一个用户 response id 不能当作一个 core 请求的永久一对一键。
 
-提交前，`AsyncLLM._add_request` 再做本地 admission 检查，并在**该方法的第一次 await 之前**把 `RequestState` 登记到 OutputProcessor，之后才 `await engine_core.add_request_async`。这保证并发提交能看见已占用的前端名额，也保证快速回来的输出有 collector 和 detokenizer 接收。完成发送只说明请求交给了 core client；何时进入 waiting/running、拿到 token/KV 预算并真正执行，见 [[11_vllm_scheduler_analysis|Scheduler]]，跨进程接缝见 [[10_vllm_engine_architecture_analysis|Engine 架构]]。
+提交前，`AsyncLLM._add_request` 再做本地 admission 检查，并在**该方法的第一次 await 之前**把 `RequestState` 登记到 OutputProcessor，之后才 `await engine_core.add_request_async`。这保证并发提交能看见已占用的前端名额，也保证快速回来的输出有 collector 和 detokenizer 接收。完成发送只说明请求交给了 core client；何时进入 waiting/running、拿到 token/KV 预算并真正执行，见 [[07_vllm_scheduler_analysis|Scheduler]]，跨进程接缝见 [[06_vllm_engine_architecture_analysis|Engine 架构]]。
 
 <!-- 图1 spec：四泳道依次为用户、协议前端与Renderer、AsyncLLM输入输出处理、EngineCore。前端将messages经模板和tokenization变成EngineInput并生成SamplingParams。AsyncLLM核验、分配内部id；_add_request局部在自己的首次await前检查admission并注册RequestState。Core发送与执行不混同；token回传经detokenize/stop、collector再到协议builder发SSE。字符串stop先出现时向Core abort。 -->
 ```mermaid
@@ -183,7 +183,7 @@ flowchart TB
 
 Chat 的 `_preflight` 在创建流式响应前做早期 admission，因此此时的过载可以返回真正的 HTTP 503；实际提交还会重新检查，早期通过并不是保留名额的承诺。当前单请求的最终检查与本地注册之间没有 await，测试专门验证并发请求不能同时占同一个最后名额。它仍不等于 Scheduler 的 KV admission；后者处理真实执行资源。
 
-取消只终止后续消费和执行，已经发送给用户的文本不可收回，已发生的计算也不会回滚。external id 的取消会扩展到相关 internal ids/children，迟到 core 输出被忽略。另一个特殊边界是跨实例 KV：如果远端 prefill 已经固定了资源、接收端却在正常 admission 前拒绝请求，`_with_kv_transfer_rejection_cleanup` 会通知 connector，使用 `abort_immediately` 的特殊请求触发标准清理 hook；这不是为失败的用户请求继续生成。其资源细节见 [[26_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]。
+取消只终止后续消费和执行，已经发送给用户的文本不可收回，已发生的计算也不会回滚。external id 的取消会扩展到相关 internal ids/children，迟到 core 输出被忽略。另一个特殊边界是跨实例 KV：如果远端 prefill 已经固定了资源、接收端却在正常 admission 前拒绝请求，`_with_kv_transfer_rejection_cleanup` 会通知 connector，使用 `abort_immediately` 的特殊请求触发标准清理 hook；这不是为失败的用户请求继续生成。其资源细节见 [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]。
 
 ## 5. 换成媒体或别的任务，哪些语义必须保留？
 
@@ -203,7 +203,7 @@ flowchart LR
     S --> O[mm_features顺序：B → A<br/>data、hash、position保持配对]
 ```
 
-这里完成的是**模型输入与位置的归一**，不是媒体 encoder 已执行完成。encoder cache、特征张量与文本 embedding 怎样对齐由 [[19_vllm_multimodal_execution_analysis|多模态执行]] 接续；本页只保留接口需要的 processing 边界与字段，不把 CPU render、媒体 encoder 和 GPU token selection 写成一件事。
+这里完成的是**模型输入与位置的归一**，不是媒体 encoder 已执行完成。encoder cache、特征张量与文本 embedding 怎样对齐由 [[15_vllm_multimodal_execution_analysis|多模态执行]] 接续；本页只保留接口需要的 processing 边界与字段，不把 CPU render、媒体 encoder 和 GPU token selection 写成一件事。
 
 ### 5.2 Pooling：同样提交引擎，输出不是文字
 
@@ -254,7 +254,7 @@ Transcription 的公开输入是音频 bytes、语言和响应格式。其 capab
 
 `transcribe_realtime` 将模型 `buffer_realtime_audio` 给出的 prompt 逐个 render，包装成 `StreamingInput`。AsyncLLM 给这条输入流分配一个内部 id，各 chunk 构造 `resumable=True` 的 EngineCoreRequest；前端 `RequestState` 排队应用 streaming update、累积上下文。某个 chunk 生成结束时，对外请求仍可保持 `finished=false`；输入流关闭后发送 final request 作为完成信号，不能把其 dummy token 当成新的用户上下文。
 
-返回的 DELTA text 变成 `transcription.delta`，token ids 同时回灌 input queue，最终发 `transcription.done` 与 usage。相比每个音频块建立互不相干的新请求，这保留同一 session 的上下文和输出连续性；此理由是从状态流重建的推断。WebSocket session/服务进程的生命周期细节见 [[17_vllm_serving_control_plane_analysis|Serving 控制面]]。
+返回的 DELTA text 变成 `transcription.delta`，token ids 同时回灌 input queue，最终发 `transcription.done` 与 usage。相比每个音频块建立互不相干的新请求，这保留同一 session 的上下文和输出连续性；此理由是从状态流重建的推断。WebSocket session/服务进程的生命周期细节见 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。
 
 当前 streaming input 拒绝 pooling、`n > 1`、`FINAL_ONLY`、stop strings 和 prompt embeds，也不接受该接口上的 reasoning 状态参数组合。输入生成器异常先包成 `InputStreamError` 放进 collector，`generate` 取消会话后把原始 cause 交还调用者；端到端测试检查原始异常与无未完成请求。关闭、取消和输入出错不是同一种信号，不能都发成正常 `transcription.done`。
 
@@ -283,10 +283,10 @@ Transcription 的公开输入是音频 bytes、语言和响应格式。其 capab
 
 ## Related Pages
 
-- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]]：把输入输出转换放回完整服务的模块协作中。
-- [[10_vllm_engine_architecture_analysis|Engine 架构]]：从 EngineCoreRequest 继续追踪 client、core 与 executor 的实际接缝。
-- [[11_vllm_scheduler_analysis|Scheduler]]：解释提交后怎样取得 token/KV 资源，以及 waiting/running 和抢占的状态变化。
-- [[16_vllm_model_runner_v2_analysis|Model Runner V2]]：解释请求如何进一步映射到设备上的持久 row 与 buffer。
-- [[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]：接续 SamplingParams 后的 logits 变换、grammar 与 token selection。
-- [[19_vllm_multimodal_execution_analysis|多模态执行]]：接续媒体输入归一后的 encoder、缓存和位置对齐。
-- [[26_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]：解释跨服务请求携带的 transfer metadata 及拒绝后的资源清理。
+- [[02_vllm_architecture_overview_analysis|vLLM 架构概览]]：把输入输出转换放回完整服务的模块协作中。
+- [[06_vllm_engine_architecture_analysis|Engine 架构]]：从 EngineCoreRequest 继续追踪 client、core 与 executor 的实际接缝。
+- [[07_vllm_scheduler_analysis|Scheduler]]：解释提交后怎样取得 token/KV 资源，以及 waiting/running 和抢占的状态变化。
+- [[12_vllm_model_runner_v2_analysis|Model Runner V2]]：解释请求如何进一步映射到设备上的持久 row 与 buffer。
+- [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]：接续 SamplingParams 后的 logits 变换、grammar 与 token selection。
+- [[15_vllm_multimodal_execution_analysis|多模态执行]]：接续媒体输入归一后的 encoder、缓存和位置对齐。
+- [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]：解释跨服务请求携带的 transfer metadata 及拒绝后的资源清理。

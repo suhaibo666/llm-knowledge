@@ -15,7 +15,7 @@ title: "vLLM Model Runner V1：请求挪了行，哪些输入必须一起挪"
 
 MRV1 让**持久状态的 row 同时充当当步模型和采样输入的 row**。它利用相邻步骤请求集合高度重合，只更新加入、移除、进度和新增块，减少 Python 每步重建大张量；代价是活跃 row 必须紧凑，任何移动都要带走整组附属状态。这个出发点及其维护成本在官方 MRV2 设计文档中有明确说明，并非仅从类名推测。
 
-用第 14 页的 A、B 继续演算：A 的 prompt 共 20 个 token，已计算 18 个，本步计算 A18、A19；B 的 prompt 有 5 个 token，已计算 5 个，本步计算上一步采样出的 B5。设 A 使用 greedy、无 LoRA，B 的温度为 0.6、LoRA id 为 7。它们的 KV 表有效部分分别是 `[12,13]`、`[28]`。这些数值都是教学输入。
+用第 10 页的 A、B 继续演算：A 的 prompt 共 20 个 token，已计算 18 个，本步计算 A18、A19；B 的 prompt 有 5 个 token，已计算 5 个，本步计算上一步采样出的 B5。设 A 使用 greedy、无 LoRA，B 的温度为 0.6、LoRA id 为 7。它们的 KV 表有效部分分别是 `[12,13]`、`[28]`。这些数值都是教学输入。
 
 在阈值为 1、要求 decode 在前的 backend 下，本步发生两次不同变换：
 
@@ -75,9 +75,9 @@ streaming 的具体例子是：旧 prompt `[1,2,3]`，旧输出 `[10,11]`；Sche
 
 本基线的 `SchedulerOutput.kv_cache_block_copies` 携带 `(src_block_id,dst_block_id)`。以部分前缀命中为例，Scheduler 已把请求尾块改指向私有 dst；worker 必须先把 src 的已有内容复制过去，之后才能向 dst 续写并读取完整历史。**仅换块号只改变地址，不能自动生成旧 KV。**
 
-MRV1 在 `_update_states()` 中先将 `new_block_ids_to_zero` 对应存储清零，再调用 `copy_kv_cache_blocks_inplace()`，然后才准备输入和执行模型。不能把复制放在清零之前，也不能拖到本次 attention 后。该 helper 按 scheduler block 编号复制，折叠第 14 页的虚拟 kernel-block 拆分；共享同一个 KV view 的层只复制一次，适合整块存储的情况也按 underlying storage 去重。
+MRV1 在 `_update_states()` 中先将 `new_block_ids_to_zero` 对应存储清零，再调用 `copy_kv_cache_blocks_inplace()`，然后才准备输入和执行模型。不能把复制放在清零之前，也不能拖到本次 attention 后。该 helper 按 scheduler block 编号复制，折叠第 10 页的虚拟 kernel-block 拆分；共享同一个 KV view 的层只复制一次，适合整块存储的情况也按 underlying storage 去重。
 
-Scheduler 一侧 `_apply_cow()` 暂保留 src 的 hit-ref，并给 dst 加一份超出请求自身持有的引用，保护收集 CoW 任务前的同一步调度期。Scheduler 取走复制任务时即处理这两份临时引用：未启用延期释放时立即归还；只有相应 KV consumer 与多 in-flight 配置启用 `defer_block_free` 时，才用执行该复制的 step fence 延后归还。runner 负责发出实际复制；引用如何保留、何时由调度侧释放由 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]] 解释。这里不是新增长期 copy event 协议：复制及其后的模型操作依靠执行流顺序，不能把 helper 返回理解为一次 CPU 同步等待 GPU 完成。
+Scheduler 一侧 `_apply_cow()` 暂保留 src 的 hit-ref，并给 dst 加一份超出请求自身持有的引用，保护收集 CoW 任务前的同一步调度期。Scheduler 取走复制任务时即处理这两份临时引用：未启用延期释放时立即归还；只有相应 KV consumer 与多 in-flight 配置启用 `defer_block_free` 时，才用执行该复制的 step fence 延后归还。runner 负责发出实际复制；引用如何保留、何时由调度侧释放由 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]] 解释。这里不是新增长期 copy event 协议：复制及其后的模型操作依靠执行流顺序，不能把 helper 返回理解为一次 CPU 同步等待 GPU 完成。
 
 源码：`vllm/v1/core/sched/output.py::SchedulerOutput`；`vllm/v1/worker/utils.py::copy_kv_cache_blocks_inplace`；`vllm/v1/core/single_type_kv_cache_manager.py::SingleTypeKVCacheManager._apply_cow`。
 
@@ -142,7 +142,7 @@ flowchart TB
 
 prompt-embeds 路径按同一索引取 `is_token_ids`，将实际 embedding 分段写入执行 buffer；不能把每个位置都当整数 token。M-RoPE/XD-RoPE 的 pinned 位置矩阵当前按每行复制，避免非连续切片触发 pageable 临时 buffer 而隐式同步；async spec 下还根据 GPU 与 CPU computed 的差值修正多维位置。
 
-builder 随后消费同序的 Query 边界、seq lengths、块表和槽映射。第 14 页已演算它们怎样写入槽 453/210/211 并读取历史，本页不再重复 attention 算法。未完成的 chunked prefill 虽可走统一采样入口，其结果会通过 discard mask 丢弃；本例 A 恰好在本步算完 prompt，因而它的末行可产生有效下一 token。
+builder 随后消费同序的 Query 边界、seq lengths、块表和槽映射。第 10 页已演算它们怎样写入槽 453/210/211 并读取历史，本页不再重复 attention 算法。未完成的 chunked prefill 虽可走统一采样入口，其结果会通过 discard mask 丢弃；本例 A 恰好在本步算完 prompt，因而它的末行可产生有效下一 token。
 
 源码：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._prepare_inputs`、`GPUModelRunner._get_cumsum_and_arange`、`GPUModelRunner._prepare_input_ids`；`vllm/v1/worker/gpu_input_batch.py::InputBatch.make_lora_inputs`。
 
@@ -205,7 +205,7 @@ profile 若另造一套过度简化的输入，可能漏掉 LoRA、mixed batch�
 
 `_dummy_run()` 支持 mixed、uniform、LoRA active count、microbatch、profile 与 graph mode 等输入；requested runtime mode 与 dispatcher 得出的模式不符会断言失败。dummy 没有真实 KV 写入槽，所以槽映射填 `-1`；共享 pinned buffer 的准备同样进入 `synchronize_input_prep()`，不能以为“没有真实请求”就可以绕过 async 保护。dummy 还提交已清理的 block-table 行，并为 full replay 重新准备捕获所读 metadata，避免沿用已结束请求的状态索引。当前 ubatched capture 还有 full graph、uniform decode 及阈值条件，不是所有 dummy 都拆 microbatch。
 
-这套复用减少 real 与 capture 的地址/形状偏差，也让一个入口同时承担 profile、warmup、capture 和空 DP forward，分支组合多。新增线上输入时必须核对 dummy 能否形成对应条件；官方设计文档明确将路径漂移列为技术债。具体 graph descriptor、full/piecewise/eager 降级与编译策略仍由 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] 展开。
+这套复用减少 real 与 capture 的地址/形状偏差，也让一个入口同时承担 profile、warmup、capture 和空 DP forward，分支组合多。新增线上输入时必须核对 dummy 能否形成对应条件；官方设计文档明确将路径漂移列为技术债。具体 graph descriptor、full/piecewise/eager 降级与编译策略仍由 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] 展开。
 
 源码：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._dummy_run`、`GPUModelRunner.profile_run`、`GPUModelRunner.capture_model`、`GPUModelRunner._warmup_and_capture`、`GPUModelRunner._capture_cudagraphs`。
 
@@ -213,7 +213,7 @@ profile 若另造一套过度简化的输入，可能漏掉 LoRA、mixed batch�
 
 V1 Engine 和 Model Runner V1 是两个维度。`GPUWorker` 根据 `use_v2_model_runner` 选择 `vllm/v1/worker/gpu_model_runner.py` 中的 MRV1 或 `vllm/v1/worker/gpu/model_runner.py` 中的 MRV2；仅看到 `vllm/v1/` 路径不能判断 runner 代际。
 
-`VLLM_USE_V2_MODEL_RUNNER=0` 可显式选择 MRV1；未设置时才走自动判断。当前在特定 ROCm architecture、缺少 Triton 或 MRV2 capability blocker 存在时选 MRV1，否则默认 MRV2。MRV1 仍是活跃兼容路径，但不是能力全集：PCP、DSpark、adaptive draft verification、mixed sliding/full DFlash、DFlash2、diffusion 和 batch-sharded sampling 等会被它的能力检查拒绝。另有 sampling-distribution replay、trace replay 的配置检查明确要求 MRV2。完整选择矩阵留在 [[16_vllm_model_runner_v2_analysis|Model Runner V2]]。
+`VLLM_USE_V2_MODEL_RUNNER=0` 可显式选择 MRV1；未设置时才走自动判断。当前在特定 ROCm architecture、缺少 Triton 或 MRV2 capability blocker 存在时选 MRV1，否则默认 MRV2。MRV1 仍是活跃兼容路径，但不是能力全集：PCP、DSpark、adaptive draft verification、mixed sliding/full DFlash、DFlash2、diffusion 和 batch-sharded sampling 等会被它的能力检查拒绝。另有 sampling-distribution replay、trace replay 的配置检查明确要求 MRV2。完整选择矩阵留在 [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。
 
 | 得到的收益 | 对应成本或失败位置 | 排查入口 |
 |---|---|---|
@@ -231,9 +231,9 @@ V1 Engine 和 Model Runner V1 是两个维度。`GPUWorker` 根据 `use_v2_model
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页输入物化与结果回传放回请求、资源和设备执行分层。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本页消费的 admission、preemption 与 SchedulerOutput 从何而来。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开块表背后的分配、共享、CoW 引用保留与回收生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 接续本页 token-major 输入，解释 metadata、地址转换与 attention 实际读取。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照稳定请求 row、逐步 gather 和 staged writes 怎样改变本页搬移与异步依赖。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 展开 dummy/capture 接缝之上的全局编译与执行模式策略。
+- [[02_engineering/03_infer_frameworks/vllm/02_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页输入物化与结果回传放回请求、资源和设备执行分层。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本页消费的 admission、preemption 与 SchedulerOutput 从何而来。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开块表背后的分配、共享、CoW 引用保留与回收生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 接续本页 token-major 输入，解释 metadata、地址转换与 attention 实际读取。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照稳定请求 row、逐步 gather 和 staged writes 怎样改变本页搬移与异步依赖。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 展开 dummy/capture 接缝之上的全局编译与执行模式策略。

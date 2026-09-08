@@ -111,7 +111,7 @@ CUDA 先按设备、dense/MLA、Query head 数、head size、KV dtype 和 causal
 
 `Attention(..., attn_backend=SomeClass)` 是另一个入口：直接注入会绕过 selector，不能假定完整平台过滤已经发生。layer 仍检查 ALiBi sqrt、chunk lookback、Flex block 等局部限制；特定 backend 在 batch-invariant 模式下会关闭 prefix caching。adaptive verification 建立时还会检查目标层是否支持 device/CPU Query 长度不一致，因而也不能把旁路理解为跳过所有后续检查。直接注入者需要自行保证其余设备和特性组合成立。
 
-本页的回退只讨论初始化候选替换。已选 op 内部的 kernel/provider 回退见 [[24_vllm_fused_ops_and_kernels_analysis|融合算子与 kernel]]；full graph、piecewise、eager 的运行期降级见 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
+本页的回退只讨论初始化候选替换。已选 op 内部的 kernel/provider 回退见 [[20_vllm_fused_ops_and_kernels_analysis|融合算子与 kernel]]；full graph、piecewise、eager 的运行期降级见 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
 
 源码：`vllm/platforms/cuda.py::_get_backend_priorities`、`CudaPlatformBase.get_valid_backends`、`CudaPlatformBase.get_attn_backend_cls`；`vllm/platforms/rocm.py::RocmPlatform.get_attn_backend_cls`；`vllm/model_executor/layers/attention/attention.py::Attention.__init__`；`vllm/v1/worker/gpu/spec_decode/adaptive_verification.py::maybe_create_adaptive_verification_manager`。
 
@@ -157,7 +157,7 @@ flowchart TB
 
 缓存 view 的变换还有物理条件：manager size 必须能被 kernel size 整除；拆分时原 block stride 必须是无 padding、无其他层插入的致密 page 字节数。`create_kv_cache_views()` 调整 block 数和 stride，用 `as_strided` 构造 view，并没有搬运 KV。混合层的间隙或 page padding 可能使虚拟拆分不成立，此时硬失败，不能只靠改 block table 修好。
 
-取舍因此有两层。较大 manager block 改变分配粒度及尾部空余；较小 kernel block 增加执行块表条目和寻址粒度，并受 backend kernel 支持约束。虚拟拆分保留 manager 的分配语义，**不会把已按 64 分配的尾部空间变成按 16 回收**。物理块分配和回收继续见 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+取舍因此有两层。较大 manager block 改变分配粒度及尾部空余；较小 kernel block 增加执行块表条目和寻址粒度，并受 backend kernel 支持约束。虚拟拆分保留 manager 的分配语义，**不会把已按 64 分配的尾部空间变成按 16 回收**。物理块分配和回收继续见 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 
 源码：`vllm/v1/worker/utils.py::select_common_block_size`、`prepare_kernel_block_sizes`；`vllm/v1/worker/gpu/block_table.py::BlockTables.append_block_ids`、`BlockTables.compute_slot_mappings`；`vllm/v1/kv_cache_interface.py::compute_layer_kv_cache_shape_bytes`、`create_kv_cache_views`。
 
@@ -185,13 +185,13 @@ full graph 可把请求/token 数补齐到捕获规模，`num_actual_tokens` 的
 
 例如 FlashAttention 的 `update_block_table()` 浅复制 metadata，只替换 block table 与 slot mapping；它没有重新计算 Query 长度。只有同一轮其余事实本来相同才安全。它的 builder 在 FA3 时声明 mixed-batch `ALWAYS`，其他版本为 `UNIFORM_BATCH`；总的四级能力依次为 mixed batch、统一 Query 长度、单 token decode 和完全不支持。cascade 另有条件，不能从这些等级推出它也可捕获。
 
-builder 还给出 batch reorder 阈值，runner 取所有组的最小值。后端需接受更小阈值，代价可以是把更多 decode 走成 prefill 路径；metadata 不得独自改请求顺序而遗漏其他伴随状态。如何真正移动或映射设备 batch 分别见两代 runner 页面，graph 派发和降级细节见第 23 页。
+builder 还给出 batch reorder 阈值，runner 取所有组的最小值。后端需接受更小阈值，代价可以是把更多 decode 走成 prefill 路径；metadata 不得独自改请求顺序而遗漏其他伴随状态。如何真正移动或映射设备 batch 分别见两代 runner 页面，graph 派发和降级细节见第 19 页。
 
 源码：`vllm/v1/worker/gpu/attn_utils.py::init_attn_backend`、`build_attn_metadata`；`vllm/v1/attention/backend.py::CommonAttentionMetadata`、`AttentionMetadataBuilder`、`AttentionCGSupport`；`vllm/v1/attention/backends/flash_attn.py::FlashAttentionMetadataBuilder.update_block_table`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.calculate_reorder_batch_threshold`。
 
 ## 7. 当前实现把这些选择具体化成什么边界
 
-以下列举能够解释选择结果的差异，不是后端性能榜。量化数值转换见 [[21_vllm_quantization_analysis|量化派发]]，provider 内部算法见第 24 页。
+以下列举能够解释选择结果的差异，不是后端性能榜。量化数值转换见 [[17_vllm_quantization_analysis|量化派发]]，provider 内部算法见第 20 页。
 
 | 实现 | 当前声明或局部限制 | 读者应如何理解 |
 |---|---|---|
@@ -229,9 +229,9 @@ MLA sparse 的地址与规划也不能复用普通 dense 假设。例如 SM90 Fl
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本步 token 和逻辑块怎样被调度出来，以及请求进度何时提交。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开物理块分配、共享、回收和 hybrid packing，与本页执行 view 接续。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照全状态 swap 与逐步 mapping，解释块表、长度和输入如何保持同序。
-- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发]] —— 展开 KV dtype、scale、加载变换及量化数值路径。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释 runner 如何消费最弱 attention capture capability，并选择或降低执行模式。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与专用 Kernel]] —— 继续阅读具体 op、provider 选择及内部计算与性能边界。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] —— 解释本步 token 和逻辑块怎样被调度出来，以及请求进度何时提交。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开物理块分配、共享、回收和 hybrid packing，与本页执行 view 接续。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照全状态 swap 与逐步 mapping，解释块表、长度和输入如何保持同序。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化派发]] —— 展开 KV dtype、scale、加载变换及量化数值路径。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释 runner 如何消费最弱 attention capture capability，并选择或降低执行模式。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与专用 Kernel]] —— 继续阅读具体 op、provider 选择及内部计算与性能边界。

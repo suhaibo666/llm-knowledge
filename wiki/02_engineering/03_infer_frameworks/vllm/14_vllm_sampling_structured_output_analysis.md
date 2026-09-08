@@ -167,13 +167,13 @@ FlashInfer wrapper 的说明将其实现描述为避免排序的 rejection sampl
 
 ## 4. 同一规则怎样放进两个 Runner
 
-MRV2 普通路径的完整顺序是：runner 先施加 grammar → sampler 必要时复制为 FP32 → allowed、bias、min-tokens → repetition/frequency/presence → bad words → thinking budget → temperature → min-p → top-k/top-p → selection。没有任何请求需要变换时跳过 FP32 copy 和相关处理 kernel。sampling state 按稳定 request row 保存，新增请求分阶段写入 temperature、k/p、seed、bias 等；本步按 mapping 取出对应行。因此连续批处理的行序改变，不应改变“这个请求使用哪组策略”。细节接 [[16_vllm_model_runner_v2_analysis|Model Runner V2 的持久状态与当步映射]]。
+MRV2 普通路径的完整顺序是：runner 先施加 grammar → sampler 必要时复制为 FP32 → allowed、bias、min-tokens → repetition/frequency/presence → bad words → thinking budget → temperature → min-p → top-k/top-p → selection。没有任何请求需要变换时跳过 FP32 copy 和相关处理 kernel。sampling state 按稳定 request row 保存，新增请求分阶段写入 temperature、k/p、seed、bias 等；本步按 mapping 取出对应行。因此连续批处理的行序改变，不应改变“这个请求使用哪组策略”。细节接 [[12_vllm_model_runner_v2_analysis|Model Runner V2 的持久状态与当步映射]]。
 
 V1 的顺序并不完全相同：grammar → FP32 → allowed → bad words → 非 argmax-invariant processors → penalties → thinking budget → greedy 检查 → temperature → argmax-invariant processors → top-k/top-p → random。内建 min-token、bias 属于前一组，min-p 属于后一组。`is_argmax_invariant` 的意思是“不会改变 greedy argmax”，不是“不改变分布”；因此全 greedy batch 可以跳过后一组。
 
 custom processor 持有请求状态时，必须消费 `BatchUpdate`，按 removed → added → moved 处理，加入请求时得到的 output-token list 是持续更新的引用。`InputBatch.refresh_metadata` 在构建新的 sampling metadata 前更新 processor。声明错误或行迁移处理错误，都可能让 greedy 走错分支或让请求使用别人的状态；这是扩展接口的责任。
 
-这套 custom ABI 当前属于 V1。配置检查将 model-config custom processor 或 `vllm.logits_processors` plugin 列为 MRV2 blocker：自动选择回退 V1，强制 V2 时 validation 报错。V1 builder 在 speculative decoding 下拒绝 custom processor，只构建 min-token processor；更早的 `SamplingParams._validate_spec_decode` 也拒绝 min-p 或 logit-bias 组合。普通采样能力不能直接外推到 draft/accept 路径，后者接 [[20_vllm_speculative_decoding_analysis|投机解码的分布与接受过程]]。
+这套 custom ABI 当前属于 V1。配置检查将 model-config custom processor 或 `vllm.logits_processors` plugin 列为 MRV2 blocker：自动选择回退 V1，强制 V2 时 validation 报错。V1 builder 在 speculative decoding 下拒绝 custom processor，只构建 min-token processor；更早的 `SamplingParams._validate_spec_decode` 也拒绝 min-p 或 logit-bias 组合。普通采样能力不能直接外推到 draft/accept 路径，后者接 [[16_vllm_speculative_decoding_analysis|投机解码的分布与接受过程]]。
 
 ## 5. “合法分布”有明确前提和两个重要例外
 
@@ -186,7 +186,7 @@ custom processor 持有请求状态时，必须消费 `BatchUpdate`，按 remove
 | `min_tokens`、stop ids | min-tokens 非负且不超过 max-tokens；MRV2 该状态最多存 128 个 stop id，超出抛错；stop token 来源的协议映射见请求语义页 |
 | `seed`、`logprobs_mode` | MRV2 分别保存随机 seed 与“是否显式设置”标记。raw/processed、logits/logprobs 是不同观察口径，不能仅凭返回分数还原最终采样概率 |
 
-本表是本页算法涉及的字段子集，不是 `SamplingParams` 全字段目录；API、停止与输出选项的映射由 [[04_vllm_request_semantics_analysis|请求语义页]] 维护。
+本表是本页算法涉及的字段子集，不是 `SamplingParams` 全字段目录；API、停止与输出选项的映射由 [[03_vllm_request_semantics_analysis|请求语义页]] 维护。
 
 **例外一：grammar 已经只允许停止时，min-tokens 可以让步。** 假设 grammar 处理后整行只剩 EOS=1，但尚未达到 min-tokens。普通屏蔽会变成全负无穷；当前 V1 `MinTokensLogitsProcessor._mask_stop_token_logits` 与 MRV2 `_bias_kernel` 均针对 structured 请求保存 stop logits，屏蔽后扫描整行，若全为负无穷，则恢复此前有限的 stop logits。若仍有其他合法 token，继续禁止 EOS；无 structured constraint 的请求不启用恢复。恢复的是 grammar 已允许的旧值，不会恢复原本已被 grammar 禁止的 stop token。
 
@@ -237,7 +237,7 @@ manager 将 CPU bitmask 转为 NumPy，以降低传输序列化开销；但 Sche
 
 MRV2 `_build_grammar_mapping` 将每个 mask row 编为 request index 与 position；kernel 再读取 GPU `cu_num_logits` 找到实际 logits 起点。这样 adaptive verification 改变实际位置偏移后，也无需信任已经过时的 CPU 绝对行号。kernel 只写 active position，并断言 mask 行数等于 mapping 长度。mask 与 mapping 通过 copy stream 异步上传，计算 stream 等待拷贝；使用后 copy stream 还要等待计算 stream，避免暂存区过早复用。
 
-V1 则按请求 id 与 speculative-position offset 建出已按 logits 排序的 mask，再调用 xgrammar 的设备 mask kernel。这里的 mapping 是正确性数据：错位不会只让吞吐下降，而会让 R1 按 R2 的语言生成。mask 应用之后才进入 §2–§4 的 sampler；token 如何回传和发布接 [[15_vllm_model_runner_v1_analysis|Runner V1 输出路径]] 与 [[16_vllm_model_runner_v2_analysis|Runner V2 输出路径]]。
+V1 则按请求 id 与 speculative-position offset 建出已按 logits 排序的 mask，再调用 xgrammar 的设备 mask kernel。这里的 mapping 是正确性数据：错位不会只让吞吐下降，而会让 R1 按 R2 的语言生成。mask 应用之后才进入 §2–§4 的 sampler；token 如何回传和发布接 [[11_vllm_model_runner_v1_analysis|Runner V1 输出路径]] 与 [[12_vllm_model_runner_v2_analysis|Runner V2 输出路径]]。
 
 ### 6.4 接受新 token、跨 reasoning 边界、完成与失败
 
@@ -285,10 +285,10 @@ reasoning-aware 请求额外持有 request-local parser、`reasoning_ended` 和�
 
 ## Related Pages
 
-- [[04_vllm_request_semantics_analysis|请求语义]] —— 解释 API 字段映射、detokenization、stop string 与流式响应，不把返回分数混同于最终采样分布。
-- [[11_vllm_scheduler_analysis|Scheduler]] —— 解释 grammar ready 后请求如何获得 token budget，以及 step 结果怎样更新请求状态。
-- [[15_vllm_model_runner_v1_analysis|Model Runner V1]] —— 解释 compact batch、processor state 更新与输出回传。
-- [[16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 解释 stable row、staged writes 与 GPU/CPU 输出生效边界。
-- [[20_vllm_speculative_decoding_analysis|投机解码]] —— 接管 draft proposal、target verification、acceptance 和残差采样的概率正确性。
-- [[03_vllm_architecture_overview_analysis|架构概览]] —— 把 sampling、grammar、Scheduler 和 worker 放回端到端路径。
+- [[03_vllm_request_semantics_analysis|请求语义]] —— 解释 API 字段映射、detokenization、stop string 与流式响应，不把返回分数混同于最终采样分布。
+- [[07_vllm_scheduler_analysis|Scheduler]] —— 解释 grammar ready 后请求如何获得 token budget，以及 step 结果怎样更新请求状态。
+- [[11_vllm_model_runner_v1_analysis|Model Runner V1]] —— 解释 compact batch、processor state 更新与输出回传。
+- [[12_vllm_model_runner_v2_analysis|Model Runner V2]] —— 解释 stable row、staged writes 与 GPU/CPU 输出生效边界。
+- [[16_vllm_speculative_decoding_analysis|投机解码]] —— 接管 draft proposal、target verification、acceptance 和残差采样的概率正确性。
+- [[02_vllm_architecture_overview_analysis|架构概览]] —— 把 sampling、grammar、Scheduler 和 worker 放回端到端路径。
 - [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] —— 提供按能力 owner 组织的领域阅读入口。

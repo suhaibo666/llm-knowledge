@@ -6,14 +6,14 @@ title: "vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕�
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-08）
 > **主题**：解释动态请求如何进入有限的编译区间与 CUDA Graph 容量，追踪编译缓存、预热、捕获和重放。随后讨论地址、分段边界、运行期派发与失效条件。
-> **适用范围**：本页拥有 compile/graph/cache/shape/地址合同，以 NVIDIA GPU 的 MRV2 为主；具体 IR 变换归25，Kernel计算归24，Runner异步组织归15/16，Attention Backend选择归14。
+> **适用范围**：本页拥有 compile/graph/cache/shape/地址合同，以 NVIDIA GPU 的 MRV2 为主；具体 IR 变换归21，Kernel计算归20，Runner异步组织归11/12，Attention Backend选择归10。
 > **最近更新**：2026-09-08。重核当前源码与测试，补最小 batch 示例、分层回退及诊断限制。
 
 ## 1. 三个请求各生成一个 token，为什么还需要两种图？
 
 设普通文本请求 A、B、C 都处于 decode，本步各计算一个 token，下一步 C 结束，只剩 A、B。直接执行模型当然能处理这种变化，但每一步都会再次经过框架调度算子和提交 GPU 工作；小 batch 的计算越短，这些固定开销越可能显眼。vLLM 的选择是把动态 token 数交给有限的编译区间，把可重复的设备 launch 交给按容量捕获的 CUDA Graph，而请求本身仍按步变化。
 
-**编译产物回答“执行什么代码”，CUDA Graph 回答“使用哪些地址重放哪串设备工作”。** `torch.compile` 接收计算图并可能生成融合或 shape 特化的 callable，减少框架执行开销，也可能减少中间访存和 kernel launch；CUDA Graph 在已经确定的 callable 外记录实际 launch，重放时进一步减少 CPU 逐个提交的开销。二者都不消除必须执行的模型数学计算；具体融合收益由 [[24_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]] 解释。
+**编译产物回答“执行什么代码”，CUDA Graph 回答“使用哪些地址重放哪串设备工作”。** `torch.compile` 接收计算图并可能生成融合或 shape 特化的 callable，减少框架执行开销，也可能减少中间访存和 kernel launch；CUDA Graph 在已经确定的 callable 外记录实际 launch，重放时进一步减少 CPU 逐个提交的开销。二者都不消除必须执行的模型数学计算；具体融合收益由 [[20_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]] 解释。
 
 ### 1.1 同一份三 token 输入的两种收敛
 
@@ -24,7 +24,7 @@ title: "vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕�
 3. **下一步**：只剩 A、B 时选择已捕获容量2，而不是在容量4图里临时改 launch 形状。各容量的 entry 使用 capture 时对应的持久 storage；值与请求身份可以更新，地址不能随意重分配。
 4. **同为三 token 的另一批**：A 做2 token prefill、B 做1 token decode，`uniform_token_count=None`，因此不能误用 uniform decode FULL；它仍可进入容量4的 PIECEWISE。若调度出5 token，超出本例 capture ladder，manager 返回 graph `NONE`，但5×H仍可由 `[5,8]` compiled callable 执行。
 
-这里的 H 是模型隐藏宽度；本页只画模型区的有效行数，输出图中的 A/B/C 指对应 hidden-state 行，后续选取 logits 与采样由 Runner 和 [[18_vllm_sampling_structured_output_analysis|采样页]] 负责。padding 不制造额外用户请求，也不保证没有额外 GPU 计算。
+这里的 H 是模型隐藏宽度；本页只画模型区的有效行数，输出图中的 A/B/C 指对应 hidden-state 行，后续选取 logits 与采样由 Runner 和 [[14_vllm_sampling_structured_output_analysis|采样页]] 负责。padding 不制造额外用户请求，也不保证没有额外 GPU 计算。
 
 ### 1.2 图 1：形状可变，代码区间与捕获容量有限
 
@@ -56,7 +56,7 @@ flowchart TB
     class U,O1,O2,O3 acc2
 ```
 
-图中分段不是指这三行被分到不同设备，而是同一批输入依次通过的模型算子区域。安全段内部具体如何融合、是否生成不同 kernel 由编译器和 [[25_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] 决定，图没有声称“一段等于一个 kernel”。
+图中分段不是指这三行被分到不同设备，而是同一批输入依次通过的模型算子区域。安全段内部具体如何融合、是否生成不同 kernel 由编译器和 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] 决定，图没有声称“一段等于一个 kernel”。
 
 早期设计把 full graph 与整图 compilation 绑在一起，导致任一不支持 capture 的 attention 都牵动整条快路径；`docs/design/cuda_graphs.md` 的 Motivation 明确记载这种取舍。当前将代码版本和 capture case 分离：同一 symbolic range 可以覆盖多种 token 数，同一组 compiled pieces 可参与 full 或 piecewise capture。
 
@@ -93,9 +93,9 @@ flowchart TB
 
 ### 3.2 先解析能力，再建立快路径
 
-不是任何“不兼容”都自动回退。`CompilationConfig.resolve_cudagraph_mode_and_sizes` 对用户请求 mixed FULL、但 backend 的能力是 `NEVER` 时直接抛 `ValueError`；若 backend 只支持 decode，才依据 splitting policy 把 mixed FULL 改为 `FULL_AND_PIECEWISE` 或 `FULL_DECODE_ONLY`。decode FULL 不支持时，则视 piecewise 编译条件降为 `PIECEWISE` 或 `NONE`。能力声明与候选 backend 验证见 [[14_vllm_attention_backends_analysis|Attention Backend]]；这里拥有声明怎样改变 capture 策略。
+不是任何“不兼容”都自动回退。`CompilationConfig.resolve_cudagraph_mode_and_sizes` 对用户请求 mixed FULL、但 backend 的能力是 `NEVER` 时直接抛 `ValueError`；若 backend 只支持 decode，才依据 splitting policy 把 mixed FULL 改为 `FULL_AND_PIECEWISE` 或 `FULL_DECODE_ONLY`。decode FULL 不支持时，则视 piecewise 编译条件降为 `PIECEWISE` 或 `NONE`。能力声明与候选 backend 验证见 [[10_vllm_attention_backends_analysis|Attention Backend]]；这里拥有声明怎样改变 capture 策略。
 
-`enforce_eager=True` 在 `VllmConfig.__post_init__` 中**同时设置** `CompilationMode.NONE` 与 `CUDAGraphMode.NONE`，并输出 warning。它是恢复普通执行的宽开关：如果问题消失，只能缩小到这两类优化及相关交互，不能单凭这个结果认定是 CUDA Graph、编译 pass 或缓存哪一个出错。只隔离 graph 时应保持原 compile 配置而令 `cudagraph_mode=NONE`；只隔离 compilation 则还必须确认 graph mode 的 resolved 结果，因为普通 PIECEWISE 依赖 `VLLM_COMPILE`，配置可能连 graph 一并关闭。`TORCH_COMPILE_DISABLE=1` 只先关闭 compile，后续兼容性规则仍会解析 graph。操作过程见 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]。
+`enforce_eager=True` 在 `VllmConfig.__post_init__` 中**同时设置** `CompilationMode.NONE` 与 `CUDAGraphMode.NONE`，并输出 warning。它是恢复普通执行的宽开关：如果问题消失，只能缩小到这两类优化及相关交互，不能单凭这个结果认定是 CUDA Graph、编译 pass 或缓存哪一个出错。只隔离 graph 时应保持原 compile 配置而令 `cudagraph_mode=NONE`；只隔离 compilation 则还必须确认 graph mode 的 resolved 结果，因为普通 PIECEWISE 依赖 `VLLM_COMPILE`，配置可能连 graph 一并关闭。`TORCH_COMPILE_DISABLE=1` 只先关闭 compile，后续兼容性规则仍会解析 graph。操作过程见 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]。
 
 GPU worker 的 `compile_or_warm_up_model` 先补齐未被 capture 覆盖的 compile size/range warmup，再做 kernel warmup，随后 `capture_model()`。MRV2 manager 对计划 descriptors 先以 graph `NONE` 预热，按 PIECEWISE 后 FULL 的顺序 capture，全部成功后才标记 `_graphs_captured=True`。默认 piecewise 路径进入模型内的 wrapper；breakable 路径则先初始化 `BreakableCUDAGraphWrapper`，由它串联 graph segments 与 eager breaks。不能把所有 PIECEWISE 都画成 generic wrapper。
 
@@ -119,7 +119,7 @@ GPU worker 的 `compile_or_warm_up_model` 先补齐未被 capture 覆盖的 comp
 
 `splitting_ops` 的职责是把 CUDA-Graph-unsafe op 留在 piece 外：默认路径在 Dynamo FX 图上 split；`use_inductor_graph_partition` 则等 passes / fusions 完成后才在 codegen 阶段按规则 partition。后者让 full 与 piecewise 共用一次 compilation：piecewise wrapper 包住各安全 partition，full wrapper 位于整个 call 外并忽略内部 partition。
 
-这个设计胜过“任一 unsafe op 让整图 eager”，代价是 boundary 本身必须正确表达 alias 与副作用。哪些 op 必须 split、donation / functionalization 怎样维护语义属于 [[25_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]]；本页只拥有由该结果产生的 compile / capture 区域与生命周期。当前配置还会因 sequence parallelism、attention fusion、KV update 或 DeepEP 兼容性改写 splitting / graph mode，并给出 warning 或关闭 graph。
+这个设计胜过“任一 unsafe op 让整图 eager”，代价是 boundary 本身必须正确表达 alias 与副作用。哪些 op 必须 split、donation / functionalization 怎样维护语义属于 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]]；本页只拥有由该结果产生的 compile / capture 区域与生命周期。当前配置还会因 sequence parallelism、attention fusion、KV update 或 DeepEP 兼容性改写 splitting / graph mode，并给出 warning 或关闭 graph。
 
 ## 5. Compile lifecycle：cache 是代码状态，失效由 hash 驱动
 
@@ -153,7 +153,7 @@ pool 共享不是单纯省显存技巧，它把 entry 的存活、output storage
 
 启动显存预算不能只考虑权重和 KV。MRV2 `profile_cudagraph_memory` 在真实 KV 分配前建立最小 KV，使用 throwaway pool，完整测量 PIECEWISE/encoder/speculator、对最大的少数 FULL 图抽样并外推其余开销。返回值是容量估计，不能当作全部真实 graphs 的逐项测量。成功或 capture 异常都会执行清理：清空两类 wrapper 的图、恢复计数与 pool、丢弃 profiling managers，并清掉 KV/attention/Mamba 临时状态。模型权重保留；异常继续向上传播，没有“capture失败自动改eager”的通用事务回滚。
 
-通用 wrapper 在 capture 前等待 offloader 既有预取，capture 内 forward 后 join copy stream，replay 前也等待 offloader。调用 `replay()` 返回及拿到引用只说明设备工作已按相应stream提交，不等于 CPU 已经观察到数值完成；Runner 的结果消费与异步边界继续阅读 [[16_vllm_model_runner_v2_analysis|Model Runner V2]]。共享 pool 的单stream TODO 仍存在，不能据此保证任意多stream并发安全。
+通用 wrapper 在 capture 前等待 offloader 既有预取，capture 内 forward 后 join copy stream，replay 前也等待 offloader。调用 `replay()` 返回及拿到引用只说明设备工作已按相应stream提交，不等于 CPU 已经观察到数值完成；Runner 的结果消费与异步边界继续阅读 [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。共享 pool 的单stream TODO 仍存在，不能据此保证任意多stream并发安全。
 
 ## 7. Runtime dispatch：manager miss 返回 NONE，wrapper 按 capture guard 填表
 
@@ -165,7 +165,7 @@ pool 共享不是单纯省显存技巧，它把 entry 的存活、output storage
 2. **PIECEWISE**：runner 建立 forward context 后调用 model；Dynamo splitting 会以 `PIECEWISE` generic wrapper 包住 compiled partitions。wrapper mode 不匹配时直接跑 runnable；mode 匹配时，entry hit replay，entry miss 则先检查 `validate_cudagraph_capturing_enabled()`，仅允许 capture 的上下文才创建实际 graph、当场 capture 并返回这次 capture 的输出，unsafe boundary 仍正常调用；guard关闭时抛 `RuntimeError`，不是自动回退。breakable 路径则由另一 wrapper 串联 graph segments 与 eager breaks。
 3. **NONE**：runner 调用 `self.model(**model_inputs)`，不做 graph capture/replay；若该模型已被 compile wrapper 装饰，仍可执行 compiled callable。只有全局禁 compile 或 `skip_compiled=True` 等条件，才绕过这层编译。
 
-分布式场景还多一条不变量：DP ranks 必须对 mode 和 padded token capacity 达成一致；任一 rank 要求 graph `NONE` 时所有 rank 都不做 graph，否则 collective 与 graph launch 顺序可能分叉。新基线 `num_ubatches` 也是相容性条件；当前 MRV2 微批路径尚未 capture，DP 各 rank 要一致同意微批拆分并使用 graph `NONE`。这类跨 rank 同步语义由 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] 展开，本页只保留 dispatch 接缝。
+分布式场景还多一条不变量：DP ranks 必须对 mode 和 padded token capacity 达成一致；任一 rank 要求 graph `NONE` 时所有 rank 都不做 graph，否则 collective 与 graph launch 顺序可能分叉。新基线 `num_ubatches` 也是相容性条件；当前 MRV2 微批路径尚未 capture，DP 各 rank 要一致同意微批拆分并使用 graph `NONE`。这类跨 rank 同步语义由 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] 展开，本页只保留 dispatch 接缝。
 
 ## 8. Invalidation 与 fallback：不要把“还能跑”误写成“graph 仍有效”
 
@@ -201,7 +201,7 @@ pool 共享不是单纯省显存技巧，它把 entry 的存活、output storage
 
 新基线还在真实 capture 前检查 Mamba decode 的 block 数：启用 FULL、存在 Mamba 层且 `max_num_seqs > num_blocks` 时抛 `ValueError`，要求减小请求上限或增加可用显存；profiling 阶段跳过这一检查。它说明“已成功选出 backend”仍不等于 capture 所需状态容量已成立。
 
-旧系统设计页的耦合关系在这里具体落为：[[11_vllm_scheduler_analysis|Scheduler]] 的每步 token 计划先受 [[12_vllm_kv_cache_management_analysis|KV admission]] 限制，Runner 再把该实际计划转为本页的 padded descriptor；异步返回不允许偷换持久 buffer 的使用时序，capture 预算也会挤压可留给 KV 的容量。这是从各接口重建的分析关系，并不是四个机制必须同时打开的配置要求。信号定义由 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 负责，单项指标不是根因证明。
+旧系统设计页的耦合关系在这里具体落为：[[07_vllm_scheduler_analysis|Scheduler]] 的每步 token 计划先受 [[08_vllm_kv_cache_management_analysis|KV admission]] 限制，Runner 再把该实际计划转为本页的 padded descriptor；异步返回不允许偷换持久 buffer 的使用时序，capture 预算也会挤压可留给 KV 的容量。这是从各接口重建的分析关系，并不是四个机制必须同时打开的配置要求。信号定义由 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]] 负责，单项指标不是根因证明。
 
 ## 10. 有锚点的发展方向
 
@@ -228,9 +228,9 @@ pool 共享不是单纯省显存技巧，它把 entry 的存活、output storage
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照多义 dummy/capture 与显式 graph lifecycle；本页拥有两条 runner 之上的 compile / capture 策略。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 full / piecewise 能力求交所消费的 metadata 与 graph-support 合同。
-- [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 权威解释 splitting boundary 内 alias、functionalization、donation 与 pass 顺序为何语义正确。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 解释 compiled graph 最终选择或生成的 provider / Kernel 及其 launch、访存收益。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 说明 dynamic draft width、verification query length 与 graph descriptor 的一跳合同。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 展开 DP / TP ranks 为何必须对 graph mode、padding 与 collective launch 顺序达成一致。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照多义 dummy/capture 与显式 graph lifecycle；本页拥有两条 runner 之上的 compile / capture 策略。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 full / piecewise 能力求交所消费的 metadata 与 graph-support 合同。
+- [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 权威解释 splitting boundary 内 alias、functionalization、donation 与 pass 顺序为何语义正确。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 解释 compiled graph 最终选择或生成的 provider / Kernel 及其 launch、访存收益。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 说明 dynamic draft width、verification query length 与 graph descriptor 的一跳合同。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 展开 DP / TP ranks 为何必须对 graph mode、padding 与 collective launch 顺序达成一致。

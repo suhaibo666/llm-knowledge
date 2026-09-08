@@ -25,7 +25,7 @@ $$
 
 比 copy 本身更难的是所有权：P 的 block 在远端读取结束前不能被复用，D 的 block 在数据有效前不能进入 attention。两边的请求到达顺序也可能不同，因此需要按身份查找，不能靠 FIFO 配对；仓库 `vllm/distributed/kv_transfer/README.md` 说明了这个动机，其中早期 pipe/lookup 抽象不等同于当前 V1 factory API。
 
-本页拥有跨 Engine 身份、transfer groups、数据与控制交接、完成和回收。单 Engine block allocator 与 prefix cache 归 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12]]，实例入口和路由归 [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|17]]。
+本页拥有跨 Engine 身份、transfer groups、数据与控制交接、完成和回收。单 Engine block allocator 与 prefix cache 归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]，实例入口和路由归 [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|13]]。
 
 ## 2. 身份相同、协议兼容、布局可变换是三种检查
 
@@ -43,7 +43,7 @@ NIXL 先解码 `NixlHandshakePayload` 外层兼容 hash，通过检查后再解�
 
 运行期检查也不是“任意异构均可”：DCP 大小必须互相整除；异构 block size 不支持 host buffer；部分 TP 与 KV replication 组合不支持；非 MLA 的 layout 通常须相同，实验性 LBHNC 到本地布局转换还受 HMA 限制；Mamba 的 physical/logical 比异构且启用 prefix caching 会拒绝。正确条件是**此模型/后端组合存在被实现的映射**，而非全部尺寸逐项相等。源码入口：`nixl/metadata.py::compute_nixl_compatibility_hash/NixlAgentMetadata`、`nixl/base_worker.py::_nixl_handshake/_validate_remote_agent_handshake`，均位于 `vllm/distributed/kv_transfer/kv_connector/v1/`。
 
-这个 hash **没有运行期 `weight_version`**。token 一样、握手通过仍不证明两端持有同一轮训练权重；更新版本和缓存清理的接缝见 §8 与 [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29：权重传输与在线更新]]。
+这个 hash **没有运行期 `weight_version`**。token 一样、握手通过仍不证明两端持有同一轮训练权重；更新版本和缓存清理的接缝见 §8 与 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25：权重传输与在线更新]]。
 
 ## 3. 只交接可传输组，并把本地 ownership 投影给 connector
 
@@ -105,7 +105,7 @@ flowchart LR
 6. `vllm/distributed/kv_transfer/kv_connector/utils.py::KVOutputAggregator` 按 expected finished count 跨 worker/step 聚合 send/receive 完成，并合并错误。默认 count 来自 connector 或 world size，也可由 worker 输出更新；不是固定“收到 rank 0 就算全部完成”。
 7. `Scheduler.update_from_output` 先 `_handle_invalid_blocks` 撤销失败区间的 computed 假设，末段 `_update_from_kv_xfer_finished` 接收完成集合；下步 `_try_promote_blocked_waiting_request` 才将 consumer 晋升。producer 的 `finished_sending` 则调用 `_free_blocks`。已经结束的 consumer 仍要等接收结束才释放被 I/O 持有的目标。
 
-所以 `finished_recving` 是**这笔接收可进入收尾**，不是单独的成功证明：失败也需要这个信号才能让 waiting 请求退出。正常成功还要求错误集为空且各实现的数据后处理完成。一般 block 生命周期详见 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12]]，调度规则详见 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|11]]。
+所以 `finished_recving` 是**这笔接收可进入收尾**，不是单独的成功证明：失败也需要这个信号才能让 waiting 请求退出。正常成功还要求错误集为空且各实现的数据后处理完成。一般 block 生命周期详见 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]，调度规则详见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07]]。
 
 ## 5. 直连的三条路径：谁发起数据，谁归还完成证据
 
@@ -217,11 +217,11 @@ worker 以 `max(old_expiry, now + lease_extension)` 续期；pull 路径还将 S
 
 失败策略由 `KVTransferConfig.kv_load_failure_policy` 选择，**默认 `fail`**。`recompute` 先撤销失败 block 及其后续 computed 前缀，等待接收收尾后重算；`fail` 将受影响请求以 KV transfer error 结束。同步 load 还涉及已发布共享 prefix 的处理；详情由 `Scheduler._handle_invalid_blocks/_update_requests_with_invalid_blocks` 和对应测试约束，不能把异步算例外推到所有共享块。
 
-当前支持边界必须保留：`nixl/base_worker.py::_handle_failed_transfer` 对 HMA 仍有 TODO，只有非 HMA 分支向 invalid block 队列填入目标 IDs。首次 multi-read 失败可先报告请求失败，其他 handle 后续继续清理。因此“通用协议需要错误失效”是合同，不能写成“所有 hybrid group 的自动恢复已经完整实现”；也不能把失败 `finished_recving` 泛化为所有底层 handle 都已成功或清空。进程失联与具体故障观测归 [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|27]]。
+当前支持边界必须保留：`nixl/base_worker.py::_handle_failed_transfer` 对 HMA 仍有 TODO，只有非 HMA 分支向 invalid block 队列填入目标 IDs。首次 multi-read 失败可先报告请求失败，其他 handle 后续继续清理。因此“通用协议需要错误失效”是合同，不能写成“所有 hybrid group 的自动恢复已经完整实现”；也不能把失败 `finished_recving` 泛化为所有底层 handle 都已成功或清空。进程失联与具体故障观测归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|23]]。
 
 ## 8. 权重更新、后台 job 与真正清空的边界
 
-布局兼容不是权重版本一致。更新同名模型权重后，NIXL compatibility hash 不会自动表达一次新的 runtime epoch；Mooncake 的默认键也不能凭 model 名推导权重更新。调用方需要遵循部署的版本/namespace 与 drain/reset 协议，具体更新链见 [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29]]。
+布局兼容不是权重版本一致。更新同名模型权重后，NIXL compatibility hash 不会自动表达一次新的 runtime epoch；Mooncake 的默认键也不能凭 model 名推导权重更新。调用方需要遵循部署的版本/namespace 与 drain/reset 协议，具体更新链见 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]]。
 
 `Scheduler.reset_connector_cache` 只把显式 `False` 视为失败；基类 `KVConnectorBase_V1.reset_cache` 不实现清理时返回 `None`，仍会被 Scheduler 视为成功。`EngineCore._reset_caches` 又未消费 `reset_prefix_cache` 的 bool。因此 pause 完成或通用 reset 返回不能证明任意外部 KV 存储已经清空。
 
@@ -248,9 +248,9 @@ Mooncake 是显式实现的例子：`MooncakeStoreConnector.reset_cache` 转到 
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 单 Engine block table、引用与 prefix cache 的权威页；本页只拥有跨 Engine 临时持有。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — external hit 如何进入 admission、waiting 与失败重算。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 目标 KV 被 attention 读取前的 layer/layout 同步边界。
-- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — P/D 实例路由、进程拓扑与请求生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP/PP/DP shard 身份与跨 Engine transfer 的正交关系。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — transfer latency、lease expiry、invalid blocks 与故障注入的观测面。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 单 Engine block table、引用与 prefix cache 的权威页；本页只拥有跨 Engine 临时持有。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] — external hit 如何进入 admission、waiting 与失败重算。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 目标 KV 被 attention 读取前的 layer/layout 同步边界。
+- [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — P/D 实例路由、进程拓扑与请求生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP/PP/DP shard 身份与跨 Engine transfer 的正交关系。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — transfer latency、lease expiry、invalid blocks 与故障注入的观测面。

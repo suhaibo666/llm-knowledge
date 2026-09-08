@@ -1,10 +1,12 @@
 # vLLM 第一批：读者入口交付与迁移记录
 
+> 编号说明（2026-09-08 后续整理）：本文记录交付过程，正文中的裸编号保留当时口径；文件名、链接路径已同步为连续编号后的当前值，当前导航以 vLLM 域索引为准。
+
 日期：2026-09-08。此文件是本批次工作记录与后续核验清单；页面内容与当前导航仍以 `wiki/02_engineering/03_infer_frameworks/vllm/` 为唯一权威。
 
 ## 范围与源码基线
 
-用户要求按既有规划完成第一批 A/B/C：使用、性能评测调优、调试与可靠性。本批保留原路径，重构 `01`，新增 `05_vllm_performance_tuning_guide.md` 与 `06_vllm_debugging_troubleshooting_guide.md`，核验并调整 `27` 的机制边界；`03` 只补读者入口链接。
+用户要求按既有规划完成第一批 A/B/C：使用、性能评测调优、调试与可靠性。本批保留原路径，重构 `01`，新增 `04_vllm_performance_tuning_guide.md` 与 `05_vllm_debugging_troubleshooting_guide.md`，核验并调整 `27` 的机制边界；`03` 只补读者入口链接。
 
 附件规划中的 `6b110badbb22d3f66c7218b71138f13b7a6b3419` 是旧基线。开始时工作区 `03`、域索引及 changelog 已记录重构统一采用 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`；用户提供的 `/Users/suhaibo/97-llm/vllm` HEAD 正好匹配且工作树干净，因此沿用这一已确立基线。源码没有 fetch、checkout 或改写。其余 21 篇仍保留旧基线；本批没有更新全域 radar baseline。
 
@@ -94,9 +96,9 @@
 | page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
 |---|---|---|---|---|---|---|---|---|
 | 01_vllm_feature_optimizations_guide | pass | pass | pass | none | n/a | 3/3 | PASS | 05作者复核：安装→离线→在线→流式与默认/硬上限 |
-| 05_vllm_performance_tuning_guide | pass | pass | pass | none | n/a | 3/3 | PASS | 协调者复核：实证操作指南，算法归机制页；A/B/回滚与代价闭合 |
-| 06_vllm_debugging_troubleshooting_guide | pass | pass | pass | none | n/a | 3/3 | PASS | 01作者复核：两类容量错误、Profiler路由与health局限 |
-| 27_vllm_observability_reliability_analysis | pass | pass | pass | timing, transform | pass | 3/3 | PASS | 06作者复核并查看两张渲染图 |
+| 04_vllm_performance_tuning_guide | pass | pass | pass | none | n/a | 3/3 | PASS | 协调者复核：实证操作指南，算法归机制页；A/B/回滚与代价闭合 |
+| 05_vllm_debugging_troubleshooting_guide | pass | pass | pass | none | n/a | 3/3 | PASS | 01作者复核：两类容量错误、Profiler路由与health局限 |
+| 23_vllm_observability_reliability_analysis | pass | pass | pass | timing, transform | pass | 3/3 | PASS | 06作者复核并查看两张渲染图 |
 
 正式抽查锚点：
 

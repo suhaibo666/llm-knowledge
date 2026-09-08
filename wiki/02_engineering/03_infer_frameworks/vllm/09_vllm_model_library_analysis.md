@@ -44,7 +44,7 @@ vLLM 将这三个选择分开：**Registry 选择模型类，构造器建立当�
 
 inspection 先查模型源码 hash 对应的文件缓存。没有命中时，在子进程导入并提取能力，避免模型导入初始化父进程 CUDA。当前基线还支持 `vllm.models.*` 等完整模块路径；若入口是 package 的 `__init__.py`，hash 纳入其目录下所有 Python 子模块，避免只检查导出文件而漏掉实现变化。对应测试同时覆盖 package cache 与“inspection 后 CUDA 仍未初始化”。缓存不是 checkpoint 内容校验，也不证明所有外部依赖兼容。
 
-外部 `register_model()` 接受真正的 `nn.Module` 子类，或 `module:class` 字符串；字符串形式保留懒导入，错误类型或格式会被拒绝，重复 architecture 会覆盖登记。插件如何被发现及在哪个进程调用注册，接续 [[28_vllm_extension_plugin_system_analysis|插件与扩展边界]]；本页负责注册后的类选择。
+外部 `register_model()` 接受真正的 `nn.Module` 子类，或 `module:class` 字符串；字符串形式保留懒导入，错误类型或格式会被拒绝，重复 architecture 会覆盖登记。插件如何被发现及在哪个进程调用注册，接续 [[24_vllm_extension_plugin_system_analysis|插件与扩展边界]]；本页负责注册后的类选择。
 
 ### 2.3 “支持”意味着下游可以调用哪些方法
 
@@ -52,9 +52,9 @@ inspection 先查模型源码 hash 对应的文件缓存。没有命中时，在
 |---|---|---|
 | 生成与 pooling | Registry 提取相应能力；Qwen2 的 `forward()` 返回隐藏状态，`compute_logits()` 另行投影 | 类可实例化不等于已运行生成；还要有 runner 消费这些接口 |
 | `SupportsPP` | `make_empty_intermediate_tensors` 与接收 `intermediate_tensors` 的 `forward()` | 当前 stage 必须能接收/交出中间状态，构造也必须只保留所属层 |
-| `SupportsMultiModal` | `embed_multimodal()` 按输入项在 prompt 中的顺序产生 embedding，`embed_input_ids()` 合并文本和多模态 embedding；另有 placeholder 与处理器接缝 | 视觉塔、语言模型仍要各自带稳定前缀；多模态数据处理和设备执行见 [[19_vllm_multimodal_execution_analysis|多模态执行]] |
+| `SupportsMultiModal` | `embed_multimodal()` 按输入项在 prompt 中的顺序产生 embedding，`embed_input_ids()` 合并文本和多模态 embedding；另有 placeholder 与处理器接缝 | 视觉塔、语言模型仍要各自带稳定前缀；多模态数据处理和设备执行见 [[15_vllm_multimodal_execution_analysis|多模态执行]] |
 | `SupportsLoRA` | 支持声明、`packed_modules_mapping`、`embedding_modules` 及实例 manager 接缝 | adapter 名称必须能找到实际可包装的基础层，详见第 7 节 |
-| `SupportsQuant` | 向量化配置传递 rename-only mapper 和 packed module mapping | 保留原 projection 名让逐层量化配置命中，再由层创建相应参数；数值算法归 [[21_vllm_quantization_analysis|量化派发]] |
+| `SupportsQuant` | 向量化配置传递 rename-only mapper 和 packed module mapping | 保留原 projection 名让逐层量化配置命中，再由层创建相应参数；数值算法归 [[17_vllm_quantization_analysis|量化派发]] |
 
 Llama 和 Qwen2 都采用这些共同构造/加载接口并声明 LoRA、PP、量化支持，Llama 还明确提供输入 embedding 与 LM head 的 LoRA 名称表。它们是同一接口的不同实例，不需要在此平铺所有模型结构。registry 的全架构 import/能力测试与初始化测试的代表模型子集也体现这一点；测试包含平台、依赖版本等 skip 条件，不能据此声称每个架构在每台设备都实跑通过。
 
@@ -133,14 +133,14 @@ flowchart TB
 
 图中切片是视图选择，最后才向目标 parameter view 执行 `copy_`。不需要先分配全局融合矩阵。本地 QKV 比例不一定相等，Qwen2 前向也明确按 `q_size, kv_size, kv_size` 拆分；MLP 则对融合输出做 `SiluAndMul`，之后进入 down projection。融合参数保留的是投影边界，不是消除投影身份。
 
-在普通非量化权重上，层会安装 v2 weight loader，最终落入 `ModelWeightParameter` 所继承的 column/row parameter 方法。QKV 层算本地 offset/size，parameter 方法同时 narrow 目标段与 checkpoint 的当前 rank 行，断言形状后复制；旧式 parameter loader 仍存在，使用参数上的维度属性执行同类选择。名称末尾相同不表示所有量化参数布局相同，packed bit/scale 布局另由 [[21_vllm_quantization_analysis|量化页]] 解释。
+在普通非量化权重上，层会安装 v2 weight loader，最终落入 `ModelWeightParameter` 所继承的 column/row parameter 方法。QKV 层算本地 offset/size，parameter 方法同时 narrow 目标段与 checkpoint 的当前 rank 行，断言形状后复制；旧式 parameter loader 仍存在，使用参数上的维度属性执行同类选择。名称末尾相同不表示所有量化参数布局相同，packed bit/scale 布局另由 [[17_vllm_quantization_analysis|量化页]] 解释。
 
 两个变体仍要守住同一规则：
 
 - **KV head 少于 TP rank 数**：例如改成 1 个 KV head、仍 TP=2。Q 仍各取 4 行，两个 rank 的 K/V 都取唯一 head 的 2 行。实现用 `tp_rank // num_kv_head_replicas` 选 K/V 来源，避免错误地向不存在的第二个 KV head 分片。Q head 必须能被 TP 整除；KV head 与 TP 也必须满足分片或复制的整除条件。
 - **磁盘上已经融合**：`shard_id=None` 时，QKV loader 先按全局 Q/K/V 边界切开 checkpoint，再递归到上面的独立 shard 路径；Merged loader 同样拆 constituent。它仍不是对整块融合矩阵直接均分。Merged 还支持连续 tuple shard id；越界或非连续组合拒绝，QKV 则只接受 `q/k/v/None`。
 
-普通 column parallel 的参数沿输出维切，前向保留本地输出，只有 `gather_output=True` 才 all-gather。Row parallel 参数沿输入维切：本例 down 的全局 8×12 变成本地 8×6，每个 rank 对自己的 6 维激活计算部分输出，默认 all-reduce 得到完整输出；bias 只在 rank 0 加一次。`input_is_parallel=False` 时层先切输入，`reduce_results=False` 又要求不直接重复加 bias。这里解释参数布局与消费它的运算如何对应，分组构造和 collective ordering 接续 [[22_vllm_distributed_inference_analysis|分布式推理]]。
+普通 column parallel 的参数沿输出维切，前向保留本地输出，只有 `gather_output=True` 才 all-gather。Row parallel 参数沿输入维切：本例 down 的全局 8×12 变成本地 8×6，每个 rank 对自己的 6 维激活计算部分输出，默认 all-reduce 得到完整输出；bias 只在 rank 0 加一次。`input_is_parallel=False` 时层先切输入，`reduce_results=False` 又要求不直接重复加 bias。这里解释参数布局与消费它的运算如何对应，分组构造和 collective ordering 接续 [[18_vllm_distributed_inference_analysis|分布式推理]]。
 
 ### 4.4 共享 embedding 要按同一个对象处理
 
@@ -239,7 +239,7 @@ worker `_load_adapter()` 展开 expected module 集合，读取并验证 PEFT co
 
 基础 manager 注册容量用尽报 `No free adapter slots`，激活找不到设备空位报 `No free lora slots`；LRU manager 是不同的活跃策略，不能把前者外推成全部 manager 都不淘汰。设备 slot 写入与 mapping 更新也不是自动回滚事务，失败前可能已有局部修改。
 
-本页到 adapter 已登记并可激活、目标 module/slot 合法存在为止。某一步哪些 token 选择哪个 adapter、slot 重排后 mapping 如何对设备生效，接续 [[15_vllm_model_runner_v1_analysis|Model Runner V1]] 和 [[16_vllm_model_runner_v2_analysis|Model Runner V2]]。
+本页到 adapter 已登记并可激活、目标 module/slot 合法存在为止。某一步哪些 token 选择哪个 adapter、slot 重排后 mapping 如何对设备生效，接续 [[11_vllm_model_runner_v1_analysis|Model Runner V1]] 和 [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。
 
 ## 8. 从症状回到源码
 
@@ -259,10 +259,10 @@ worker `_load_adapter()` 展开 expected module 集合，读取并验证 PEFT co
 
 ## Related Pages
 
-- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 将模型库放回配置、Engine、Executor 与设备执行的整体关系。
-- [[14_vllm_attention_backends_analysis|Attention Backend]] — 接续模型层构造出的 attention 对象如何选择实现并消费 metadata/KV layout。
-- [[15_vllm_model_runner_v1_analysis|Model Runner V1]] — 解释模型返回之后的 batch、buffer 与当步 LoRA mapping。
-- [[16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照持久设备状态如何消费相同的可执行模型接口。
-- [[21_vllm_quantization_analysis|量化派发]] — 深入量化参数、scale、后处理和 kernel 格式，承接本页加载接缝。
-- [[22_vllm_distributed_inference_analysis|分布式推理]] — 解释本页并行层依赖的 TP/PP 分组与通信执行。
-- [[28_vllm_extension_plugin_system_analysis|插件与扩展边界]] — 解释外部 model/loader 注册之前的插件发现与初始化。
+- [[02_vllm_architecture_overview_analysis|vLLM 架构概览]] — 将模型库放回配置、Engine、Executor 与设备执行的整体关系。
+- [[10_vllm_attention_backends_analysis|Attention Backend]] — 接续模型层构造出的 attention 对象如何选择实现并消费 metadata/KV layout。
+- [[11_vllm_model_runner_v1_analysis|Model Runner V1]] — 解释模型返回之后的 batch、buffer 与当步 LoRA mapping。
+- [[12_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照持久设备状态如何消费相同的可执行模型接口。
+- [[17_vllm_quantization_analysis|量化派发]] — 深入量化参数、scale、后处理和 kernel 格式，承接本页加载接缝。
+- [[18_vllm_distributed_inference_analysis|分布式推理]] — 解释本页并行层依赖的 TP/PP 分组与通信执行。
+- [[24_vllm_extension_plugin_system_analysis|插件与扩展边界]] — 解释外部 model/loader 注册之前的插件发现与初始化。

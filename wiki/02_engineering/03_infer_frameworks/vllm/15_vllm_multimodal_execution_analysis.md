@@ -259,9 +259,9 @@ Scheduler 的 EC connector 可先用 `ensure_cache_available()` 将尚未可用�
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — 从 chat/render 与公开任务字段接到本页的 prompt、媒体对象和显式 embedding。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 展开一般 admission、KV 容量、preemption 和计划回退；本页提供 encoder 对 token 窗口的限制。
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型库]] — 接续模型注册、构造、权重和 embedding 接口；具体 VLM tower/projector 内部仍在本页范围外。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] — 对照 compact batch 如何承载相同的媒体缓存与切片规则。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 接续 stable row、ModelState、设备 step 和输出发布。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 展开 drafter lookahead 的边界回退及 target 验证，本页只确定媒体 tensor 在何处必须存在。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|vLLM 请求语义]] — 从 chat/render 与公开任务字段接到本页的 prompt、媒体对象和显式 embedding。
+- [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] — 展开一般 admission、KV 容量、preemption 和计划回退；本页提供 encoder 对 token 窗口的限制。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型库]] — 接续模型注册、构造、权重和 embedding 接口；具体 VLM tower/projector 内部仍在本页范围外。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] — 对照 compact batch 如何承载相同的媒体缓存与切片规则。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] — 接续 stable row、ModelState、设备 step 和输出发布。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 展开 drafter lookahead 的边界回退及 target 验证，本页只确定媒体 tensor 在何处必须存在。

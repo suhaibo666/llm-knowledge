@@ -12,20 +12,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-08：vLLM 25 篇正文统一为连续编号
+
+- 按重构后的既有相对顺序压缩编号：`01` 保持不变，原 `03–06` 改为 `02–05`，原 `10–12` 改为 `06–08`，原 `13–29` 改为 `09–25`；正文主题、页面边界和阅读依赖不变。
+- 同步重命名 24 个文件，更新 vLLM 域索引中的 25 个编号显示名，以及 README、其他域索引、跨页 wikilink、研究记录和配图测试中的实际路径。vLLM 仍为 25 篇正文加 index，父索引与总索引的页面数不变。
+- 旧版 `02_vllm_system_design_principles_analysis.md` 仍保持合并删除状态；新的 02 号页是架构概览，不恢复旧系统设计原则页。全库旧文件名搜索与质量门禁结果随本次提交记录。
+
 ## 2026-09-08：vLLM 三批最终整合完成
 
 - 接收第三批八篇系统专题：Serving、分布式、编译/CUDA Graph、融合算子、IR Pass、跨实例KV、插件和在线更新；各页已通过非作者复核。三批共24篇，加先前架构样稿，共25篇有效正文；沿用原路径与编号。
-- 删除完成迁移的旧 `02_vllm_system_design_principles_analysis.md`：全局动机归 [[03_vllm_architecture_overview_analysis|架构概览]]，连续调度归 [[11_vllm_scheduler_analysis|Scheduler]]，分页归 [[12_vllm_kv_cache_management_analysis|KV]]，异步归Engine及两代Runner，能力选择与图成本归Attention及编译页。03/05入链已转指相应正文；历史日志只转义旧链接，不回写当时状态。
+- 删除完成迁移的旧 `02_vllm_system_design_principles_analysis.md`：全局动机归 `[[03_vllm_architecture_overview_analysis|架构概览]]`，连续调度归 `[[11_vllm_scheduler_analysis|Scheduler]]`，分页归 `[[12_vllm_kv_cache_management_analysis|KV]]`，异步归Engine及两代Runner，能力选择与图成本归Attention及编译页。03/05入链已转指相应正文；历史日志只转义旧链接，不回写当时状态。
 - [[02_engineering/03_infer_frameworks/vllm/index|vLLM目录]] 清除迁移旧页与过渡说明；父索引及总索引重算为vLLM25篇正文+index、推理框架34页（含index）。保留使用、调优、排障、架构、机制五类入口，不新增课程或重复专题。
-- [[01_llm_inference_technology_stack_analysis|技术栈父入口]] 的vLLM代码与依赖重核到 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，使用/调优/排障转到01/05/06；其他框架保留原观察时间。[[16_vllm_model_runner_v2_analysis|Runner V2]] 补明graph NONE仍可能调用编译代码，与23的两轴解释一致。
+- [[01_llm_inference_technology_stack_analysis|技术栈父入口]] 的vLLM代码与依赖重核到 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，使用/调优/排障转到01/05/06；其他框架保留原观察时间。`[[16_vllm_model_runner_v2_analysis|Runner V2]]` 补明graph NONE仍可能调用编译代码，与23的两轴解释一致。
 - 域内25篇及父级vLLM基线一致后更新radar kb_baseline，修正本地checkout路径；源码检出未改变。旧02删除守恒与共享差量由独立审阅者复核，覆盖缺口仍明确保留；详细记录见 `docs/research/2026-09-08-vllm-final-integration.md` 与同日前三批报告。
 - 最终文档门禁与全域页面渲染结果见整合记录；本轮未运行GPU推理/多机通信/性能测量，未提交或推送工作区。
 
 ## 2026-09-08：vLLM 第二批完善请求、执行与生成解释主线
 
-- 完成请求与调度四页：[[04_vllm_request_semantics_analysis|请求语义]]、[[10_vllm_engine_architecture_analysis|Engine]]、[[11_vllm_scheduler_analysis|Scheduler]]、[[12_vllm_kv_cache_management_analysis|KV管理]]。以具体请求重放协议转换、在途队列、预算与抢占、共享前缀和部分块复制；明确token稳定、设备完成与connector保存完成的区别。
-- 完成模型与执行四页：[[13_vllm_model_library_analysis|模型与权重加载]]、[[14_vllm_attention_backends_analysis|Attention Backend]]、[[15_vllm_model_runner_v1_analysis|Runner V1]]、[[16_vllm_model_runner_v2_analysis|Runner V2]]。补QKV/TP真实分片、KV地址、行迁移与稳定row、staged/UVA、异步结果及受限DBO的逐步解释；选择条件与实际设备验证分开。
-- 完成生成特性四页：[[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[19_vllm_multimodal_execution_analysis|多模态]]、[[20_vllm_speculative_decoding_analysis|投机解码]]、[[21_vllm_quantization_analysis|量化]]。补概率过滤/grammar回滚、图片占位与embedding切片、standard/block验证与adaptive边界、AWQ pack/FP8误差/TP scale和在线量化按层组合，保留旧稿有效内容并按源码纠正冲突。
+- 完成请求与调度四页：`[[04_vllm_request_semantics_analysis|请求语义]]`、`[[10_vllm_engine_architecture_analysis|Engine]]`、`[[11_vllm_scheduler_analysis|Scheduler]]`、`[[12_vllm_kv_cache_management_analysis|KV管理]]`。以具体请求重放协议转换、在途队列、预算与抢占、共享前缀和部分块复制；明确token稳定、设备完成与connector保存完成的区别。
+- 完成模型与执行四页：`[[13_vllm_model_library_analysis|模型与权重加载]]`、`[[14_vllm_attention_backends_analysis|Attention Backend]]`、`[[15_vllm_model_runner_v1_analysis|Runner V1]]`、`[[16_vllm_model_runner_v2_analysis|Runner V2]]`。补QKV/TP真实分片、KV地址、行迁移与稳定row、staged/UVA、异步结果及受限DBO的逐步解释；选择条件与实际设备验证分开。
+- 完成生成特性四页：`[[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]`、`[[19_vllm_multimodal_execution_analysis|多模态]]`、`[[20_vllm_speculative_decoding_analysis|投机解码]]`、`[[21_vllm_quantization_analysis|量化]]`。补概率过滤/grammar回滚、图片占位与embedding切片、standard/block验证与adaptive边界、AWQ pack/FP8误差/TP scale和在线量化按层组合，保留旧稿有效内容并按源码纠正冲突。
 - 十二页统一核验至 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`。非作者复核12/12通过，51图全部渲染目视，9项真实图文数值测试通过，另对投机验证完整两token分布做有理数枚举。源码与测试只读核验，不称为GPU、真实推理或性能实测。
 - [[02_engineering/03_infer_frameworks/vllm/index|vLLM域索引]] 整理为26篇正文各一个入口和语义阅读依赖；父索引只保留本级页面与子域入口，总索引移除重复的下级快捷项。递归重算vLLM为27页、推理框架为35页（含index）。旧02的D/E迁移去向已核对，原页保留到最终集中整合；全域radar尚未提前更新。
 - 旧内容逐节去向、覆盖缺口、12篇非作者源码抽查与验证边界记录于 `docs/research/2026-09-08-vllm-explanation-wave.md`。LoRA内部数值与具体VLM视觉网络等未展开部分显式登记，不用通用接口链接代替覆盖。
@@ -34,16 +40,16 @@ All source ingestions and significant wiki updates are logged here.
 ## 2026-09-08：vLLM 第一批补齐使用、调优与排障入口
 
 - 重构 [[01_vllm_feature_optimizations_guide|使用指南]]：从环境准备、固定 commit 安装，到同一小模型的离线聊天、服务启动、HTTP/Python 客户端和流式输出；补返回字段、chat-template fallback、generation-config 缺省与硬上限的区别，以及常用配置的解析边界。
-- 新增 [[05_vllm_performance_tuning_guide|性能评测与调优]]：承接旧01的负载合同、benchmark、指标、资源诊断、实验卡、质量/SLO/成本门与回滚；增加完整 A/B/回滚教学案例。按源码补明 Python/Rust benchmark 选择、客户端 semaphore 排队不进入默认 TTFT/E2E/goodput、在线 warmup 重复首请求与缓存污染等边界。
-- 新增 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]：以启动时最大上下文 KV 容量不足为贯穿案例，覆盖环境/日志、health/metrics、Profiler、OTLP trace 与分层定位，要求处置后以新请求与新观测验证，并说明缩短上下文的能力代价。
-- [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 保留指标产生、时钟、聚合、采样、FT/fatal/NaN机制；操作步骤归06。补首次SCHEDULED保留、每请求抢占histogram、health局限、FT启用条件与局部失败无回滚；将旧行号引用改为稳定符号路线，新增请求事件和受控恢复两张已渲染复核的图。
+- 新增 `[[05_vllm_performance_tuning_guide|性能评测与调优]]`：承接旧01的负载合同、benchmark、指标、资源诊断、实验卡、质量/SLO/成本门与回滚；增加完整 A/B/回滚教学案例。按源码补明 Python/Rust benchmark 选择、客户端 semaphore 排队不进入默认 TTFT/E2E/goodput、在线 warmup 重复首请求与缓存污染等边界。
+- 新增 `[[06_vllm_debugging_troubleshooting_guide|调试与排障]]`：以启动时最大上下文 KV 容量不足为贯穿案例，覆盖环境/日志、health/metrics、Profiler、OTLP trace 与分层定位，要求处置后以新请求与新观测验证，并说明缩短上下文的能力代价。
+- `[[27_vllm_observability_reliability_analysis|可观测性与可靠性]]` 保留指标产生、时钟、聚合、采样、FT/fatal/NaN机制；操作步骤归06。补首次SCHEDULED保留、每请求抢占histogram、health局限、FT启用条件与局部失败无回滚；将旧行号引用改为稳定符号路线，新增请求事件和受控恢复两张已渲染复核的图。
 - 四页沿用先前03样稿和域索引已确立的新基线 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`。[[02_engineering/03_infer_frameworks/vllm/index|域索引]] 新增五类读者入口，03只补使用/调优/排障导航；父索引与总索引按目录重算为 vLLM **26篇正文+index**、推理框架 **35页（含index）**。其余21篇仍在旧基线，未改全域radar。
 - 迁移逐节核对、页面边界、覆盖与后续缺口、非作者复核记录保存于 `docs/research/2026-09-08-vllm-reader-entry-wave.md`。旧01的调优内容均有明确去向；旧02的机制迁移仍待后续D/E/G批次逐项核验，本批保留原页。
 - 四篇正文均通过非作者独立复核。全库链接检查448页各项为0；公式、Markdown、资源增量检查均0错误0警告。页面构建检查通过（作用域内17页，broken links/anchors/assets/legacy routes均0，构建orphans按作用域跳过；全库wikilink orphan检查通过），五篇vLLM正文的MathJax检查通过（无公式页）。教学案例与静态源码核验不等于GPU、HTTP、性能、Profiler、OTLP或故障注入实跑，本批未执行这些运行任务。
 
 ## 2026-09-08：vLLM 架构概览重构为直接阅读入口，开始迁移新源码基线
 
-- [[03_vllm_architecture_overview_analysis]] 改为「从一次模型计算到并发推理服务」：先解释并发请求、prefill/decode 与 KV Cache，再介绍六个模块、A/B/C 两步调度例子、请求往返过程及模块设计取舍。新增可追踪的调用树和稳定源码符号路线，将宽时序图拆成用户过程与 Engine 单步两张图。
+- `[[03_vllm_architecture_overview_analysis]]` 改为「从一次模型计算到并发推理服务」：先解释并发请求、prefill/decode 与 KV Cache，再介绍六个模块、A/B/C 两步调度例子、请求往返过程及模块设计取舍。新增可追踪的调用树和稳定源码符号路线，将宽时序图拆成用户过程与 Engine 单步两张图。
 - 按用户提供的 `/Users/suhaibo/97-llm/vllm` 当前提交 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 重新核验；明确前端队列阈值拒绝、普通抢占 stale 输出可交付与丢弃模式、延迟释放及新的 launcher 入口。保留两代 Runner、模型加载、拓扑变体、跨模块能力和旧式接口兼容边界；注明 api_server 弃用警告中 `server` 与实际 CLI `serve` 的拼写冲突。
 - 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 索引]] 的架构阅读入口，取消对系统设计原则的先读要求，注明仅本页完成新基线迁移，其余 23 篇仍在旧基线。未删除或改写 01/02，未更新全域 radar 基线。
 - 独立复核覆盖源码主线、旧稿内容保留和图示可读性；四幅 Mermaid 已渲染并目视检查。链接、公式、Markdown 和资源检查通过；页面构建检查通过。调度数字是条件明确的教学例子，未运行 GPU 推理、部署或性能测试。
@@ -480,9 +486,9 @@ Agent/Reward 页的时序图同步替换为真实类与等待点，并通过仓�
 
 **Type**：定向补强 6 页
 
-对 vLLM 主要分析页执行方法级调用链复审后，补强六个仍停留在合同或阶段描述、但缺少真实执行闭环的机制页：[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12 KV Cache 管理]]补充 `Scheduler.schedule → KVCacheManager.allocate_slots → SchedulerOutput delta → runner device block table → slot mapping`；[[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|14 Attention Backend]]补充 metadata builder、`ForwardContext`、KV update ordering 到 `AttentionImpl.forward()`；[[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|21 量化设计]]用 AutoGPTQ Linear 串起配置识别、参数 ABI、加载、post-load 与 Kernel 执行。
+对 vLLM 主要分析页执行方法级调用链复审后，补强六个仍停留在合同或阶段描述、但缺少真实执行闭环的机制页：`[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12 KV Cache 管理]]`补充 `Scheduler.schedule → KVCacheManager.allocate_slots → SchedulerOutput delta → runner device block table → slot mapping`；`[[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|14 Attention Backend]]`补充 metadata builder、`ForwardContext`、KV update ordering 到 `AttentionImpl.forward()`；`[[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|21 量化设计]]`用 AutoGPTQ Linear 串起配置识别、参数 ABI、加载、post-load 与 Kernel 执行。
 
-[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]]补充一次 PP + TP step 从 EngineCore、executor、worker、PP 收发、TP/DCP collective 到 output rank 的有向链；[[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24 融合算子与 Kernel]]补充 residual + RMSNorm 的双层 dispatch，以及 modular/monolithic MoE 各自的 prepare/compute/finalize 闭环；[[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|26 分离式 KV Serving]]补充 consumer load 从 scheduler-side discovery/allocation、worker I/O completion，再回到 scheduler 状态提交与失败回退的 round trip。
+`[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]]`补充一次 PP + TP step 从 EngineCore、executor、worker、PP 收发、TP/DCP collective 到 output rank 的有向链；`[[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24 融合算子与 Kernel]]`补充 residual + RMSNorm 的双层 dispatch，以及 modular/monolithic MoE 各自的 prepare/compute/finalize 闭环；`[[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|26 分离式 KV Serving]]`补充 consumer load 从 scheduler-side discovery/allocation、worker I/O completion，再回到 scheduler 状态提交与失败回退的 round trip。
 
 新增段落均解释状态交付、设计原因、提交点与失败边界，不粘贴源码正文。没有新增、删除、合并或重编号页面，没有改变概念 owner，也没有推进统一源码基线；仍固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。验证仅覆盖上述六页、vLLM 域内链接和本条 changelog。
 
@@ -492,9 +498,9 @@ Agent/Reward 页的时序图同步替换为真实类与等待点，并通过仓�
 
 **Type**：结构性重写 2 页 + 定向补强 4 页 + 交叉引用修复 2 页
 
-基于本轮质量复审，重写 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|03 架构概览]] 第三章：六层不再只是组件清单，而是逐层说明定位与能力、因果实现链、拆层理由、状态所有权、边界与代价；设备运行时同时纳入当前 Model Runner V1 与 V2，避免把实验演进线误写成唯一执行模型。[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]] 新增“为何需要六条并行轴”的问题建模，并补足 `ParallelConfig → topology/group → executor → worker → collective` 的控制链、执行 ABI 与顺序不变量。
+基于本轮质量复审，重写 `[[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|03 架构概览]]` 第三章：六层不再只是组件清单，而是逐层说明定位与能力、因果实现链、拆层理由、状态所有权、边界与代价；设备运行时同时纳入当前 Model Runner V1 与 V2，避免把实验演进线误写成唯一执行模型。`[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]]` 新增“为何需要六条并行轴”的问题建模，并补足 `ParallelConfig → topology/group → executor → worker → collective` 的控制链、执行 ABI 与顺序不变量。
 
-定向补强四页：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]] 增加一条 Chat 请求从协议入口到输出装配的完整调用链；[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]] 补充 request-major 到 token-major 转换的布局冲突、共享索引不变量及 dummy/profile/warmup/capture 共缓冲的收益与技术债；[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|16 Model Runner V2]] 解释 stable row + step gather 解锁的能力、identity/order 分离和显式 CUDA Graph 生命周期；[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]] 用三种身份、两类键和两个提交点建立阅读坐标。[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|10]]、[[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|20]] 与 04 的旧编号引用一并修正。
+定向补强四页：`[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]` 增加一条 Chat 请求从协议入口到输出装配的完整调用链；`[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]]` 补充 request-major 到 token-major 转换的布局冲突、共享索引不变量及 dummy/profile/warmup/capture 共缓冲的收益与技术债；`[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|16 Model Runner V2]]` 解释 stable row + step gather 解锁的能力、identity/order 分离和显式 CUDA Graph 生命周期；`[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]]` 用三种身份、两类键和两个提交点建立阅读坐标。`[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|10]]`、`[[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|20]]` 与 04 的旧编号引用一并修正。
 
 本轮没有新增页面、改变概念 owner 或推进源码基线；仍固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。验证仅覆盖上述 vLLM 页面、域内链接与本条 changelog，不运行全库门禁。
 
@@ -530,7 +536,7 @@ Agent/Reward 页的时序图同步替换为真实类与等待点，并通过仓�
 
 **Type**：新增机制 owner 页 + 4 页连续编号调整 + 导航与交叉链接集成
 
-新增 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]]，独立解释 MRV1 如何用 `CachedRequestState` 与紧凑 persistent `InputBatch` 承接动态调度：请求状态与 batch row 的双层所有权、finished/preempt/resume 的更新事务、condense/reorder 的全状态迁移、request-major 到 token-major 的输入物化、异步 token 回填与 host-buffer barrier，以及 dummy/profile/CUDA Graph 共用生命周期。页面以设计取舍、承重不变量、成本和失败边界组织，源码 locator 只承担证据角色。
+新增 `[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]]`，独立解释 MRV1 如何用 `CachedRequestState` 与紧凑 persistent `InputBatch` 承接动态调度：请求状态与 batch row 的双层所有权、finished/preempt/resume 的更新事务、condense/reorder 的全状态迁移、request-major 到 token-major 的输入物化、异步 token 回填与 host-buffer barrier，以及 dummy/profile/CUDA Graph 共用生命周期。页面以设计取舍、承重不变量、成本和失败边界组织，源码 locator 只承担证据角色。
 
 为让演进关系先 V1 后 V2，原 `15 Model Runner V2`、`16 Serving 控制面`、`17 采样与结构化输出`、`18 多模态执行` 依次调整为 `16`、`17`、`18`、`19`；vLLM 域内引用、父索引和总索引同步更新。该域现有 **24 篇内容页 + index**，仍统一固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。
 
@@ -544,7 +550,7 @@ Agent/Reward 页的时序图同步替换为真实类与等待点，并通过仓�
 
 Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型与专用化、规模化与生产闭环、使用与最终导航的复审。全域不再按源码目录或函数顺序搬运，而以读者问题、设计取舍、状态所有权、提交不变量、成本和失败边界组织；跨页只保留相邻合同并链接唯一 owner。
 
-新增四个权威 owner：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|18 采样与结构化输出]]、[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]]、[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
+新增四个权威 owner：`[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]`、`[[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|18 采样与结构化输出]]`、`[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]]`、`[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]`。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
 
 最终 23 篇内容页与 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 全部固定到冻结源码 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29），父索引、总索引计数与 repository radar 同步为 **23 篇 + index**。本轮只对直接改动的 index/backlink/radar/changelog 做 scoped `rg`、wikilink target existence、显式路径 `git diff --check` 与人工 owner/路径/计数复核；未运行全库验证，也未回写历史 changelog 条目。
 
@@ -554,7 +560,7 @@ Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型�
 
 **Type**：重建页迁移集成（1 页更名/重建 + 2 个回链 + 2 个索引）
 
-原 `03` 已更名并重建为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]]。新页先解释静态责任层与状态边界，再用一条代表性在线请求说明生命周期；代码 locator 作为机制判断的证据，而非搬运源码散文。
+原 `03` 已更名并重建为 `[[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]]`。新页先解释静态责任层与状态边界，再用一条代表性在线请求说明生命周期；代码 locator 作为机制判断的证据，而非搬运源码散文。
 
 DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互资源均已退役或归还其对应 owner 页。vLLM 索引和两个直接回链现指向架构概览；启动、进程与 serving 控制面的细节仍分别由 `10` 与 `16` 号页拥有。
 
@@ -842,13 +848,13 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）
 
-**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：`[[02_vllm_system_design_principles_analysis]]` 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
+**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 `[[11_vllm_scheduler_analysis]]`）。两篇按文体豁免并在索引里写明理由：`[[02_vllm_system_design_principles_analysis]]` 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
 
 **改了什么**（机制正文与既有 `file:line` 一律未动，只动章节顺序、标题与新增段落）：
 
-- **第 2 拍前移（14 篇）**：把「替代方案 / 直观方案为何不够」整节搬到 §二，标题统一为「为什么这么设计：…」。改前 16 篇里有 15 篇把它放在 §八～§十，即讲完全部机制之后——旧四拍的形状。[[22_vllm_distributed_inference_analysis]] 本就没有独立的替代方案节，只做其余各拍。
+- **第 2 拍前移（14 篇）**：把「替代方案 / 直观方案为何不够」整节搬到 §二，标题统一为「为什么这么设计：…」。改前 16 篇里有 15 篇把它放在 §八～§十，即讲完全部机制之后——旧四拍的形状。`[[22_vllm_distributed_inference_analysis]]` 本就没有独立的替代方案节，只做其余各拍。
 - **第 1 拍显式化（15 篇）**：§一 标题统一加「背景：」前缀。
-- **第 4 拍显式化（12 篇）**：把「失败边界与观测 / 验证与排查 / 实现和部署检查清单」等标题改成含「约束」的名字；[[23_vllm_compilation_cudagraph_analysis]]、[[25_vllm_ir_and_fusion_passes_analysis]]、[[26_vllm_disaggregated_kv_serving_analysis]] 三篇原本把「替代方案」和「验证/失败边界」混在一节，按拍拆开：表走第 2 拍，验证与失败边界留在第 4 拍。
+- **第 4 拍显式化（12 篇）**：把「失败边界与观测 / 验证与排查 / 实现和部署检查清单」等标题改成含「约束」的名字；`[[23_vllm_compilation_cudagraph_analysis]]`、`[[25_vllm_ir_and_fusion_passes_analysis]]`、`[[26_vllm_disaggregated_kv_serving_analysis]]` 三篇原本把「替代方案」和「验证/失败边界」混在一节，按拍拆开：表走第 2 拍，验证与失败边界留在第 4 拍。
 - **第 5 拍（10 篇有、5 篇无）**：新增「发展趋势」节，每条都锚在**已逐条打开读过**的源码注释上——`v1/attention/backend.py:534` 的 `Deprecated fields ... (v0.15.0)`、`model_executor/custom_op.py:183` 的 `enforce_enable ... will be removed`、`compressed_tensors.py:290` 的稀疏支持已删除并抛 `DeprecationWarning`、`parallel_state.py:370` 的等待 pytorch#165086、`compiler_interface.py:350` 的等待 pytorch#176562、`rejection_sampler.py:27` 的 chunking 是 workaround、`metrics/loggers.py:461` 的 `show_hidden_metrics`、`kv_connector/v1/base.py:606` 与 `sched/scheduler.py:2503` 的同向 TODO、`registry.py:786` 的 V0 弃用清单、`docs/design/model_runner_v2.md:3-9` 的自陈未 feature-complete。**找不到锚点的 5 篇（10 / 12 / 16 / 25 / 28）直接不写这一拍**，并在页头注明「本页无可锚定的在途改动，第 5 拍略」——技能里第 5 拍是可选且必须锚定，宁缺勿编。
 - **推断边界**：每张被前移的替代方案表下加 `> [!note] 推断`，写明「源码通常只陈述最终形态，不陈述被否掉的选项」，要引用请回到对应小节的 locator 而不是引用该表。
 
@@ -862,7 +868,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **背景**：`source-faithful-analysis` 本轮把分析页的叙事顺序定成强制五拍——**背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选）**。拿 vLLM 这组 20 页对着 `../vllm` 检出逐条核过：溯源这层是全库范本（19 页钉 `d66300a1`、抽查 7 条 `file:line` 全部精确命中），但拍序有系统性偏差——16 篇里有 15 篇把「替代方案」表放在 §八～§十，即讲完全部机制之后。本页作为回填样板先改。
 
-**改了什么**（[[11_vllm_scheduler_analysis]]，机制正文与既有引用一行未动）：
+**改了什么**（`[[11_vllm_scheduler_analysis]]`，机制正文与既有引用一行未动）：
 
 - **前移第 2 拍**：原 §八「为什么不采用几个直观方案」整表搬到 §二，并补一句判据——*任何让「已承诺的资源」与「本轮真实可执行性」脱钩的方案，都会把一次局部容量不足放大成全局抖动*。原 §二～§七顺次后移为 §三～§八。
 - **标出两处推断**（用代码验的，不是措辞问题）：① 抢占后不纳新的 `if not preempted_reqs` 守卫**没有任何解释性注释**（`scheduler.py:748` 上方只有 `# Next, schedule the WAITING requests.`），`git log -S` 追到 PR #15250 *[V1] Scheduler Refactoring [1/N]*；② 与 CPU swap 的对比在 V1 里**无源可依**——`git grep -i swap d66300a1 -- vllm/v1/core/sched/ vllm/v1/core/kv_cache_manager.py` 零命中，V1 压根没有 swap 路径，该对比是对 V0 历史方案的重建。两处均加 `> [!note] 推断`，原文照留。
@@ -1107,11 +1113,11 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 **Type**: Source Ingestion + Cross-domain Cross-reference
 
 - 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 `03_vllm_request_flow_walkthrough_analysis`（原 vLLM 请求全链路导览），占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
-- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
+- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 `[[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]`、`[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]`、`[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]`；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 `[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]`。
 - **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
 - **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。
 - 离线交互图 `deepseek_v3_inference_flow_interactive.html` 及其依赖 `.js` 归档至 `wiki/02_engineering/03_infer_frameworks/vllm/assets/`（HTML 通过 `./` 相对路径加载同目录 JS，两者需一起保留；未收原仓库的 `.test.js`）。
-- 交叉链接：新页 Related Pages 7 条；[[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] 补 Related Pages 回链（6→7）；[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
+- 交叉链接：新页 Related Pages 7 条；`[[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]]` 补 Related Pages 回链（6→7）；`[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]]` 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
 - 全部 8 个 mermaid 块按本库规范重写标签（管道标签去引号、`-. 文字 .->` 改 `-.->|文字|`、去 HTML 实体），链接检查 pages=409，broken/ambiguous/bare_index/orphans 均为 0。
 
 ---
@@ -1220,7 +1226,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 **Type**: Source Revalidation + Architecture Deep Dive + Knowledge Map Refresh
 
 - 固定并核验 `vllm-project/vllm@f4b161d7fca438bfe29509984759be1943a5aa88`（`v0.27.2rc0-189-gf4b161d7fc`），新增 [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]]：按模型制品、协议输入、连续调度、分页 KV、执行/并行、图编译、kernel/通信、KV 数据平面和运维分层，并用官方资料定位 Transformers、vLLM、SGLang、TensorRT-LLM、llama.cpp 与已进入维护模式的 TGI。
-- 重写 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]：区分离线 `SyncMPClient` / 可选 `InprocClient` 与在线 `AsyncMPClient`，追踪 EngineCore 普通 step、batch queue、统一 token scheduler、KV block 所有权、Executor/Worker 与 Model Runner V1/V2 选择逻辑，修正“永远双进程”“离线必定同进程”和“V2 全量替换”等过度简化。
+- 重写 `[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]`：区分离线 `SyncMPClient` / 可选 `InprocClient` 与在线 `AsyncMPClient`，追踪 EngineCore 普通 step、batch queue、统一 token scheduler、KV block 所有权、Executor/Worker 与 Model Runner V1/V2 选择逻辑，修正“永远双进程”“离线必定同进程”和“V2 全量替换”等过度简化。
 - 重写 [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]]：补 Linux 与多硬件插件安装路径、offline/online 最小示例、chat template 与 generation config 陷阱、`-O0` 到 `-O3`、`balanced/interactivity/throughput`、prefix/chunked/async 默认行为，以及按 TTFT、TPOT、吞吐和显存分类的调优与 benchmark 流程。
 - 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] 与 [[02_engineering/03_infer_frameworks/index|推理框架目录索引]]，显式标注当前入口页和 `485bbe1c6` 专题页的混合源码基线，避免把旧行号和默认值冒充当前主分支事实。
 - 校验：4 篇入口/架构文档中的 77 个固定 `path:line` 定位均存在且未越界；全库链接检查 pages=402，broken/ambiguous/bare_index/orphans 均为 0；本次 6 个 Markdown 严格公式检查为 0 error / 0 warning；知识库测试 91 passed；本次文件范围 `git diff --check` 无空白错误。
@@ -3130,7 +3136,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新增 `torch_upstream_pass_deepdive`**（04_inductor，2026-07-30 起判重删除、机制层并入 [[22_pattern_expression_and_matcher_engine_analysis]]/[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）：上游 Inductor pass「全集 + 机制」总纲，补上三份 stage 指南缺的**机制层**——`PatternMatcherPass` 声明式引擎（声明→trace→匹配→改写）、三种 `PatternEntry`（lowering/graph/replacement）、`fwd_only`/`joint_fwd_bwd` 两种 trace、序列化 pattern 缓存（30 个 `_sfdp`）、三阶段驱动器 + `*_custom_*_pass` 钩子 + `GraphTransformObserver`，及 pre/joint/post_grad 全集目录。6 处载荷 `file:line` 已实读复核（`PatternMatcherPass.apply:2352` + 跨 mutation/stream 护栏 2400/2409、`LoweringPatternEntry.apply:1156`↔`graph.py:1372-1376` passthrough、序列化缓存 import 1973-1981、post_grad 三桶 85-89、`_sfdp_init:1487`）。
 - **新增 [[sglang_compilation_passes_analysis]]** + 新建 `sglang/` 目录与 index：**核心发现——SGLang `srt/compilation/` 是 vLLM piecewise-cudagraph 管线的近逐文件 fork，但融合 pass 被整个抽空，真实图重写 pass 数=0**；唯一的 `FixFunctionalizationPass.__call__` 是 no-op（`fix_functionalization.py:34-37` 只 `count+=1`，`pass_manager.py:47-51` `configure()` 只挂它、`passes` 恒空）——两处均本人实读复核。含两条 compile 路径、split_ops 切图、CUDA/NPU/XPU piecewise backend 差异。
-- **更新 [[25_vllm_ir_and_fusion_passes_analysis]]**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
+- **更新 `[[25_vllm_ir_and_fusion_passes_analysis]]`**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
 - **新增 `fx_pass_optimization_methodology`**（04_inductor，2026-07-30 起判重删除、内容并入 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14 等处，详见该日期 changelog 条目）：跨四家归纳的 pass 开发方法论——四家现状对照表、四个决策问题（在哪做 Q1 / 匹配什么 Q2 / 怎么落地 Q3 / 怎么保证对 Q4）、**融合朝向谱系**（codegen→厂商库→预融合 kernel，解释 vLLM 写十几个而 SGLang 一个不写）、工业界工程护栏（uuid=源码 hash / 可 bisect / 门控分层 / pattern 对 custom_ops 鲁棒 / 序列化缓存）、开发 checklist、反模式（搬框架≠搬融合、pass 会腐化、跨类别改写会错）。
 - **联动**：04_inductor/index 加两页；03_infer_frameworks/index 加 SGLang 子框架行；各页 Related 交叉链接。
 

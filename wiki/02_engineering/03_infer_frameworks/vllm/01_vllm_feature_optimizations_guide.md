@@ -55,7 +55,7 @@ python -c 'import vllm, torch; print("vLLM:", vllm.__version__); print("PyTorch:
 vllm serve --help=max-model-len
 ```
 
-保留安装输出、包版本和 wheel 来源，并确认 `CUDA available` 为 `True`。固定基线文档的默认 CUDA wheel 变体是 12.9；`--torch-backend=auto` 是交给 `uv` 选择 PyTorch 索引的参数，不能据此保证所有驱动、平台和包版本都兼容。若索引没有目标 wheel，或装出的版本与预期不符，转到 [[06_vllm_debugging_troubleshooting_guide|排障指南]] 检查安装证据，不要悄悄换成 nightly 后仍宣称使用本文基线。
+保留安装输出、包版本和 wheel 来源，并确认 `CUDA available` 为 `True`。固定基线文档的默认 CUDA wheel 变体是 12.9；`--torch-backend=auto` 是交给 `uv` 选择 PyTorch 索引的参数，不能据此保证所有驱动、平台和包版本都兼容。若索引没有目标 wheel，或装出的版本与预期不符，转到 [[05_vllm_debugging_troubleshooting_guide|排障指南]] 检查安装证据，不要悄悄换成 nightly 后仍宣称使用本文基线。
 
 只想试发行版时，官方 quickstart 的简化命令是 `uv pip install vllm --torch-backend=auto`；它**不固定本文 commit**，应以实际安装版的帮助与文档为准。若要修改 C++/CUDA、使用不同二进制组合或既有 PyTorch，仓库文档另有 full build 路线，要求 GCC/G++ 至少 11.3；需要按那条路线配置工具链，本页不把源码构建混进最小使用步骤。
 
@@ -123,7 +123,7 @@ results = llm.generate(
 )
 ```
 
-`generate()` 不自动套聊天模板。这段演示的是接口差异；对当前 Instruct 模型，日常问答继续使用 `chat()`。已有格式化 prompt 的调用者应负责模板一致性，详见 [[04_vllm_request_semantics_analysis|请求语义]]。`SamplingParams` 可以整批共用，也可传与输入数量相同的参数列表；长度不匹配会触发校验错误，仓库测试覆盖了这一边界。
+`generate()` 不自动套聊天模板。这段演示的是接口差异；对当前 Instruct 模型，日常问答继续使用 `chat()`。已有格式化 prompt 的调用者应负责模板一致性，详见 [[03_vllm_request_semantics_analysis|请求语义]]。`SamplingParams` 可以整批共用，也可传与输入数量相同的参数列表；长度不匹配会触发校验错误，仓库测试覆盖了这一边界。
 
 ## 4. 启动服务，再发送完整响应请求
 
@@ -223,7 +223,7 @@ answer = "".join(parts)
 
 **网络块不是模型 token 的计时单位。** 文本解码与协议封装影响可见粒度；一个块可能有空文本，也可能携带多个 token 的文本。普通成功路径应消费到流结束，并检查候选结束原因；若 SDK 抛错、连接中断或缺少预期完成信息，已经拼出的前半句仍只是部分结果。服务生成器出错时也可能发出错误事件后再发 `[DONE]`，因此单看到 `[DONE]` 不能替代错误检查。
 
-仓库 `test_chat_streaming` 对比了固定测试配置下流式拼接文本与非流式文本，`test_chat_completion_stream_options` 验证了最终用量块的空 `choices`。这是测试覆盖范围，不是所有模型和并行配置逐字一致的保证。流中断后的定位路线见 [[06_vllm_debugging_troubleshooting_guide|排障指南]]；取消、输出收集和故障传播的内部合同由 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 解释。
+仓库 `test_chat_streaming` 对比了固定测试配置下流式拼接文本与非流式文本，`test_chat_completion_stream_options` 验证了最终用量块的空 `choices`。这是测试覆盖范围，不是所有模型和并行配置逐字一致的保证。流中断后的定位路线见 [[05_vllm_debugging_troubleshooting_guide|排障指南]]；取消、输出收集和故障传播的内部合同由 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]] 解释。
 
 ## 6. 常用配置：先分清在哪一层生效
 
@@ -231,9 +231,9 @@ answer = "".join(parts)
 
 ### 6.1 模型、模板与生成默认值
 
-`model` 可以是仓库 ID 或本地目录；`revision`、`tokenizer`、`tokenizer_revision` 用于明确权重和 tokenizer 来源。需要复现实验时，连模型 revision、模板和依赖环境一起记录。`dtype` 默认 `auto`，按模型配置解析；`quantization` 还会参考 checkpoint 的量化配置，因此“没有写量化参数”不等于证明加载的是非量化权重。支持矩阵与数值边界见 [[21_vllm_quantization_analysis|量化]]。
+`model` 可以是仓库 ID 或本地目录；`revision`、`tokenizer`、`tokenizer_revision` 用于明确权重和 tokenizer 来源。需要复现实验时，连模型 revision、模板和依赖环境一起记录。`dtype` 默认 `auto`，按模型配置解析；`quantization` 还会参考 checkpoint 的量化配置，因此“没有写量化参数”不等于证明加载的是非量化权重。支持矩阵与数值边界见 [[17_vllm_quantization_analysis|量化]]。
 
-聊天路径需要解析出与模型匹配的模板。当前 HF renderer 先检查显式模板，再在适用条件下检查 AutoProcessor、tokenizer，最后尝试内建 fallback；所以 tokenizer 中没有模板，不等于一定报错。所有来源都未解析出模板时，`safe_apply_chat_template` 才抛出 `ChatTemplateResolutionError`，此时应提供与该模型匹配的 `--chat-template` 文件或模板字符串。模板如何处理角色、特殊 token、工具和媒体，由 [[04_vllm_request_semantics_analysis|请求语义]] 负责。
+聊天路径需要解析出与模型匹配的模板。当前 HF renderer 先检查显式模板，再在适用条件下检查 AutoProcessor、tokenizer，最后尝试内建 fallback；所以 tokenizer 中没有模板，不等于一定报错。所有来源都未解析出模板时，`safe_apply_chat_template` 才抛出 `ChatTemplateResolutionError`，此时应提供与该模型匹配的 `--chat-template` 文件或模板字符串。模板如何处理角色、特殊 token、工具和媒体，由 [[03_vllm_request_semantics_analysis|请求语义]] 负责。
 
 `generation_config` 默认 `auto`，读取模型的 `generation_config.json`；也可指定目录，或用 `vllm` 不加载该文件。`override_generation_config` 再覆盖这一层的配置。常见采样字段需要区分两条路径：
 
@@ -253,17 +253,17 @@ answer = "".join(parts)
 
 ### 6.3 显存、并行与批处理预算
 
-`gpu_memory_utilization` 是当前实例用于模型执行器的显存比例，固定基线默认 **0.92**，有效范围大于 0 且不超过 1。它不是实时 GPU 计算利用率，也不是给同卡其他进程建立的全局隔离。`kv_cache_memory_bytes` 可直接指定每 GPU 的 KV 字节预算；正值走手动预算路径，不再按显存比例自动估算 KV。不要把这两个参数当作彼此叠加的容量承诺。容量计算与 KV 分配见 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+`gpu_memory_utilization` 是当前实例用于模型执行器的显存比例，固定基线默认 **0.92**，有效范围大于 0 且不超过 1。它不是实时 GPU 计算利用率，也不是给同卡其他进程建立的全局隔离。`kv_cache_memory_bytes` 可直接指定每 GPU 的 KV 字节预算；正值走手动预算路径，不再按显存比例自动估算 KV。不要把这两个参数当作彼此叠加的容量承诺。容量计算与 KV 分配见 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 
-单卡先保留 `tensor_parallel_size=1`、`pipeline_parallel_size=1`。模型放不下一张卡时，TP、PP 用不同方式把模型执行分布到设备；DP 面向多份请求处理能力，MoE 还有关联的分片行为。增加卡数伴随通信与拓扑约束，不保证成比例加速，选择与有效组合见 [[22_vllm_distributed_inference_analysis|分布式推理]]。
+单卡先保留 `tensor_parallel_size=1`、`pipeline_parallel_size=1`。模型放不下一张卡时，TP、PP 用不同方式把模型执行分布到设备；DP 面向多份请求处理能力，MoE 还有关联的分片行为。增加卡数伴随通信与拓扑约束，不保证成比例加速，选择与有效组合见 [[18_vllm_distributed_inference_analysis|分布式推理]]。
 
-`max_num_batched_tokens` 是调度步的 token 工作预算，`max_num_seqs` 是请求序列预算，都不是客户端输出上限。未显式填写时，`EngineArgs.get_batch_defaults()` 会参考硬件和离线/在线 usage context，CPU 路线还参考 world size；之后继续按模型长度、模态和其他配置调整。不要照抄某台机器启动日志里的数值当成全局默认。`enable_chunked_prefill`、`enable_prefix_caching` 的缺省启用也依赖模型能力，并非所有模型都相同；内部规则见 [[11_vllm_scheduler_analysis|Scheduler]] 与 KV 专页。
+`max_num_batched_tokens` 是调度步的 token 工作预算，`max_num_seqs` 是请求序列预算，都不是客户端输出上限。未显式填写时，`EngineArgs.get_batch_defaults()` 会参考硬件和离线/在线 usage context，CPU 路线还参考 world size；之后继续按模型长度、模态和其他配置调整。不要照抄某台机器启动日志里的数值当成全局默认。`enable_chunked_prefill`、`enable_prefix_caching` 的缺省启用也依赖模型能力，并非所有模型都相同；内部规则见 [[07_vllm_scheduler_analysis|Scheduler]] 与 KV 专页。
 
 ### 6.4 优化开关与实际解析值
 
 固定基线的顶层默认是 `optimization_level=O2`（CLI `-O2`）与 `performance_mode=balanced`。优化级别为尚未设置的相关字段提供默认值；`throughput` 模式会放大用户**未显式指定**的 token/sequence budget，再经过其他约束。选 `interactivity` 或 `throughput` 表达的是偏好，不能当作性能验收结果。
 
-`enforce_eager=True` / `--enforce-eager` 会关闭 `torch.compile` 和 CUDA Graph；默认是 `False`。它可用于建立执行对照，但本文最小样例未要求开启。编译与图执行的条件和启动成本见 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
+`enforce_eager=True` / `--enforce-eager` 会关闭 `torch.compile` 和 CUDA Graph；默认是 `False`。它可用于建立执行对照，但本文最小样例未要求开启。编译与图执行的条件和启动成本见 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
 
 核对当前安装版时可以直接查询：
 
@@ -279,9 +279,9 @@ vllm serve --help=all
 
 当离线结果、非流式回答和流式完成信息都能取得，本页的使用路径就闭合了。下一步按问题进入对应指南：
 
-- **能跑，想证明更快**：[[05_vllm_performance_tuning_guide|性能调优指南]] 拥有 workload envelope、正确性 canary、benchmark 选择、warmup 与 measurement 分离、SLO/goodput、资源证据、单变量实验、验收和回滚。旧版本页的这些完整协议及配置族诊断表统一由该页承接。
-- **启动失败、请求出错、流中断或卡住**：[[06_vllm_debugging_troubleshooting_guide|排障指南]] 从症状选择证据和定位步骤；指标、health、取消、fallback 和故障域怎样产生，继续读可观测性与可靠性机制页。
-- **想理解服务为什么这样组织**：[[03_vllm_architecture_overview_analysis|架构概览]] 从普通并发请求介绍模块分工，再进入 Scheduler、Runner、采样、分布式等专题。
+- **能跑，想证明更快**：[[04_vllm_performance_tuning_guide|性能调优指南]] 拥有 workload envelope、正确性 canary、benchmark 选择、warmup 与 measurement 分离、SLO/goodput、资源证据、单变量实验、验收和回滚。旧版本页的这些完整协议及配置族诊断表统一由该页承接。
+- **启动失败、请求出错、流中断或卡住**：[[05_vllm_debugging_troubleshooting_guide|排障指南]] 从症状选择证据和定位步骤；指标、health、取消、fallback 和故障域怎样产生，继续读可观测性与可靠性机制页。
+- **想理解服务为什么这样组织**：[[02_vllm_architecture_overview_analysis|架构概览]] 从普通并发请求介绍模块分工，再进入 Scheduler、Runner、采样、分布式等专题。
 
 调优前至少保存模型/版本、模板、采样与 stop 配置、输入输出上限及一次成功响应；“可以执行”是后续实验的起点，不是已经满足业务正确性、延迟或容量要求。
 
@@ -303,9 +303,9 @@ vllm serve --help=all
 
 ## Related Pages
 
-- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 从本页已跑通的调用路径转入模块职责与请求协作过程。
-- [[04_vllm_request_semantics_analysis|vLLM 请求语义]] — 解释模板、tokenization、生成参数和输出转换的精确合同。
-- [[05_vllm_performance_tuning_guide|vLLM 性能调优指南]] — 接管旧版使用与优化页的实验协议、指标、瓶颈选择和回滚方法。
-- [[06_vllm_debugging_troubleshooting_guide|vLLM 排障指南]] — 按启动、请求、运行与流式故障选择诊断步骤。
-- [[22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 在单卡入门之后解释 TP、PP、DP 等部署选项的约束与代价。
-- [[27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 解释用量之外的指标、健康检查、取消和失败传播机制。
+- [[02_vllm_architecture_overview_analysis|vLLM 架构概览]] — 从本页已跑通的调用路径转入模块职责与请求协作过程。
+- [[03_vllm_request_semantics_analysis|vLLM 请求语义]] — 解释模板、tokenization、生成参数和输出转换的精确合同。
+- [[04_vllm_performance_tuning_guide|vLLM 性能调优指南]] — 接管旧版使用与优化页的实验协议、指标、瓶颈选择和回滚方法。
+- [[05_vllm_debugging_troubleshooting_guide|vLLM 排障指南]] — 按启动、请求、运行与流式故障选择诊断步骤。
+- [[18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 在单卡入门之后解释 TP、PP、DP 等部署选项的约束与代价。
+- [[23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 解释用量之外的指标、健康检查、取消和失败传播机制。

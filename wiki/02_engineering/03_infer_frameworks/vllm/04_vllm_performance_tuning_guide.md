@@ -15,9 +15,9 @@ title: "vLLM 性能调优指南：用测量、单变量实验和回滚验证收�
 
 本页采用“负载合同 → 基线测量 → 限制资源假设 → 唯一调整 → 双重验证 → 回滚”的实验方法。这是分析者为提高可归因性提出的工程协议，不是源码承诺的普适最优算法。它要求候选配置改善读者真正关心的结果，并留下可以推翻假设的证据。
 
-如果需要进一步理解为何同一配置在不同动态负载下改变瓶颈，可读 [[11_vllm_scheduler_analysis|Scheduler]] 的逐步预算与抢占，以及 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]] 的容量、共享和回收；完成本页实验不以先读机制页为前提。
+如果需要进一步理解为何同一配置在不同动态负载下改变瓶颈，可读 [[07_vllm_scheduler_analysis|Scheduler]] 的逐步预算与抢占，以及 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]] 的容量、共享和回收；完成本页实验不以先读机制页为前提。
 
-第一次运行模型应先完成 [[01_vllm_feature_optimizations_guide|vLLM 使用指南]]。遇到启动失败、持续报错或进程退出，先走 [[06_vllm_debugging_troubleshooting_guide|排障指南]]；不稳定的服务不能作为性能基线。
+第一次运行模型应先完成 [[01_vllm_feature_optimizations_guide|vLLM 使用指南]]。遇到启动失败、持续报错或进程退出，先走 [[05_vllm_debugging_troubleshooting_guide|排障指南]]；不稳定的服务不能作为性能基线。
 
 默认值也不能代替实验记录。当前顶层配置为 `optimization_level=O2`、`performance_mode="balanced"`，但 token/sequence budget 还会按使用入口、并行规模和模型约束解析；`throughput` mode 只把未显式指定的这两个 budget 翻倍。保留最终解析配置，查单个选项可使用 `vllm serve --help=max-num-batched-tokens`。相关解析入口见文末源码阅读路线。
 
@@ -42,7 +42,7 @@ title: "vLLM 性能调优指南：用测量、单变量实验和回滚验证收�
 - 如果业务要求严格复现，把逐 token/停止原因一致设为**本次验收门**，候选不满足就拒绝；这不等于其他配置有通用保证。
 - 若业务允许数值或采样变化，预先指定任务分数下限、结构合法性、token/logprob 容差或统计检验，不能看完结果再放宽。
 - 每轮检查空输出、意外截断、NaN/Inf、新错误类型、成功请求集合与失败率。随机 token 压测数据只能验证形状和运行行为，不能证明回答质量。
-- 模板与缺省采样必须冻结：`generation_config="vllm"` 可避免采用模型仓库的生成配置，但具体请求参数仍应显式记录；聊天与纯文本输入的差别见 [[04_vllm_request_semantics_analysis|请求语义]]。采样和量化的适用边界分别见 [[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[21_vllm_quantization_analysis|量化]]。
+- 模板与缺省采样必须冻结：`generation_config="vllm"` 可避免采用模型仓库的生成配置，但具体请求参数仍应显式记录；聊天与纯文本输入的差别见 [[03_vllm_request_semantics_analysis|请求语义]]。采样和量化的适用边界分别见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[17_vllm_quantization_analysis|量化]]。
 
 ## 3. 选择能回答问题的工具
 
@@ -136,7 +136,7 @@ VLLM_USE_RUST_BENCH=0 vllm bench serve \
 
 每组 baseline artifact 至少包含完整启动/压测命令、解析配置、镜像/模型 revision、硬件拓扑，dataset manifest 与实际 token 分布，seed、sampling、warmup、计时窗口，原始逐请求结果、success/error counts 和各分位数。还要保存 GPU memory 峰值与余量、GPU/CPU 利用率、主机内存、network/collective 时间、queue、preemption、prefix hit、fallback 与 engine health 时间线，以及 canary 评分、日志和 profiler trace 的路径。
 
-指标必须来自同一窗口并确认进程/rank 标签，具体指标生命周期和故障信号见 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]]。Profiler 会增加测量成本，应单开诊断轮，最终收益用相同、低干扰采集条件确认。
+指标必须来自同一窗口并确认进程/rank 标签，具体指标生命周期和故障信号见 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]]。Profiler 会增加测量成本，应单开诊断轮，最终收益用相同、低干扰采集条件确认。
 
 ## 5. 先判断限制资源，再选一个变量
 
@@ -144,14 +144,14 @@ GPU 利用率低可能意味着输入供给不足、batch 太小、collective �
 
 | 限制信号 | 本轮可检验的假设与变量族 | 什么观测会推翻假设 | 机制入口 |
 |---|---|---|---|
-| frontend CPU 饱和，GPU 间歇空闲 | 输入供给不足；只改 API/input-processing capacity 的一个因素 | CPU queue 不变或 GPU 空闲未减少，语义/TTFT 反而恶化 | [[17_vllm_serving_control_plane_analysis|Serving 控制面]]、[[19_vllm_multimodal_execution_analysis|多模态]] |
-| TTFT 随 load 上升，decode 尚稳定 | 排队或 prefill 竞争；token budget、sequence budget、arrival/concurrency 中只选一个 | queue/prefill 时间不按预期变，或 decode 尾延迟越界 | [[11_vllm_scheduler_analysis|Scheduler]] |
-| preemption、KV 余量低、OOM | 权重/KV/graph/临时 buffer 某项占用过高；先选 KV、上下文、量化、并行或 graph memory 一个族 | 对应占用不降，或质量/延迟代价越界 | [[12_vllm_kv_cache_management_analysis|KV Cache]]、[[21_vllm_quantization_analysis|量化]] |
-| 小 batch 的 host launch gap 大 | 主机发起计算开销突出；只改一个 compile/graph 候选 | timeline gap 未收缩，或 startup/memory 超预算 | [[16_vllm_model_runner_v2_analysis|Model Runner V2]]、[[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
-| attention/GEMM/MoE/格式转换占主要计算时间 | shape/dtype 与后端不合适；backend、kernel、量化格式中只选一个 | 实际仍 fallback，或 kernel 加速未传递到 E2E | [[14_vllm_attention_backends_analysis|Attention Backend]]、[[24_vllm_fused_ops_and_kernels_analysis|融合 Kernel]] |
-| decode 串行时间突出 | draft 成本可能小于节省的 target 计算；一个 speculative 候选 | acceptance、draft+verify 成本和 E2E 不支持收益 | [[20_vllm_speculative_decoding_analysis|投机解码]] |
-| collective 时间高或单卡装不下 | rank layout 限制当前负载；一次 TP/PP/DP/EP/CP 布局变化 | 每 rank 容量/计算或通信没有预期变化 | [[22_vllm_distributed_inference_analysis|分布式推理]] |
-| prefill/decode 资源需求可分开扩展 | 拆分实例可能增加有效容量；一个 KV 传输拓扑候选 | transfer、lease 与失败恢复成本吃掉收益 | [[26_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] |
+| frontend CPU 饱和，GPU 间歇空闲 | 输入供给不足；只改 API/input-processing capacity 的一个因素 | CPU queue 不变或 GPU 空闲未减少，语义/TTFT 反而恶化 | [[13_vllm_serving_control_plane_analysis|Serving 控制面]]、[[15_vllm_multimodal_execution_analysis|多模态]] |
+| TTFT 随 load 上升，decode 尚稳定 | 排队或 prefill 竞争；token budget、sequence budget、arrival/concurrency 中只选一个 | queue/prefill 时间不按预期变，或 decode 尾延迟越界 | [[07_vllm_scheduler_analysis|Scheduler]] |
+| preemption、KV 余量低、OOM | 权重/KV/graph/临时 buffer 某项占用过高；先选 KV、上下文、量化、并行或 graph memory 一个族 | 对应占用不降，或质量/延迟代价越界 | [[08_vllm_kv_cache_management_analysis|KV Cache]]、[[17_vllm_quantization_analysis|量化]] |
+| 小 batch 的 host launch gap 大 | 主机发起计算开销突出；只改一个 compile/graph 候选 | timeline gap 未收缩，或 startup/memory 超预算 | [[12_vllm_model_runner_v2_analysis|Model Runner V2]]、[[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
+| attention/GEMM/MoE/格式转换占主要计算时间 | shape/dtype 与后端不合适；backend、kernel、量化格式中只选一个 | 实际仍 fallback，或 kernel 加速未传递到 E2E | [[10_vllm_attention_backends_analysis|Attention Backend]]、[[20_vllm_fused_ops_and_kernels_analysis|融合 Kernel]] |
+| decode 串行时间突出 | draft 成本可能小于节省的 target 计算；一个 speculative 候选 | acceptance、draft+verify 成本和 E2E 不支持收益 | [[16_vllm_speculative_decoding_analysis|投机解码]] |
+| collective 时间高或单卡装不下 | rank layout 限制当前负载；一次 TP/PP/DP/EP/CP 布局变化 | 每 rank 容量/计算或通信没有预期变化 | [[18_vllm_distributed_inference_analysis|分布式推理]] |
+| prefill/decode 资源需求可分开扩展 | 拆分实例可能增加有效容量；一个 KV 传输拓扑候选 | transfer、lease 与失败恢复成本吃掉收益 | [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] |
 
 这些是待证伪的工程推断，不是看到症状就应启用的功能清单。出现 OOM、持续抢占或 health 失败时，应回到排障流程恢复基线；不把“仍然完成了一部分请求”当成优化成功。
 
@@ -196,7 +196,7 @@ vllm serve "$MODEL" --generation-config vllm \
 
 假设 baseline 的诊断 trace 显示：长 prefill 所在步骤较长，decode 的片段间隔随这些步骤拉大；GPU 一直有工作，客户端排队可忽略，KV 余量充足且没有 preemption。由此提出可证伪假设：**减小每步 token budget 可减少长 prefill 对 decode 连续输出的干扰，代价可能是 TTFT 增加。** 这是有证据入口的推断，源码只证明 budget 参与调度上限，不保证它必然改善此 workload。
 
-停止 baseline 服务后，以同一命令重启，只把 `--max-num-batched-tokens 8192` 改为 `--max-num-batched-tokens 4096`。不要同时改 `max-num-seqs`、缓存、并行度、sampling 或 arrival。若日志显示参数不被当前模型支持、没有走预期路径，或 trace 中长步骤/ITL 没变化，本轮假设不成立，停止继续堆参数。调度细节查 [[11_vllm_scheduler_analysis|Scheduler]]；本页只拥有选择和验证。
+停止 baseline 服务后，以同一命令重启，只把 `--max-num-batched-tokens 8192` 改为 `--max-num-batched-tokens 4096`。不要同时改 `max-num-seqs`、缓存、并行度、sampling 或 arrival。若日志显示参数不被当前模型支持、没有走预期路径，或 trace 中长步骤/ITL 没变化，本轮假设不成立，停止继续堆参数。调度细节查 [[07_vllm_scheduler_analysis|Scheduler]]；本页只拥有选择和验证。
 
 ### 7.3 同时验收益、代价与质量
 
@@ -260,9 +260,9 @@ vllm serve "$MODEL" --generation-config vllm \
 ## Related Pages
 
 - [[01_vllm_feature_optimizations_guide|vLLM 使用指南]] — 先完成最小运行路径，再进入测量和调优。
-- [[06_vllm_debugging_troubleshooting_guide|vLLM 排障指南]] — 服务出错或基线无法恢复时，按症状寻找故障边界。
-- [[04_vllm_request_semantics_analysis|vLLM 请求语义]] — 固定模板、采样、停止和输出语义，避免把换题当成加速。
-- [[11_vllm_scheduler_analysis|vLLM Scheduler]] — 解释 token/sequence budget、prefill 与 preemption 的机制。
-- [[12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 解释容量、前缀命中与缓存状态对实验的影响。
-- [[16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 追踪执行组织与设备路径，验证优化是否真正进入目标实现。
-- [[27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 为指标、fallback、engine health 与故障恢复提供机制依据。
+- [[05_vllm_debugging_troubleshooting_guide|vLLM 排障指南]] — 服务出错或基线无法恢复时，按症状寻找故障边界。
+- [[03_vllm_request_semantics_analysis|vLLM 请求语义]] — 固定模板、采样、停止和输出语义，避免把换题当成加速。
+- [[07_vllm_scheduler_analysis|vLLM Scheduler]] — 解释 token/sequence budget、prefill 与 preemption 的机制。
+- [[08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 解释容量、前缀命中与缓存状态对实验的影响。
+- [[12_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 追踪执行组织与设备路径，验证优化是否真正进入目标实现。
+- [[23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 为指标、fallback、engine health 与故障恢复提供机制依据。

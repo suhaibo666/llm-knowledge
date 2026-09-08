@@ -6,7 +6,7 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：解释调度事件如何变成请求指标，指标与 trace 如何关联，以及引擎和 Worker 故障如何传播、清理和恢复。最后说明时钟、采样、聚合与健康信号的边界。
-> **适用范围**：本页拥有指标产生和故障处理机制；采证命令与排障过程见 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]，评测与调优见 [[05_vllm_performance_tuning_guide|性能评测与调优]]，服务路由和拓扑见 [[17_vllm_serving_control_plane_analysis|Serving 控制面]]。
+> **适用范围**：本页拥有指标产生和故障处理机制；采证命令与排障过程见 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]，评测与调优见 [[04_vllm_performance_tuning_guide|性能评测与调优]]，服务路由和拓扑见 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。
 > **最近更新**：2026-09-08。核验新基线，补抢占计数、健康探针与受控恢复边界，分离操作入口。
 
 ## 1. 背景：SLO 是症状，资源承诺和故障域才是原因
@@ -91,7 +91,7 @@ Prometheus logger 的基础 labels 是 `model_name` 与 `engine`，waiting reaso
 
 最后，错误必须抵达所有等待者。AsyncLLM output handler 失败时会向未完成请求传播异常；其 `errored` 同时包含 engine-dead 与 handler-task 已结束。`/health` 只把 `EngineDeadError` 映射为 503；这是一条**可见性合同**，至于流量如何迁走仍属于 Serving 控制面。
 
-但 `/health` 不会提交一个新推理请求。`AsyncLLM.check_health()` 只检查 `errored`，并未逐个查询 FT sentinel 的 UNHEALTHY 状态；render-only 前端没有 engine 时直接返回 200。因此 FT 状态、HTTP 健康和真实请求完成是三种不同证据，不能互相替代。操作上的组合验证见 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]。
+但 `/health` 不会提交一个新推理请求。`AsyncLLM.check_health()` 只检查 `errored`，并未逐个查询 FT sentinel 的 UNHEALTHY 状态；render-only 前端没有 engine 时直接返回 200。因此 FT 状态、HTTP 健康和真实请求完成是三种不同证据，不能互相替代。操作上的组合验证见 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]。
 
 <!-- Figure spec: one busy-loop exception aborts old requests, then splits on local executor failure into DEAD or UNHEALTHY. Only UNHEALTHY receives external retry; worker cleanup and RPC completion precede HEALTHY publication. Timeout exits to fatal path. These are logical states, not a duration chart. -->
 ```mermaid
@@ -151,7 +151,7 @@ EngineCore monotonic event 只能与同一进程的 event 相减；frontend arri
 - 恢复：`tests/v1/fault_tolerance/test_fault_tolerance_e2e.py::test_injected_fault_retry_recovers_all_ranks` 注入异常后要求两 rank 都变成 UNHEALTHY，再分别发 retry，最后以 HEALTHY 和新请求成功共同验证。
 - 终结：同文件的 `test_worker_kill_survivor_unhealthy_and_dead_rejects_retry` 验证幸存方 UNHEALTHY、死亡 Worker 所属 engine 为 DEAD，以及 HTTP 202 后 engine 仍可拒绝 retry。
 
-以上是已阅读的测试合同和静态推演，本轮没有运行 GPU、OTLP 服务或多卡故障注入。实际采证、日志与 profiler 命令，以及“处置后必须看见新结果”的操作案例统一放在 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]；SLO、goodput 与回滚评估统一放在 [[05_vllm_performance_tuning_guide|性能评测与调优]]。
+以上是已阅读的测试合同和静态推演，本轮没有运行 GPU、OTLP 服务或多卡故障注入。实际采证、日志与 profiler 命令，以及“处置后必须看见新结果”的操作案例统一放在 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]；SLO、goodput 与回滚评估统一放在 [[04_vllm_performance_tuning_guide|性能评测与调优]]。
 
 ## 6. 源码—文档冲突与有锚点的演进
 
@@ -177,10 +177,10 @@ EngineCore monotonic event 只能与同一进程的 event 相减；frontend arri
 
 ## Related Pages
 
-- [[06_vllm_debugging_troubleshooting_guide|调试与排障]] — 把本页的指标、trace 和健康边界用于一次实际采证与恢复验证。
-- [[05_vllm_performance_tuning_guide|性能评测与调优]] — 解释如何用这些观测检验 SLO、性能假设与回滚。
-- [[11_vllm_scheduler_analysis|Scheduler]] — 解释 waiting、token budget 和 preemption 所对应的真实调度状态。
-- [[12_vllm_kv_cache_management_analysis|KV Cache 管理]] — 解释 KV usage、eviction 和 residency 对应的 block 生命周期。
-- [[17_vllm_serving_control_plane_analysis|Serving 控制面]] — 接续健康和故障可见性之后的进程管理与流量路由。
-- [[22_vllm_distributed_inference_analysis|分布式推理]] — 解释 rank 与 collective 故障域为何产生不同 sentinel 状态。
-- [[26_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] — 解释外部 KV 等待、connector failure 和 lease cleanup 的来源。
+- [[05_vllm_debugging_troubleshooting_guide|调试与排障]] — 把本页的指标、trace 和健康边界用于一次实际采证与恢复验证。
+- [[04_vllm_performance_tuning_guide|性能评测与调优]] — 解释如何用这些观测检验 SLO、性能假设与回滚。
+- [[07_vllm_scheduler_analysis|Scheduler]] — 解释 waiting、token budget 和 preemption 所对应的真实调度状态。
+- [[08_vllm_kv_cache_management_analysis|KV Cache 管理]] — 解释 KV usage、eviction 和 residency 对应的 block 生命周期。
+- [[13_vllm_serving_control_plane_analysis|Serving 控制面]] — 接续健康和故障可见性之后的进程管理与流量路由。
+- [[18_vllm_distributed_inference_analysis|分布式推理]] — 解释 rank 与 collective 故障域为何产生不同 sentinel 状态。
+- [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] — 解释外部 KV 等待、connector failure 和 lease cleanup 的来源。

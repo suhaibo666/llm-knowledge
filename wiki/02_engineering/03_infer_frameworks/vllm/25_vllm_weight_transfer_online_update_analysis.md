@@ -117,7 +117,7 @@ start 的 worker guard 拒绝 session 嵌套；成功后才设置 `_weight_updat
 | sparse NCCL | 校验 patch metadata 后，构造 NaN 占位的完整 checkpoint tensor，再经 native loader 原位修改已初始化 tensor | start/finish 都是 no-op | 网络只发送索引和值，但本地仍有完整 checkpoint shape 暂存；没有 rollback 隔离 |
 | sharded RDT | 按 baked plan 只 pull 本 worker slice；GPU post-process 可在 background thread 与下一 chunk overlap | `drain_pending` 后才 finalize layerwise reload | `update_weights` 返回可只表示 queued，finish 才是 processing fence |
 
-RDT 的静态计划还有显式组合限制：`init_transfer_engine` 遇到 `enable_eplb=True` 直接 `RuntimeError`，因为 [[22_vllm_distributed_inference_analysis|EPLB]] 会改变专家槽位，初始化时录下的目标位置不再有效。其类约定要求 Ray executor、NIXL 传输和可记录的 loader 操作；初始化执行版本检查、dry-run bake、buffer 预注册，不能把这项能力当成任意 loader 的通用加速。`drain_pending()` 依次等待 scatter 队列、quant 队列和两条 CUDA stream，最后等待已发往 producer 的 free-group RPC，防止上一轮释放信号误计入下一轮；它比“Python队列已空”更强。
+RDT 的静态计划还有显式组合限制：`init_transfer_engine` 遇到 `enable_eplb=True` 直接 `RuntimeError`，因为 [[18_vllm_distributed_inference_analysis|EPLB]] 会改变专家槽位，初始化时录下的目标位置不再有效。其类约定要求 Ray executor、NIXL 传输和可记录的 loader 操作；初始化执行版本检查、dry-run bake、buffer 预注册，不能把这项能力当成任意 loader 的通用加速。`drain_pending()` 依次等待 scatter 队列、quant 队列和两条 CUDA stream，最后等待已发往 producer 的 free-group RPC，防止上一轮释放信号误计入下一轮；它比“Python队列已空”更强。
 
 普通 base engine 在 `receive_weights` 后执行 device synchronize，保证下一 step 看见写入；声明 `defers_processing` 的 backend 则必须把这份保证推迟到 `finish_weight_update`。这就是为什么“bytes 已到”“post-process 已结束”必须分开。
 
@@ -198,7 +198,7 @@ Worker 只有 active session 才允许 finish。backend finish 返回后，它�
 > [!contradiction] 清理接口返回不等于外部 KV 已消失
 > Core 注释希望 connector 与本地 cache 一起清理，但 `KVConnectorBase_V1.reset_cache()` 默认只记日志并返回 `None`；`Scheduler.reset_connector_cache()` 只把显式 `False` 当失败，且 `EngineCore._reset_caches()` 不检查 `reset_prefix_cache()` 返回的布尔值。因此 pause 成功可以证明设备同步和清理调用顺序，不能证明任意外部 store 已完成失效。若仍有远程传输持有 block，强制抢占后的本地 KV reset 还可能抛 `RuntimeError`；这也不是无条件成功路径。
 
-分离式部署的 producer/consumer 必须在相容权重状态下交接 KV。`set_weight_version` 不会把标签写入 connector 兼容协议或清理远端实例；外部协调者需要暂停相关实例、核验各后端失效/隔离能力并确认所有实例更新完成，再开放流量。这是由接口边界推得的部署前提，具体 NIXL 身份与完成规则见 [[26_vllm_disaggregated_kv_serving_analysis|跨实例 KV 交接]]。本页不声称存在自动版本化的 KV namespace。
+分离式部署的 producer/consumer 必须在相容权重状态下交接 KV。`set_weight_version` 不会把标签写入 connector 兼容协议或清理远端实例；外部协调者需要暂停相关实例、核验各后端失效/隔离能力并确认所有实例更新完成，再开放流量。这是由接口边界推得的部署前提，具体 NIXL 身份与完成规则见 [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 交接]]。本页不声称存在自动版本化的 KV namespace。
 
 ### 7.3 speculative draft
 
@@ -208,11 +208,11 @@ target model 与 draft model 是两个独立 update targets；`start_draft_weigh
 
 ### 7.4 model runner、CUDA Graph 与 LoRA
 
-layerwise reload 把处理后的值 copy 回原 storage，目的就是保留 kernel/CUDA Graph references；相关 Marlin 回归测试还核对 workspace 与 sort-index 地址保持不变，说明参数以外的辅助 storage 也必须遵守图引用合同；不能仅由 weight version 变化推出必须 recapture，或反过来保证所有 loader 都可复用图，具体捕获约束见 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。主模型 finish 显式 reset LoRA state，draft finish 不做这一步；测试验证 draft finish 不清 LoRA；源码没有进一步解释这项差异的设计理由。除此之外，weight-transfer tail 没有调用 runner 的 encoder/MM reset；它依赖 pause cache path。
+layerwise reload 把处理后的值 copy 回原 storage，目的就是保留 kernel/CUDA Graph references；相关 Marlin 回归测试还核对 workspace 与 sort-index 地址保持不变，说明参数以外的辅助 storage 也必须遵守图引用合同；不能仅由 weight version 变化推出必须 recapture，或反过来保证所有 loader 都可复用图，具体捕获约束见 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。主模型 finish 显式 reset LoRA state，draft finish 不做这一步；测试验证 draft finish 不清 LoRA；源码没有进一步解释这项差异的设计理由。除此之外，weight-transfer tail 没有调用 runner 的 encoder/MM reset；它依赖 pause cache path。
 
 ### 7.5 多 DP engine 的暂停共识
 
-对 `DPEngineCoreProc` 路径，pause 先设本地 `pending_pause` 并推动 stepping，在 `sync_dp_state` 中等所有 rank 达成暂停共识；随后设置 `ignore_start_dp_wave`，防止迟到的 wave 消息重新唤醒。resume 还拒绝 pause 未完成的情况，并在重新 stepping 前做 DP 同步。因此不能把基类的本地 pause flag 当成完整分布式屏障。独立进程实例背后的外部负载均衡器也不自动加入这个组，调用方必须覆盖每个目标实例；服务拓扑继续读 [[17_vllm_serving_control_plane_analysis|Serving 控制面]]。
+对 `DPEngineCoreProc` 路径，pause 先设本地 `pending_pause` 并推动 stepping，在 `sync_dp_state` 中等所有 rank 达成暂停共识；随后设置 `ignore_start_dp_wave`，防止迟到的 wave 消息重新唤醒。resume 还拒绝 pause 未完成的情况，并在重新 stepping 前做 DP 同步。因此不能把基类的本地 pause flag 当成完整分布式屏障。独立进程实例背后的外部负载均衡器也不自动加入这个组，调用方必须覆盖每个目标实例；服务拓扑继续读 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。
 
 ## 8. Failure / rollback：session cleanup 不等于参数回滚
 
@@ -247,10 +247,10 @@ Worker 的 update 异常会把 `_weight_update_active` 置为 false、恢复默�
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 解释 utility call、EngineCore 与 Executor/Worker 的进程和 failure boundary；本页只使用该接缝承载更新控制消息。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 拥有本页只审计的 block、prefix、refcount、preempt 与 reset 内部机制。
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] —— 展开 `model.load_weights`、并行参数映射与 LoRA attachment；本页拥有其在线替换事务。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释 persistent request rows、device state 与 graph 生命周期，帮助判断 pause/reset 对 runner 镜像的影响。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 拥有 draft propose/verify/accept 与 device/CPU rollback；本页只审计换权重时 draft state 是否被失效。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 拥有 rank/group/collective 顺序；本页只说明 weight-update control fan-out 和 rank-local payload 边界。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 承接 version label、partial-rank failure、pause latency 与 recovery 的生产观测和故障归因。
+- [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 解释 utility call、EngineCore 与 Executor/Worker 的进程和 failure boundary；本页只使用该接缝承载更新控制消息。
+- [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 拥有本页只审计的 block、prefix、refcount、preempt 与 reset 内部机制。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型与权重 ABI]] —— 展开 `model.load_weights`、并行参数映射与 LoRA attachment；本页拥有其在线替换事务。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释 persistent request rows、device state 与 graph 生命周期，帮助判断 pause/reset 对 runner 镜像的影响。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 拥有 draft propose/verify/accept 与 device/CPU rollback；本页只审计换权重时 draft state 是否被失效。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 拥有 rank/group/collective 顺序；本页只说明 weight-update control fan-out 和 rank-local payload 边界。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 承接 version label、partial-rank failure、pause latency 与 recovery 的生产观测和故障归因。

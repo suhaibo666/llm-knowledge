@@ -6,7 +6,7 @@ title: "vLLM 分布式推理：模型怎样切开，又怎样算回一个结果"
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从模型容量、请求吞吐和长上下文的不同需求出发，解释 TP/PP/DP/EP/PCP/DCP 分别切什么，以及局部计算如何恢复为正确输出。随后介绍 rank/group 与 executor 的执行合同、EPLB 权重搬迁和微批重叠的完成边界。
-> **适用范围**：拥有并行轴、rank/group、executor fan-out、collective 顺序、EPLB 分布式搬迁及 DBO；Serving 路由归17，设备算子归24，编译/图执行归23，在线模型更新归29。
+> **适用范围**：拥有并行轴、rank/group、executor fan-out、collective 顺序、EPLB 分布式搬迁及 DBO；Serving 路由归13，设备算子归20，编译/图执行归19，在线模型更新归25。
 > **最近更新**：2026-09-08。以最小算例补齐切分与重建，并核验新基线 PCP、EPLB 和两代 Runner 微批边界。
 
 ## 1. 同样增加两张卡，解决的可能是完全不同的问题
@@ -17,7 +17,7 @@ title: "vLLM 分布式推理：模型怎样切开，又怎样算回一个结果"
 
 长上下文又分两种问题：prefill 的新 token 太多，可以用 **PCP，prefill context parallel** 分担 query/token 计算；decode 的历史 KV 占用太大，可以用 **DCP，decode context parallel** 切历史上下文，再合并局部 attention。它们不能因为名称都含 context 就被当成同一切分。
 
-本页的共同问题是：**设备只持有一部分数据时，哪一次通信把它恢复成正确语义？** 只有先知道这个答案，GPU 数、进程数和 group 数才有意义。下述数字均为教学输入，不是性能测量；选型收益仍需按 [[05_vllm_performance_tuning_guide|评测与调优]] 验证。
+本页的共同问题是：**设备只持有一部分数据时，哪一次通信把它恢复成正确语义？** 只有先知道这个答案，GPU 数、进程数和 group 数才有意义。下述数字均为教学输入，不是性能测量；选型收益仍需按 [[04_vllm_performance_tuning_guide|评测与调优]] 验证。
 
 | 目标 | 候选轴与切分对象 | 恢复完整语义的动作 | 所需代价 |
 |---|---|---|---|
@@ -128,7 +128,7 @@ flowchart TB
     class A,B,N acc2
 ```
 
-`cp_lse_ag_out_rs` 先 all-gather LSE、校正局部输出，再沿 head reduce-scatter；`dcp_a2a_lse_reduce` 将 output/LSE 打包，以一次异步 `all_to_all_single` 交换，`work.wait()` 后解包加权，同样得到 B×H/N×D。后者明确要求 H 可被 DCP size 整除。`MLADCPManager._init_combine` 依据 `dcp_comm_backend`、PCP 和 direct workspace 可用性选择实现；PCP 的非 A2A 分支用 all-reduce 保留完整 head，direct symmetric-memory 是专用实现入口，不是所有设备都经过上述通用通信函数。后端选择与 kernel 条件见 [[14_vllm_attention_backends_analysis|Attention Backend]]。
+`cp_lse_ag_out_rs` 先 all-gather LSE、校正局部输出，再沿 head reduce-scatter；`dcp_a2a_lse_reduce` 将 output/LSE 打包，以一次异步 `all_to_all_single` 交换，`work.wait()` 后解包加权，同样得到 B×H/N×D。后者明确要求 H 可被 DCP size 整除。`MLADCPManager._init_combine` 依据 `dcp_comm_backend`、PCP 和 direct workspace 可用性选择实现；PCP 的非 A2A 分支用 all-reduce 保留完整 head，direct symmetric-memory 是专用实现入口，不是所有设备都经过上述通用通信函数。后端选择与 kernel 条件见 [[10_vllm_attention_backends_analysis|Attention Backend]]。
 
 DCP 的 KV token 交错存储避免每次增长都重新连续切块；`cp_kv_cache_interleave_size` 是当前共同配置，旧 `dcp_kv_cache_interleave_size` 保留迁移说明。更多 ranks 能减少 KV duplication，却增加 query/partial-output 交换。部署文档的 TP/KV-head 比例是动机说明，当前可接受组合仍须过下节配置与 backend 校验。
 
@@ -167,7 +167,7 @@ Executor 管理 worker 生命周期、RPC fan-out、输出汇集与故障；`Wor
 
 `UniProcExecutor` 直接持有 driver worker；multiprocessing 按 local world 创建 workers 并使用广播消息队列；Ray 为 actors 分配 global/local rank 后调用同样的设备初始化接口，传统 Ray executor 还使用专门的 PP compiled DAG 路径，新基线也提供 Ray V2 选择开关。下述执行轨迹固定普通 multiprocessing、PP+TP 文本路径，Ray 图内部不在本轮展开。
 
-1. `EngineCore.step` 从 Scheduler 获得本次 `SchedulerOutput`，非阻塞提交 `execute_model` 后可准备 grammar；到 `future.result()` 才消费本次执行结果。若返回 None，还要调用 `sample_tokens`，处理执行期间的 abort 后，才用原 snapshot `update_from_output`。完整 Engine 事务由 [[10_vllm_engine_architecture_analysis|Engine 运行]] 解释。
+1. `EngineCore.step` 从 Scheduler 获得本次 `SchedulerOutput`，非阻塞提交 `execute_model` 后可准备 grammar；到 `future.result()` 才消费本次执行结果。若返回 None，还要调用 `sample_tokens`，处理执行期间的 abort 后，才用原 snapshot `update_from_output`。完整 Engine 事务由 [[06_vllm_engine_architecture_analysis|Engine 运行]] 解释。
 2. `MultiprocExecutor.execute_model` 用 `collective_rpc` 广播给所有 workers。普通路径的 `unique_reply_rank` 只让约定 output rank 返回模型结果；TP=2、PP=2、PCP=1 时，它是最后 stage 的第一个 TP worker，即 rank 2。KV/EC connector aggregator 存在时会收集各 worker 输出并合并，不能普遍断言永远只读一份 reply。
 3. `GPUWorker.execute_model` 先等上一轮 PP device send handles，避免下一次 forward 覆盖仍在发送的 buffer。非首 stage 发起 `irecv_tensor_dict`，包装为 `AsyncIntermediateTensors`；直到首次访问 tensors 才 wait handles 并做通信后处理，发起 irecv 不是接收完成。
 4. Runner 执行本 stage；遇到 row-parallel 层就按第2节合并 partial sums，遇到 DCP/EP 则履行相应恢复合同。非末 stage 返回 `IntermediateTensors`，worker 异步 `isend_tensor_dict`，保留 device handles 到下次 step 等待；末 stage 走输出/采样路径。
@@ -179,7 +179,7 @@ Executor 管理 worker 生命周期、RPC fan-out、输出汇集与故障；`Wor
 
 普通 dense DP 在 `run_engine_core` 重配成各自 DP=1，保留用于服务标识的 DP index，能够独立推进；MoE 则进入 `DPEngineCoreProc`，内部 rank offset 与 world 扩展使它们组成共同通信域。某个 rank 没有实际请求但全组仍需推进时，engine 执行 dummy batch；全局 unfinished 状态同步后才能结束 wave。sleep/pause 分支必须遵守自己的限制，不可看到“本地没 token”就进入不同 collective。
 
-`test_dp_pause_barrier_request_deadlock` 的反例是 rank 0 在 DP barrier 等待、rank 1 因错误 wave 通知进入 EP all-to-all。两个都在通信，但等的不是同一次操作；测试要求 paused 状态忽略该启动通知，使后续 barrier 能完成。请求路由和 wave 的服务通知归 [[17_vllm_serving_control_plane_analysis|Serving 控制面]]，它们不能代替此处实际执行的 collective 顺序。
+`test_dp_pause_barrier_request_deadlock` 的反例是 rank 0 在 DP barrier 等待、rank 1 因错误 wave 通知进入 EP all-to-all。两个都在通信，但等的不是同一次操作；测试要求 paused 状态忽略该启动通知，使后续 barrier 能完成。请求路由和 wave 的服务通知归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]，它们不能代替此处实际执行的 collective 顺序。
 
 ## 6. EP 与 EPLB：逻辑专家不变，物理槽位可以改变
 
@@ -187,7 +187,7 @@ Executor 管理 worker 生命周期、RPC fan-out、输出汇集与故障；`Wor
 
 设一个 MoE 层有逻辑专家 E0–E3，EP=2，每 rank 两个物理槽：rank0 的槽0、1装 E0、E1；rank1 的槽2、3装 E2、E3。R 的 token 选择 E1，S 的 token 选择 E3，则 dispatch 分别送到 rank0 的槽1和 rank1 的槽3，执行各专家后，combine 按原 token 身份及路由权重归并。多选专家时，一个 token 可以产生多份 expert 输入，但重建后仍对应原 token。
 
-`BaseRouter._select_experts` 先产生逻辑 `topk_ids` 与权重，再 `_apply_eplb_mapping` 转成物理 ID；capture callback 则在映射前看到逻辑 ID。开启冗余专家时 `logical_to_physical_map` 可为一个逻辑专家列出多个物理副本，`logical_replica_count` 给有效数；路由选一个副本，padding/无效 ID 另有掩码。具体 top-k、token packing、GEMM 与 combine 算子见 [[24_vllm_fused_ops_and_kernels_analysis|融合算子]]。
+`BaseRouter._select_experts` 先产生逻辑 `topk_ids` 与权重，再 `_apply_eplb_mapping` 转成物理 ID；capture callback 则在映射前看到逻辑 ID。开启冗余专家时 `logical_to_physical_map` 可为一个逻辑专家列出多个物理副本，`logical_replica_count` 给有效数；路由选一个副本，padding/无效 ID 另有掩码。具体 top-k、token packing、GEMM 与 combine 算子见 [[20_vllm_fused_ops_and_kernels_analysis|融合算子]]。
 
 EPLB 优化的是专家放置，不改变 router 选择的逻辑模型。假定负载策略提出把 E1 与 E2 对调，新的 physical-to-logical map 为 (E0,E2,E1,E3)。这只是为说明提交合同而给定的目标图，不宣称任意负载都会生成这一方案。切换后 R 仍选择 E1，却应送到 rank1 的槽2；如果只改 map 而没搬权重，它会实际执行旧 E2，数值可能错误而通信完全正常。
 
@@ -221,7 +221,7 @@ flowchart TB
 
 代价包括统计窗口、CPU策略计算与 D2H、expert buffer 和传输。后台异常或成员不一致没有事务式全局回滚；源码特别要求 `rebalanced` 在各 rank 保持一致，否则 readiness all-reduce 自身会 hang。`drain_async` 是显式排空待消费结果的路径，可只确认消费而不应用转入权重；不能把“后台 drain 了”误读成“新布局已提交”。
 
-`ShardedRDTWeightTransferEngine.init_transfer_engine` 明确拒绝 `enable_eplb=True`：其初始化时固定的权重 replay 目的槽会被 EPLB 动态搬迁失效。这个组合限制应在部署时先验证，详见 [[29_vllm_weight_transfer_online_update_analysis|在线权重更新]]。EPLB 搬专家与在线换模型权重是两种不同事务，不能共享一条模糊的“权重已更新”完成信号。
+`ShardedRDTWeightTransferEngine.init_transfer_engine` 明确拒绝 `enable_eplb=True`：其初始化时固定的权重 replay 目的槽会被 EPLB 动态搬迁失效。这个组合限制应在部署时先验证，详见 [[25_vllm_weight_transfer_online_update_analysis|在线权重更新]]。EPLB 搬专家与在线换模型权重是两种不同事务，不能共享一条模糊的“权重已更新”完成信号。
 
 ## 7. DBO：不改模型切分，用另一份计算填通信等待
 
@@ -239,7 +239,7 @@ DBO 是 dual batch overlap，把同一次 forward 切成两个 microbatches，�
 同一教学输入：DP 两 rank 分别有128、512个真实 token，已共同超过所用 threshold，切成两个256-token微批。MRV1 因 rank0 第二微批无真实 token 而否决；MRV2 让 rank0 第二微批以 padding 继续，保持每 rank 两次 expert all-to-all。这一差异有 `test_microbatching_survives_a_rank_that_cannot_fill_it` 等测试支撑，不能把旧稿的“空末微批必否决”套到 MRV2。
 
 > [!contradiction] 旧基线的 Runner 能力结论已经变化
-> 旧稿写“DBO 不受 MRV2 支持，回退 MRV1”。新基线有 MRV2 `UBatchRunner`，但默认选择仍把其视为开发中的能力，需要显式设置 `VLLM_USE_V2_MODEL_RUNNER`；它拒绝 CUDA Graph、LoRA、投机、PP、PCP/DCP、多模态及 hybrid 等组合。PCP 仍只在 MRV2 运行，因此 PCP+DBO 仍不组成受支持路径，理由已是具体兼容校验。编译接缝见 [[23_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]]。
+> 旧稿写“DBO 不受 MRV2 支持，回退 MRV1”。新基线有 MRV2 `UBatchRunner`，但默认选择仍把其视为开发中的能力，需要显式设置 `VLLM_USE_V2_MODEL_RUNNER`；它拒绝 CUDA Graph、LoRA、投机、PP、PCP/DCP、多模态及 hybrid 等组合。PCP 仍只在 MRV2 运行，因此 PCP+DBO 仍不组成受支持路径，理由已是具体兼容校验。编译接缝见 [[19_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]]。
 
 ### 7.2 先交出 CPU 执行权，再让通信覆盖另一微批的计算
 
@@ -291,7 +291,7 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 | PCP采样位置错 | padding、hidden_restore_idx、slot写mask | `test_num_tokens_for_dispatch_uses_largest_pcp_rank`；`test_graph_padding_cannot_be_smaller_than_largest_pcp_rank` |
 | 重叠时偶发污染 | workspace lane、PP send handle、EPLB consumed event | `test_workspace_lanes_compose_with_ubatches`；EPLB `test_producer_consumer` |
 
-上述测试合同均已阅读，未在本轮运行 GPU、多节点或外部通信库。排查先核对成员与顺序，再记录 shape、stream/event 与真实完成，最后才比较 backend 性能；实际工具操作见 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]。
+上述测试合同均已阅读，未在本轮运行 GPU、多节点或外部通信库。排查先核对成员与顺序，再记录 shape、stream/event 与真实完成，最后才比较 backend 性能；实际工具操作见 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]。
 
 ### 源码阅读路线
 
@@ -312,10 +312,10 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 
 ## Related Pages
 
-- [[03_vllm_architecture_overview_analysis|架构概览]] — 从请求全链路进入本页的并行执行问题。
-- [[10_vllm_engine_architecture_analysis|Engine 运行]] — 解释 SchedulerOutput、执行future、采样与状态提交。
-- [[13_vllm_model_library_analysis|模型库与模型 ABI]] — 解释模型层如何提供 TP/PP 与本地权重接口。
-- [[14_vllm_attention_backends_analysis|Attention Backend]] — 解释 PCP/DCP 所需的数值内核和后端能力。
-- [[17_vllm_serving_control_plane_analysis|Serving 控制面]] — 解释 DP请求选择、就绪屏障及服务故障范围。
-- [[23_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]] — 解释 collective与microbatch如何约束图选择和capture。
-- [[24_vllm_fused_ops_and_kernels_analysis|融合算子]] — 接续MoE token打包、专家计算及combine的设备细节。
+- [[02_vllm_architecture_overview_analysis|架构概览]] — 从请求全链路进入本页的并行执行问题。
+- [[06_vllm_engine_architecture_analysis|Engine 运行]] — 解释 SchedulerOutput、执行future、采样与状态提交。
+- [[09_vllm_model_library_analysis|模型库与模型 ABI]] — 解释模型层如何提供 TP/PP 与本地权重接口。
+- [[10_vllm_attention_backends_analysis|Attention Backend]] — 解释 PCP/DCP 所需的数值内核和后端能力。
+- [[13_vllm_serving_control_plane_analysis|Serving 控制面]] — 解释 DP请求选择、就绪屏障及服务故障范围。
+- [[19_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]] — 解释 collective与microbatch如何约束图选择和capture。
+- [[20_vllm_fused_ops_and_kernels_analysis|融合算子]] — 接续MoE token打包、专家计算及combine的设备细节。
