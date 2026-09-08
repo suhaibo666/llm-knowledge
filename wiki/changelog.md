@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-08：吸收四篇 vLLM 深挖笔记的独有增量
+
+- 新增 [[02_engineering/03_infer_frameworks/vllm/26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]：在当前 `199cb9b` 基线上重建本机 worker 启动、READY/队列握手、广播 RPC、output rank 与 aggregator、共享内存 ring 背压、Future FIFO 及 shutdown；原笔记中的旧 commit 行号未作为知识库证据沿用。
+- 将其余独有内容归入既有权威页：[[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|模型库]]补构造期 `static_forward_context`，[[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV 管理]]补 `tokens_per_state` 与 DeepSeek V4 多缓存拓扑，[[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]补 PP partial P2P 和 `PPHandler`，[[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|融合算子]]补 multi-LoRA shrink/expand 算例。
+- GPU Model Runner 数据流笔记与 11/12 的主体内容重复，未另建平行页面；其中确有缺口的跨 stage 采样反馈归 18。vLLM 域由 25 增至 26 篇正文，父索引和总索引同步重算为 vLLM 27 页、推理框架 35 页（均含 index）。
+
 ## 2026-09-08：vLLM 25 篇正文统一为连续编号
 
 - 按重构后的既有相对顺序压缩编号：`01` 保持不变，原 `03–06` 改为 `02–05`，原 `10–12` 改为 `06–08`，原 `13–29` 改为 `09–25`；正文主题、页面边界和阅读依赖不变。

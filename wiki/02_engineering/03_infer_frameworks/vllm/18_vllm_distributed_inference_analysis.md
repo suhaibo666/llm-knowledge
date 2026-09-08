@@ -5,9 +5,9 @@ title: "vLLM 分布式推理：模型怎样切开，又怎样算回一个结果"
 # vLLM 分布式推理：模型怎样切开，又怎样算回一个结果
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
-> **主题**：从模型容量、请求吞吐和长上下文的不同需求出发，解释 TP/PP/DP/EP/PCP/DCP 分别切什么，以及局部计算如何恢复为正确输出。随后介绍 rank/group 与 executor 的执行合同、EPLB 权重搬迁和微批重叠的完成边界。
+> **主题**：从模型容量、请求吞吐和长上下文的不同需求出发，解释 TP/PP/DP/EP/PCP/DCP 分别切什么，以及局部计算如何恢复为正确输出。随后介绍 rank/group 与 executor 的执行合同、PP 部分发送与反向采样同步、EPLB 权重搬迁和微批重叠的完成边界。
 > **适用范围**：拥有并行轴、rank/group、executor fan-out、collective 顺序、EPLB 分布式搬迁及 DBO；Serving 路由归13，设备算子归20，编译/图执行归19，在线模型更新归25。
-> **最近更新**：2026-09-08。以最小算例补齐切分与重建，并核验新基线 PCP、EPLB 和两代 Runner 微批边界。
+> **最近更新**：2026-09-08。以最小算例补齐切分与重建，并核验新基线 PP 部分发送、`PPHandler`、PCP、EPLB 和两代 Runner 微批边界。
 
 ## 1. 同样增加两张卡，解决的可能是完全不同的问题
 
@@ -175,7 +175,23 @@ Executor 管理 worker 生命周期、RPC fan-out、输出汇集与故障；`Wor
 
 三个不变量分别是 membership、order、shape/lifetime：预期成员不能漏掉，第N次 collective 必须语义相同，通信未完成的 buffer 不能被覆盖。它们分别解释“初始化 hang”“首请求或特殊 batch hang”和“不挂但数值错”。
 
-### DP 空闲不能随意退出 MoE 通信
+### 5.1 PP 可以只发送本 TP rank 的切片，再在接收 stage 重建
+
+PP 中间 tensor 通常在一个 stage 的 TP ranks 上完全复制。对满足条件的 key，`GroupCoordinator._should_use_all_gather()` 会选择 partial P2P：发送端先按 TP size 切出本 rank 负责的连续片段，只沿对应 PP lane 发送；接收端收到自己的片段后，在新 stage 的 TP group 内 all-gather，恢复原 tensor shape。于是 TP=2、PP=2 时，rank 0→2 和 rank 1→3 各发送一半，rank 2/3 再互相 all-gather；不是 rank 0 把完整 tensor 发给 rank 2、rank 1 再重复发一份。
+
+这项优化有两个必须同时满足的合同：tensor 元素数要能按 TP size 切分，且该 tensor 在发送 stage 确实是 fully replicated。调用者通过 `all_gather_tensors` 逐 key 决定是否允许；若 sequence parallel 已把 residual 分散在 TP ranks 上，worker 会明确关闭 residual 的 partial all-gather。否则接收端会把两个本来不同的局部片段误当成“同一完整 tensor 的分片”，通信可能完成但数值含义已错。
+
+异步完成点也没有改变：非末 stage 保存 `isend_tensor_dict()` 返回的 device handles，并在下一 step 复用相关 buffer 前等待；非首 stage 的 `AsyncIntermediateTensors` 到真正访问 tensor 时才等待 irecv 和后处理。partial P2P 减少的是 PP 链路字节，代价是在接收 stage 增加 TP all-gather；是否有收益需要按互连拓扑和 tensor 大小测量，源码没有给出统一阈值。
+
+### 5.2 sampled token 走独立的 PP 反向同步通道
+
+hidden states 沿 PP 正向流动，但较早 stage 还需要知道末 stage 最终采样、拒绝和 draft 了什么。`PPHandler` 为此建立一条 side stream：末 stage 按 `compute_need_sampled_mask()` 只选择本步真正到达采样点的请求，非最终 prefill chunk 不进入 sampled 集合；随后广播 sampled token、每请求 `num_sampled`、`num_rejected`，以及可选 draft tokens。前面 stages 接收并通过 `get_prev_sampled_outputs()` 取回对应历史结果。
+
+这条广播使用与 hidden-state P2P 分开的 sibling NCCL group，避免采样广播和正向 P2P 在同一 communicator 上互相串行。非末 stage 的接收队列预先填入 `pp_size` 个空项：step T 接收的结果到 T+PP size 才消费，与流水线延迟对齐。request slot 被释放并复用时，generation counter 会使旧 slot 的晚到结果失效，不能只凭当前位置把旧 token 交给新请求。
+
+因此 PP 的完整正确性不止“中间 tensor 最终送到下一 stage”：正向数据要满足 shape/lifetime，反向采样反馈还要满足 request 身份、延迟和 generation。draft/accept/reject 的算法语义归 [[16_vllm_speculative_decoding_analysis|投机解码]]；本节只拥有跨 stage 的同步合同。
+
+### 5.3 DP 空闲不能随意退出 MoE 通信
 
 普通 dense DP 在 `run_engine_core` 重配成各自 DP=1，保留用于服务标识的 DP index，能够独立推进；MoE 则进入 `DPEngineCoreProc`，内部 rank offset 与 world 扩展使它们组成共同通信域。某个 rank 没有实际请求但全组仍需推进时，engine 执行 dummy batch；全局 unfinished 状态同步后才能结束 wave。sleep/pause 分支必须遵守自己的限制，不可看到“本地没 token”就进入不同 collective。
 
@@ -286,6 +302,8 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 |---|---|---|
 | 初始化 hang | world/rank offset、group创建顺序与backend | worker rank日志、`GroupCoordinator` 创建分支 |
 | 首请求或 pause/barrier hang | PP接收对端、MoE dummy/wave次序 | `test_dp_pause_barrier_request_deadlock` |
+| partial PP 后 shape 对但数值错 | 发送 tensor 是否 fully replicated、该 key 是否误开 all-gather | `GroupCoordinator._should_use_all_gather`；`GPUWorker.execute_model` 的 `all_gather_tensors` |
+| 前一请求的 sampled/draft 混入新请求 | PP side stream 的延迟、slot generation 与 mask | `tests/v1/worker/test_pp_utils.py` |
 | 特定batch hang | 全rank微批意愿、padding、yield后异常 | `test_every_dp_rank_must_agree_to_microbatch`；`UBatchRunner.run` 的join与handoff |
 | 数值错误但通信完成 | TP bias/shard；DCP LSE；EP逻辑/物理map | DCP `test_mathematically_correct`；EPLB shuffle 后权重与冗余副本一致性测试 |
 | PCP采样位置错 | padding、hidden_restore_idx、slot写mask | `test_num_tokens_for_dispatch_uses_largest_pcp_rank`；`test_graph_padding_cannot_be_smaller_than_largest_pcp_rank` |
@@ -303,7 +321,8 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 | Rank与group | `vllm/distributed/parallel_state.py::init_distributed_environment / initialize_model_parallel / GroupCoordinator.__init__ / all_reduce`；`vllm/distributed/communication_op.py::tensor_model_parallel_all_reduce` |
 | PCP切分与重建 | `vllm/v1/worker/gpu/pcp_manager.py::PCPManager.validate_config / _iter_rank_chunks / _reorder_segments / _build_batch_layout / restore_hidden_states`；`vllm/v1/attention/ops/pcp.py::_gather_prefill_cache_inputs / maybe_gather_mla_latent_cache_inputs`；`tests/v1/worker/test_gpu_pcp_manager.py::test_num_tokens_for_dispatch_uses_largest_pcp_rank / test_graph_padding_cannot_be_smaller_than_largest_pcp_rank` |
 | DCP数值与通信 | `vllm/v1/attention/ops/dcp.py::_correct_attn_cp_out_kernel / _cp_lse_common / cp_lse_ag_out_rs / dcp_a2a_lse_reduce / MLADCPManager._init_combine`；`tests/distributed/test_dcp_a2a.py::TestLSEWeightedCombine.test_mathematically_correct` |
-| Executor到完成输出 | `vllm/v1/executor/abstract.py::Executor.get_class`；`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor._init_executor / execute_model / collective_rpc / _get_output_rank`；`vllm/v1/executor/uniproc_executor.py::UniProcExecutor._init_executor`；`vllm/v1/executor/ray_executor.py::RayDistributedExecutor._init_workers_ray`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model / AsyncIntermediateTensors.wait_for_comm / init_worker_distributed_environment`；`vllm/v1/engine/core.py::EngineCore.step` |
+| Executor到完成输出 | `vllm/v1/executor/abstract.py::Executor.get_class`；`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor._init_executor / execute_model / collective_rpc / _get_output_rank`；`vllm/v1/executor/uniproc_executor.py::UniProcExecutor._init_executor`；`vllm/v1/executor/ray_executor.py::RayDistributedExecutor._init_workers_ray`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model / AsyncIntermediateTensors.wait_for_comm / init_worker_distributed_environment`；`vllm/v1/engine/core.py::EngineCore.step`；进程 RPC 深挖见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]] |
+| PP partial P2P 与采样反向同步 | `vllm/distributed/parallel_state.py::GroupCoordinator._should_use_all_gather / isend_tensor_dict / irecv_tensor_dict`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model`；`vllm/v1/worker/gpu/pp_utils.py::compute_need_sampled_mask / PPHandler`；`tests/v1/worker/test_pp_utils.py` |
 | DP共同推进 | `vllm/v1/engine/core.py::EngineCoreProc.run_engine_core / DPEngineCoreProc.run_busy_loop / _has_global_unfinished_reqs`；`tests/v1/distributed/test_async_llm_dp.py::test_dp_pause_barrier_request_deadlock` |
 | EPLB身份与提交 | `vllm/model_executor/layers/fused_moe/router/base_router.py::BaseRouter._select_experts / _apply_eplb_mapping`；`vllm/distributed/eplb/eplb_state.py::EplbState.step / rearrange / _all_ranks_result_ready / drain_async / compute_logical_maps / _commit_eplb_maps / _move_to_workspace`；`vllm/distributed/eplb/async_worker.py::transfer_run_periodically` |
 | 权重搬迁与验证 | `vllm/distributed/eplb/rebalance_execute.py::move_to_buffer / move_from_buffer / rearrange_expert_weights_inplace`；`tests/distributed/test_eplb_execute.py::_test_async_transfer_layer_without_mtp_worker / test_rearrange_expert_weights_with_redundancy`；`tests/distributed/test_eplb_events.py::test_producer_consumer`；`vllm/distributed/weight_transfer/sharded_rdt_engine.py::ShardedRDTWeightTransferEngine.init_transfer_engine` |
@@ -312,7 +331,7 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 
 ## Related Pages
 
-- [[02_vllm_architecture_overview_analysis|架构概览]] — 从请求全链路进入本页的并行执行问题。
+- [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]] — 深挖本页只作为执行边界使用的进程启动、广播 RPC、响应 FIFO 与 shutdown。
 - [[06_vllm_engine_architecture_analysis|Engine 运行]] — 解释 SchedulerOutput、执行future、采样与状态提交。
 - [[09_vllm_model_library_analysis|模型库与模型 ABI]] — 解释模型层如何提供 TP/PP 与本地权重接口。
 - [[10_vllm_attention_backends_analysis|Attention Backend]] — 解释 PCP/DCP 所需的数值内核和后端能力。

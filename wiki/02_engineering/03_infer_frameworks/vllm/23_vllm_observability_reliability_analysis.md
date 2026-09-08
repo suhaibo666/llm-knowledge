@@ -181,6 +181,6 @@ EngineCore monotonic event 只能与同一进程的 event 相减；frontend arri
 - [[04_vllm_performance_tuning_guide|性能评测与调优]] — 解释如何用这些观测检验 SLO、性能假设与回滚。
 - [[07_vllm_scheduler_analysis|Scheduler]] — 解释 waiting、token budget 和 preemption 所对应的真实调度状态。
 - [[08_vllm_kv_cache_management_analysis|KV Cache 管理]] — 解释 KV usage、eviction 和 residency 对应的 block 生命周期。
-- [[13_vllm_serving_control_plane_analysis|Serving 控制面]] — 接续健康和故障可见性之后的进程管理与流量路由。
+- [[13_vllm_serving_control_plane_analysis|Serving 控制面]] — 接续健康和故障可见性之后的进程管理与流量路由；本机 worker 的 ready、failure response 与强制收尾见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]。
 - [[18_vllm_distributed_inference_analysis|分布式推理]] — 解释 rank 与 collective 故障域为何产生不同 sentinel 状态。
 - [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] — 解释外部 KV 等待、connector failure 和 lease cleanup 的来源。

@@ -32,7 +32,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 再次重算推理框架与 vLLM**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
 
 ### 02 工程实现
 
@@ -47,8 +47,8 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 24 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index|推理框架目录]] | 34 | 活跃 |
-| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM知识地图]] | 26 | 活跃 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index|推理框架目录]] | 35 | 活跃 |
+| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM知识地图]] | 27 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 49 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 17 | 活跃 |
 | └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
@@ -57,7 +57,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 同上，**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
+> 同上，**2026-09-04 全表机械复算，2026-09-08 再次重算推理框架与 vLLM**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
 
 ### courses 课程入口
 

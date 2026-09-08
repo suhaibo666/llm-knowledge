@@ -5,8 +5,8 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 # vLLM 推理引擎：按问题与依赖组织的知识地图
 
 > **核验基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（2026-09-07 UTC）；各页适用范围与证据限制见页头和正文。
-> **核验状态**：25篇正文已完成本轮重构与逐页核验。最后更新：2026-09-08。
-> **目录范围**：25篇内容页 + 本索引，按原有相对顺序连续编号为01–25；旧版系统设计原则页已合并到架构与具体机制页。本页只维护本级入口及阅读依赖；使用、调优、排障、架构和具体机制分别从下表进入。
+> **核验状态**：26篇正文已完成本轮重构与逐页核验。最后更新：2026-09-08。
+> **目录范围**：26篇内容页 + 本索引，按原有相对顺序连续编号为01–26；旧版系统设计原则页已合并到架构与具体机制页。本页只维护本级入口及阅读依赖；使用、调优、排障、架构和具体机制分别从下表进入。
 
 ## 读者入口
 
@@ -51,12 +51,13 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 |---|---|---|
 | [[18_vllm_distributed_inference_analysis|18 分布式推理]] | 并行轴怎样映射到rank与通信，专家迁移和微批怎样保持次序？ | Engine、模型库、Attention与Serving → 分离式KV、在线更新 |
 | [[19_vllm_compilation_cudagraph_analysis|19 编译与CUDA Graph]] | 动态shape怎样选择编译区域、捕获与重放，并在不兼容时回退？ | Attention与两代Runner → IR、融合算子 |
-| [[20_vllm_fused_ops_and_kernels_analysis|20 融合算子与Kernel]] | 融合具体减少哪些中间读写，专家计算怎样重排，何时不能使用？ | Attention、量化、编译与IR → 设备性能验证 |
+| [[20_vllm_fused_ops_and_kernels_analysis|20 融合算子与Kernel]] | 融合具体减少哪些中间读写，专家与multi-LoRA计算怎样重排，何时不能使用？ | Attention、量化、编译与IR → 设备性能验证 |
 | [[21_vllm_ir_and_fusion_passes_analysis|21 IR与融合Pass]] | 语义算子、原地修改和融合怎样安全改写并交给后端？ | 量化与编译图 → 融合算子 |
 | [[22_vllm_disaggregated_kv_serving_analysis|22 分离式KV Serving]] | 跨Engine的KV怎样发现、传输、证明有效并在失败时解除持有？ | Scheduler、KV、Serving与分布式 → 可观测性 |
 | [[23_vllm_observability_reliability_analysis|23 可观测性与可靠性]] | 指标、事件与追踪怎样产生，故障怎样传播、清理与恢复？ | 调试与排障 → Scheduler、KV、Serving与分布式 |
 | [[24_vllm_extension_plugin_system_analysis|24 扩展与插件]] | 插件怎样按进程与应用生命周期发现、选择和初始化？ | 请求语义、模型库与Serving → 在线更新、可观测性 |
 | [[25_vllm_weight_transfer_online_update_analysis|25 在线权重更新]] | 权重字节、rank更新、版本标签和缓存何时真正对请求可见？ | Engine、KV、模型库、Runner与分布式 → 可观测性 |
+| [[26_vllm_multiproc_executor_rpc_deepdive|26 MultiprocExecutor专题]] | 本机workers怎样启动、广播同一RPC、形成背压、配对响应并在失败时收尾？ | Engine与分布式 → Serving、Runner与可观测性 |
 
 ## Related Pages
 

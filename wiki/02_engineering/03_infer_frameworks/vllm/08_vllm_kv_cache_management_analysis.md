@@ -5,9 +5,9 @@ title: "vLLM KV Cache 管理：请求怎样分块、共享前缀并安全归还�
 # vLLM KV Cache 管理：请求怎样分块、共享前缀并安全归还容量
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（main 快照，2026-09-07 UTC）。
-> **主题**：一个请求的 token 怎样找到物理 KV 块；前缀共享、部分命中、混合布局和 CPU offload 怎样改变分配与回收。
+> **主题**：一个请求的 token 怎样找到物理 KV 块；前缀共享、部分命中、state 密度、混合布局和 CPU offload 怎样改变分配与回收。
 > **适用范围**：V1 单 Engine 的 BlockPool、prefix cache、hybrid group、partial CoW 与 native CPU tier；请求调度策略见 07，设备执行见 11/12，跨 Engine 传输见 22。
-> **最近更新**：2026-09-08。
+> **最近更新**：2026-09-08。补充 `tokens_per_state` 与 DeepSeek V4 多类缓存模块的规划边界。
 
 ## 1. 十个 token 为什么不需要一段连续显存
 
@@ -202,6 +202,25 @@ PP 不能沿用全模型层数直接估每 rank 容量。`_project_kv_cache_grou
 
 最终各 worker 按可用内存计算，再取能共同使用的最小 `num_blocks`，重新规划 view stride/offset；不是只缩小一个数字而保留旧地址步长。上述 tail scratch 的 `prefix_cacheable=False` 则影响下一节的命中边界：它占本地容量，却不应要求自己也有 prefix hash。
 
+### 5.3 一个 state 可以覆盖多个 token，不等于改大 prefix block
+
+`KVCacheSpec.block_size` 描述调度和逻辑表中的 token 容量，`tokens_per_state` 描述 Kernel 表示里一个 state 对应多少 token。普通 attention 的默认值是 1；值大于 1 时，多 token 被压成一个 state。例如 block 含 256 个 token、`tokens_per_state=4`，`get_num_kernel_states()` 需要 64 个 Kernel states。这个比例改变物理 state 数与 slot mapping 的解释，不会自动把 prefix hash 粒度也从 256 改成 64 个 token。
+
+这个字段不是只为“压缩”命名。`AttentionSpec` 还允许小于 1 的比例来表达一个 token 对应多个 states；`MambaSpec` 则用特殊值表示请求级 state page，而不是套普通 attention 的整数除法。因此容量代码应询问 spec 的转换方法，不能在 manager 或 Kernel 中各自硬编码 `num_tokens / block_size`。
+
+DeepSeek V4 展示了为何“一个模型一类 KV cache”已经不够：
+
+| 构造期模块 | 向 planner 声明的状态 | 规划含义 |
+|---|---|---|
+| 主 compressed attention cache | 压缩比大于 1 时返回带相同 `tokens_per_state` 的 `MLAAttentionSpec` | 多 token 共用一个 compressed state；比例不满足时不在这里重复分配 SWA |
+| `DeepseekV4IndexerCache` | 独立的 `MLAAttentionSpec`，同样携带 compress ratio | indexer 状态有自己的层身份和物理 view，不能假设与主 cache 是同一个 tensor |
+| `DeepseekV4SWACache` | 独立 `SlidingWindowMLASpec` | 窗口状态按自己的 page 规划；当前 block size 还受与 C4A page 物理共享的布局约束 |
+| `CompressorStateCache` | 独立 `SlidingWindowMLASpec` | compressor history 用 FP32 state 与自己的 shape；block size 由可共享物理 page 的几何关系约束 |
+
+这些模块在模型构造时分别登记进 `static_forward_context`，planner 再按类型收集 spec、分组并建立 backing views；构造目录的生命周期见 [[09_vllm_model_library_analysis|模型库]]。因此排查 DSv4 容量时要同时核对“有哪些 cache-bearing modules”“每类 token/state 比例”“哪些 views 共享一页”，而不是只用 attention 层数乘一个统一 KV 字节数。架构上各状态的算法作用见 [[01_theory/01_models/deepseek/27_deepseek_v4_implementation_deepdive|DeepSeek V4 实现深挖]]。
+
+回归测试用 256 token、压缩比 4 得到 64 个 indexer states，并覆盖压缩比 4/128 的连续 packing 与 DSv4 packed zeroer 几何。这证明当前实现的计数和布局合同；它不是实际模型吞吐或显存节省的 benchmark。
+
 ## 6. 多组各自命中后，为什么还要反复缩短长度
 
 即使字节布局成立，所有组仍须能从同一个 token 边界恢复。scheduler 粒度取各有效 group block size 的公倍数；hash 粒度依可缓存组求公约数或验证显式配置，二者职责不同。`prefix_cacheable=False` 的 scratch **不参与 hash 对齐、命中查找和 fine-grained 能力限制**，但仍参与 pool 容量和 scheduler block 的共同约束。
@@ -290,11 +309,12 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 2. `vllm/v1/core/block_pool.py::BlockPool.get_new_blocks`、`touch`、`is_block_writable`、`free_blocks`、`cache_partial_block`、`move_block_hashes`、`reset_prefix_cache`：同一对象上的分配、身份和回收。
 3. `vllm/v1/core/kv_cache_manager.py::KVCacheManager.get_computed_blocks`、`allocate_slots`；`vllm/v1/core/kv_cache_coordinator.py::KVCacheCoordinator.allocate_new_computed_blocks`：命中上限、容量检查与全组 touch 顺序。
 4. `vllm/v1/core/single_type_kv_cache_manager.py::SingleTypeKVCacheManager._apply_cow`、`MambaManager.allocate_new_blocks`、`finalize_partial_tail_offload`；`vllm/v1/core/sched/scheduler.py::Scheduler._free_cow_retained_blocks`、`_connector_finished`：两种 partial 尾处理及条件完成边界。
-5. `vllm/v1/core/kv_cache_utils.py::_get_packed_kv_cache_groups`、`_get_kv_cache_groups_glm5_next`、`_get_kv_cache_bytes_per_block`、`_project_kv_cache_groups_to_worker`、`get_kv_cache_configs`：分组、字节跨度与 PP 投影。
-6. `vllm/v1/core/kv_cache_coordinator.py::HybridKVCacheCoordinator.find_longest_cache_hit`；`vllm/v1/core/single_type_kv_cache_manager.py::SlidingWindowManager.reachable_block_mask`、`MambaManager.reachable_block_mask`：共同命中长度和保留集合。
-7. `vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.add_requests`、`update_requests`、`prepare_attn`：请求表到设备 slot 的交付链。
-8. `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py::MooncakeStoreScheduler.register_finished_partial_tail`、`update_connector_output`：结束请求的精确边界块如何由保存任务继续持有。
-9. `vllm/v1/kv_offload/cpu/manager.py::CPUOffloadingManager.prepare_store`、`complete_store`、`prepare_load`、`complete_load`；`vllm/v1/kv_offload/cpu/gpu_worker.py::SingleDirectionOffloadingHandler.get_finished`：host 内容状态与设备完成。
+5. `vllm/v1/kv_cache_interface.py::KVCacheSpec.tokens_per_state`、`get_num_kernel_states`、`AttentionSpec.tokens_per_state`；`vllm/models/deepseek_v4/attention.py::DeepseekV4Attention.get_kv_cache_spec`、`DeepseekV4IndexerCache`；`vllm/v1/attention/backends/mla/sparse_swa.py::DeepseekV4SWACache`；`vllm/models/deepseek_v4/compressor.py::CompressorStateCache`：token/state 比例与 DSv4 多缓存身份。验证：`tests/v1/attention/test_indexer_deepseek_v4_slot_mapping.py`、`tests/v1/core/test_contiguous_kv_packing.py`、`tests/v1/worker/test_dsv4_packed_zeroer_geometry.py`。
+6. `vllm/v1/core/kv_cache_utils.py::_get_packed_kv_cache_groups`、`_get_kv_cache_groups_glm5_next`、`_get_kv_cache_bytes_per_block`、`_project_kv_cache_groups_to_worker`、`get_kv_cache_configs`：分组、字节跨度与 PP 投影。
+7. `vllm/v1/core/kv_cache_coordinator.py::HybridKVCacheCoordinator.find_longest_cache_hit`；`vllm/v1/core/single_type_kv_cache_manager.py::SlidingWindowManager.reachable_block_mask`、`MambaManager.reachable_block_mask`：共同命中长度和保留集合。
+8. `vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.add_requests`、`update_requests`、`prepare_attn`：请求表到设备 slot 的交付链。
+9. `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py::MooncakeStoreScheduler.register_finished_partial_tail`、`update_connector_output`：结束请求的精确边界块如何由保存任务继续持有。
+10. `vllm/v1/kv_offload/cpu/manager.py::CPUOffloadingManager.prepare_store`、`complete_store`、`prepare_load`、`complete_load`；`vllm/v1/kv_offload/cpu/gpu_worker.py::SingleDirectionOffloadingHandler.get_finished`：host 内容状态与设备完成。
 
 ## Related Pages
 

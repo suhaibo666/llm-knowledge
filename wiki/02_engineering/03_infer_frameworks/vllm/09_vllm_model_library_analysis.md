@@ -5,9 +5,9 @@ title: "vLLM 模型库：从 checkpoint 到可执行模型"
 # vLLM 模型库：从 checkpoint 到可执行模型
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
-> **主题**：解释 architecture 如何选出模型类，以及构造器、名称映射和参数加载器怎样把 checkpoint 写入当前 rank 的模型。随后说明加载完成、IPC 权重缓存与 LoRA 接合的边界。
+> **主题**：解释 architecture 如何选出模型类，以及构造器、静态模块目录、名称映射和参数加载器怎样把 checkpoint 写入当前 rank 的模型。随后说明加载完成、IPC 权重缓存与 LoRA 接合的边界。
 > **适用范围**：模型选择、构造、基础权重加载及模型支持接口；量化数值算法见量化页，attention 能力选择见后端页，设备 batch 与通信分组分别见 runner 和分布式页。
-> **最近更新**：2026-09-08。补充小模型分片例子、当前加载变体和实际完整性限制。
+> **最近更新**：2026-09-08。补充构造期 `static_forward_context`、小模型分片例子、当前加载变体和实际完整性限制。
 
 ## 1. 为什么 checkpoint 不能直接变成一个模型
 
@@ -60,6 +60,8 @@ Llama 和 Qwen2 都采用这些共同构造/加载接口并声明 LoRA、PP、�
 
 ## 3. 构造器先分配什么，再加载什么
 
+### 3.1 当前 rank 只建立自己会执行的模块骨架
+
 `initialize_model()` 在 current-config/compile scope 中调用 `model_class(vllm_config=..., prefix=...)`，并记录 reload metadata。`VllmConfig` 让嵌套模块读到同一份模型、缓存、量化等配置；`prefix` 则是模块在整棵模型中的名字。Qwen2 外层传入 `model`，decoder 继续派生 `model.layers.0.self_attn.qkv_proj`。attention 注册和逐层量化匹配都依赖这种完整前缀，它不是日志装饰。
 
 Qwen2 构造器用 `QKVParallelLinear` 代替独立 Q/K/V，用 `MergedColumnParallelLinear` 合并 gate/up，用 `RowParallelLinear` 构造 attention 输出投影和 MLP down projection。本例每个 rank 此时得到尚未初始化的 `qkv_proj.weight` 8×8 和 `gate_up_proj.weight` 12×8；正确数值要等下一节加载后才存在。
@@ -67,6 +69,22 @@ Qwen2 构造器用 `QKVParallelLinear` 代替独立 Q/K/V，用 `MergedColumnPar
 若 PP>1，`make_layers()` 只构造当前 stage 的层，其余位置放 `PPMissingLayer`，而不是先加载完整模型再删除。Qwen2 的 embedding 通常在首 stage；词嵌入 tying 或 speculative decoding 的特定需求也可让其他 stage 持有它。末 stage 才持有最终 norm 与 LM head。通用加载器遇到 `PPMissingLayer` 或 `StageMissingLayer` 停止整个子树加载，所以别的 stage 的 checkpoint tensor 不该成为本 rank 的漏载错误。
 
 这与前向接口一致：Qwen2 首 stage 从 token 或 `inputs_embeds` 得到隐藏状态，非首 stage 消费 `IntermediateTensors`；**非末 stage** 返回中间状态，末 stage 归一化后返回最终隐藏状态，再由 `compute_logits()` 产生 logits。此处只接到模型方法的输入输出，batch、KV 初始化和实际执行见 runner 页。
+
+### 3.2 prefix 还在构造期建立一份静态模块目录
+
+部分层在构造器内把自己登记到 `vllm_config.compilation_config.static_forward_context[prefix]`。attention、MLA、DeepSeek V4 的 indexer/cache 模块都是这种模式；编译和 MoE 路径也会使用同一目录，因此不能把它缩写成“KV 层列表”。key 仍是上节递归生成的完整 `prefix`，value 是已经构造出的模块对象。若两个子模块错误复用 prefix，问题不只是日志同名，而是后续按名字查询、规划或绑定可能指向错误对象。
+
+`static_forward_context` 保存的是**模型构造期确定的模块身份与能力**，不是一次 forward 的 hidden states。另一个容易混淆的对象是 `vllm/forward_context.py` 中由 `set_forward_context()` 建立的动态 `ForwardContext`：它随具体模型调用携带本步 attention metadata、virtual engine 等运行态。前者寿命跟随配置和模型，用于发现“有哪些层”；后者寿命围绕一次 forward，用于交付“这些层本步怎样执行”。
+
+以 KV 初始化为例，静态目录把构造与设备缓存连接成一条可核验的生命周期：
+
+1. `initialize_model()` 递归构造当前 PP stage 的模块；cache-bearing 模块以完整 prefix 自注册。
+2. `get_layers_from_vllm_config()` 从目录按模块类型筛选本 rank 的真实层，`PPMissingLayer` 不会凭空产生缓存能力。
+3. `get_kv_cache_spec()` 逐层询问所需 spec，并允许已选择的 attention backend 调整可执行布局。
+4. planner 按各层 spec 分组并计算容量；这一步规划的是缓存表示，不是加载 checkpoint 权重。
+5. `init_kv_cache()` 分配 backing tensors，再由 `bind_kv_cache()` 按 prefix/group 把物理缓存绑定回这些模块；逐步 forward 才另外设置动态 `ForwardContext`。
+
+这条链解释了为何模型“能完成权重加载”仍可能在 KV 规划时报层缺失、重复名或 spec 不兼容：权重名称表和静态执行目录共享 prefix 语义，但验证的是两套不同合同。
 
 > [!contradiction] 文档接口与当前代码有两个差异
 > `docs/design/arch_overview.md` 的统一构造签名说明要求旧式外部模型迁移；live `initialize_model()` 仍发 `DeprecationWarning`，再按签名猜 `config/cache_config/quant_config/lora_config/scheduler_config/prefix` 继续构造。统一签名是当前标准，旧兼容桥尚未删除。另外 `SupportsPP.forward` 的 docstring 写“仅末 rank 返回 IntermediateTensors”，Qwen2 的实际分支相反；应以非末 stage 交出中间状态的实现理解本例。
@@ -248,7 +266,7 @@ worker `_load_adapter()` 展开 expected module 集合，读取并验证 PEFT co
 以下均为本基线实际打开的源码路线，路径相对 `vllm-project/vllm`：
 
 1. **类选择与能力**：`vllm/model_executor/models/registry.py::_ModelRegistry.resolve_model_cls`、`_LazyRegisteredModel.inspect_model_cls`、`_LazyRegisteredModel._get_modelinfo_module_hash`、`_ModelInfo.from_model_cls`；`vllm/model_executor/model_loader/utils.py::_get_model_architecture`。验证：`tests/models/test_registry.py::test_registry_model_property`、`test_lazy_modelinfo_package_attempts_cache_load`、`test_hf_registry_coverage`。
-2. **统一构造与模型消费**：`vllm/model_executor/model_loader/utils.py::initialize_model`；`vllm/model_executor/models/qwen2.py::Qwen2ForCausalLM`、`Qwen2Model`、`Qwen2Attention.forward`、`Qwen2MLP.forward`；`vllm/model_executor/models/llama.py::LlamaForCausalLM`；`vllm/model_executor/models/interfaces.py::SupportsMultiModal`、`SupportsPP`、`SupportsQuant`。设计对照：`docs/design/arch_overview.md` 的 Extensibility/Uniformity 与 `docs/contributing/model/basic.md` 的 Initialization Code；初始化验证入口为 `tests/models/test_initialization.py::can_initialize`。
+2. **统一构造、静态目录与模型消费**：`vllm/model_executor/model_loader/utils.py::initialize_model`；`vllm/model_executor/layers/attention/attention.py::Attention.__init__`；`vllm/config/vllm.py::get_layers_from_vllm_config`；`vllm/v1/worker/gpu/attn_utils.py::get_kv_cache_spec`、`init_kv_cache`；`vllm/v1/kv_cache_interface.py::bind_kv_cache`；`vllm/forward_context.py::set_forward_context`；`vllm/model_executor/models/qwen2.py::Qwen2ForCausalLM`、`Qwen2Model`、`Qwen2Attention.forward`、`Qwen2MLP.forward`；`vllm/model_executor/models/llama.py::LlamaForCausalLM`；`vllm/model_executor/models/interfaces.py::SupportsMultiModal`、`SupportsPP`、`SupportsQuant`。设计对照：`docs/design/arch_overview.md` 的 Extensibility/Uniformity 与 `docs/contributing/model/basic.md` 的 Initialization Code；初始化与目录消费验证入口为 `tests/models/test_initialization.py::can_initialize`、`tests/v1/worker/test_attn_utils.py`。
 3. **选择加载器与最终返回**：`vllm/model_executor/model_loader/__init__.py::get_model_loader`、`get_model`；`vllm/model_executor/model_loader/base_loader.py::BaseModelLoader.load_model`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader._get_weights_iterator`、`get_all_weights`、`load_weights`、`track_weights_loading`；`vllm/model_executor/model_loader/utils.py::process_weights_after_loading`、`device_loading_context`。
 4. **名称、递归和共享参数**：`vllm/model_executor/models/utils.py::WeightsMapper`、`AutoWeightsLoader._load_module`、`AutoWeightsLoader._load_param`、`AutoWeightsLoader._check_skipped_aliases`、`make_layers`。验证：`tests/models/test_utils.py::test_module_skip_tied_weights`、`test_module_skip_tied_weights_without_canonical`、`test_module_load_shared_params_that_are_not_tied_embeddings`；`tests/models/transformers/fusers/test_linear.py::test_weight_mappings_are_scoped_to_fused_prefixes`。
 5. **融合与物理切片**：`vllm/model_executor/layers/linear.py::UnquantizedLinearMethod`、`ColumnParallelLinear`、`MergedColumnParallelLinear.weight_loader_v2`、`QKVParallelLinear.weight_loader_v2`、`QKVParallelLinear._load_fused_module_from_checkpoint`、`RowParallelLinear`；`vllm/model_executor/layers/activation.py::SiluAndMul.forward_native`；`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight`、`_ColumnvLLMParameter.load_merged_column_weight`。前述 fuser 测试验证名字和 shard 标签，不等于本页教学尺寸的 GPU 数值测试。

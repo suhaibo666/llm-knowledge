@@ -18,7 +18,7 @@ title: "推理框架 —— 目录索引"
 
 | 子域 | 入口 | 内容数量 | 覆盖边界 |
 |---|---|---:|---|
-| vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 25 篇正文 + index | 使用、调优、排障、架构与机制五类入口；逐页源码核验状态见域索引 |
+| vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 26 篇正文 + index | 使用、调优、排障、架构与机制五类入口；逐页源码核验状态见域索引 |
 | 投机推理 | [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] | 2 篇正文 + index | 跨引擎的 draft/verify 技术专题；各算法与实现基线见正文 |
 | SGLang | [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] | 1 篇正文 + index | 当前聚焦编译 Pass，与 vLLM 对照；尚非全系统源码覆盖 |
 

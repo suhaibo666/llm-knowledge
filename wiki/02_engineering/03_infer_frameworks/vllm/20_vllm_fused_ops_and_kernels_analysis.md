@@ -5,9 +5,9 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 # vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-08）
-> **主题**：用 residual+RMSNorm+quant 和两专家 MoE 重建融合改变的数值步骤、数据布局与中间存储。随后解释 provider 选择、scratch复用及失败边界。
+> **主题**：用 residual+RMSNorm+quant、两专家 MoE 和 multi-LoRA 重建专用 Kernel 改变的数值步骤、数据布局与中间存储。随后解释 provider 选择、scratch复用及失败边界。
 > **适用范围**：拥有融合收益、provider/Kernel family、workspace与fallback；量化ABI归17、IR改写归21、图生命周期归19，EP通信与EPLB归18。
-> **最近更新**：2026-09-08。重新核验本地kernel与选择器，补算例并纠正一次遍历、scratch命名和clamp过滤的旧结论。
+> **最近更新**：2026-09-08。补充 multi-LoRA shrink/expand 与 Punica metadata 算例；重新核验本地kernel与选择器，并纠正一次遍历、scratch命名和clamp过滤的旧结论。
 
 ## 1. 一行残差输入：融合究竟省在哪里？
 
@@ -243,9 +243,42 @@ monolithic 路径则由 `apply_monolithic()` 把 router logits 直接交给 mono
 
 因此 modular 的可替换边界是三个显式阶段，换来 all-to-all/shared-expert overlap 与组件组合；monolithic 把 routing/expert 边界收进同一 family，换来更深融合。二者都必须完整拥有 prepare 与 finalize，不能用“中间 Kernel 跑完了”冒充 MoE layer 已完成。
 
-## 5. Selection 与 fallback：从“候选”到“可证明的实现”
+## 5. 代表族三：multi-LoRA 先按 adapter 成组，再走 shrink/expand
 
-### 5.1 推荐的选择顺序
+基础 linear 已经计算 `base_output = X @ W`；LoRA 增量再按 token 对应的 resident slot 计算 `delta = scale × (X @ A) @ B` 并加回。问题在于同一 batch 的 token 可以来自不同 adapters，甚至完全不使用 LoRA。若为每个 token 单独发起两次小矩阵运算，调度开销和访存形状都很差；若把整个 batch 当成同一个 adapter，又会读错 A/B。
+
+### 5.1 九个 token 怎样变成三个连续分组
+
+假定 runner 已把外部 adapter ID 转成当前 worker 的 resident slot；三个请求贡献的 token mapping 为：
+
+| 请求 | token 数 | resident slot | 展开后的 mapping |
+|---|---:|---:|---|
+| A | 3 | 0 | `0, 0, 0` |
+| B | 2 | 无 LoRA | `-1, -1` |
+| C | 4 | 2 | `2, 2, 2, 2` |
+
+原 mapping 是 `[0,0,0,-1,-1,2,2,2,2]`。`LoRAKernelMeta.prepare_tensors()` 对 token indices 做稳定排序，得到索引次序 `[3,4,0,1,2,5,6,7,8]`；对应 slot 依次为 `-1,0,2`，counts 为 `2,3,4`，prefix boundaries 为 `0→2→5→9`。Kernel 因而可以按连续区间选择 A/B 权重；`-1` 区间跳过 LoRA，保留已经算好的 base output。
+
+这里的 0 和 2 是**驻留槽位**，不是用户提交的任意 adapter ID。adapter 下载、包装、装入和外部 ID→slot 的所有权归 [[09_vllm_model_library_analysis|模型库与 LoRA 接合]]；runner 怎样把请求行展开成逐 token mapping 归 11/12。本页从已准备好的 slot mapping 接手，只解释设备计算。
+
+### 5.2 shrink 与 expand 中间为什么保留 FP32 scratch
+
+`PunicaWrapperGPU.add_lora_linear()` 为每个输出 slice 分配形如 `[num_slices, num_tokens, rank]` 的 FP32 buffer。计算分两阶段：
+
+1. `add_shrink()` 按 metadata 分组读取相应 A，计算每个 token 的 `X @ A` 并应用 scale，把低 rank 结果写入 scratch。
+2. `add_expand()` 再按同一分组读取 B，计算 scratch 与 B 的乘积，并按 token 原身份加到对应 output slice；需要双流组合时也可先写 LoRA-only 输出，再由调用者合并。
+
+“shrink/expand”描述的是维度变化，不表示一定各只有一个设备 launch。分 slice 的 QKV 或 merged projection 仍要遵守各自 output offset，metadata 也可能为 CUDA Graph 把本轮分组计数补到捕获上界。FP32 scratch 减少低 rank 累加的精度损失，却付出与 token 数、rank 和 slice 数成比例的临时显存；它不是把 A/B 永久融合进基础权重。
+
+### 5.3 完成边界与可验证条件
+
+基础量化 linear 先通过自己的 quant method 产生 base output，Punica 再添加 LoRA 增量；因此 LoRA Kernel 必须接受基础层已经确定的 input/output dtype、切片与 TP-local shape。slot 为 `-1`、batch 中只有一个 adapter、多个 adapters 混排、QKV 多 slice 和空映射都属于不同边界，不能只用“单 adapter 连续 token”验证。
+
+仓库的 Punica 测试分别用 PyTorch reference 对照 shrink 与 expand，并在层测试中先调用 `update_metadata()` 再执行 wrapper。它们支持“分组 metadata 与两阶段数值有 reference”这一结论，不等于当前页面实跑了所有 GPU、量化基础层或 CUDA Graph 组合。multi-LoRA 的收益还取决于 token 分布和 rank；源码没有提供一个普适的 adapter 数阈值。
+
+## 6. Selection 与 fallback：从“候选”到“可证明的实现”
+
+### 6.1 推荐的选择顺序
 
 1. **先固定语义**：output、可见 residual、dtype/scale/layout、router/reduce 状态与 alias 必须由 native/reference 或上层合同定义；provider 无权改写。
 2. **过滤静态可用性**：平台、compute capability、扩展库与 build 决定 family 是否进入候选；unsupported provider 在 priority 安装时就过滤。
@@ -255,7 +288,7 @@ monolithic 路径则由 `apply_monolithic()` 把 router logits 直接交给 mono
 
 第 5 步是本页依据 benchmark 结构给出的**分析建议**：RMSNorm benchmark 显式扫 shape/dtype/residual，MoE benchmark 的配置键显式包含 `M/E/N/K/topk/dtype/block_shape`。源码未实现一个统一 runtime autotuner，因此不能声称 vLLM 会为每次调用现场测出全局最快 Kernel。
 
-### 5.2 四种结果必须区分
+### 6.2 四种结果必须区分
 
 | 结果 | 正确行为 | 为什么不是同一类“fallback” |
 |---|---|---|
@@ -266,7 +299,7 @@ monolithic 路径则由 `apply_monolithic()` 把 router logits 直接交给 mono
 
 fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 oracle，对每个支持 provider 比较两个输出；不兼容参数先 skip，不把 crash 当作选择逻辑。MoE selection 测试则分别覆盖 platform 默认、显式 family、monolithic→modular 和跨 family fallback。
 
-## 6. 约束、维护成本与验收
+## 7. 约束、维护成本与验收
 
 | 风险 | 必须守住的不变量 | 代价或失败边界 | 验收方式 |
 |---|---|---|---|
@@ -286,7 +319,7 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 4. workspace/alias 在 eager、compile/CUDA Graph 与 async 条件下验证生命周期；
 5. 最后才用真实 workload 对比 launch、HBM/copy、workspace 峰值、Kernel time 与端到端 TPOT。
 
-## 7. 有源码锚点的发展方向
+## 8. 有源码锚点的发展方向
 
 > [!note] 分析推断
 > 这里只从当前 TODO/临时分支外推维护压力，不把它写成已承诺 roadmap。
@@ -294,7 +327,7 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 - unquantized MoE oracle 自陈：当前必须“偷看” prepare/finalize 才能决定 batched/standard activation format，等 TP 与 DP/EP selection 统一后可先选 prepare/finalize。这说明选择器正承受组件耦合压力；合理方向是让 format contract 更早成为显式输入，而不是继续在 provider 名单里堆特例。
 - CUDA 的 Oink 环境变量被标注为待移除，用户可直接使用 IR op priority。这指向一个更统一的 provider policy 面：平台提供默认，用户修改 priority，而 capability predicate 仍负责 correctness。
 
-## 8. 继续读源码与验证
+## 9. 继续读源码与验证
 
 本轮实际打开以下入口及关键分支，未运行GPU kernel、provider benchmark、CUDA Graph/async/多卡实验。公式与两个小例是手工按规则重建，未作为真实硬件性能数据。
 
@@ -308,6 +341,7 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 | MoE排序与设备算术 | `vllm/model_executor/layers/fused_moe/moe_align_block_size.py::moe_align_block_size`；`vllm/model_executor/layers/fused_moe/experts/triton_moe.py::TritonExperts.apply / workspace_shapes / moe_sum`；`vllm/model_executor/layers/fused_moe/fused_moe.py::_prepare_expert_assignment / fused_moe_kernel / invoke_fused_moe_triton_kernel`；`tests/kernels/moe/test_moe_align_block_size.py::torch_moe_align_block_size / _verify_expert_level_sorting`；`tests/kernels/moe/test_moe.py::test_fused_moe / test_moe_sum` |
 | modular组合、scratch与finalize | `vllm/model_executor/layers/fused_moe/modular_kernel.py::FusedMoEKernel.__init__ / FusedMoEKernelModularImpl._allocate_buffers / _prepare / _fused_experts / _finalize`；`vllm/model_executor/layers/fused_moe/prepare_finalize/no_dp_ep.py::MoEPrepareAndFinalizeNoDPEPModular.prepare / finalize`；`vllm/model_executor/layers/fused_moe/topk_weight_and_reduce.py::TopKWeightAndReduceNoOP.apply / TopKWeightAndReduceContiguous.apply` |
 | monolithic外部边界与选择 | `vllm/model_executor/layers/fused_moe/experts/trtllm_bf16_moe.py::TrtLlmBf16ExpertsMonolithic.apply`；`vllm/model_executor/layers/fused_moe/modular_kernel.py::FusedMoEKernelMonolithicImpl.apply / FusedMoEExperts.is_supported_config`；`vllm/model_executor/layers/fused_moe/oracle/unquantized.py::_get_priority_backends / select_unquantized_moe_backend`；`vllm/model_executor/layers/fused_moe/oracle/fp8.py::_get_priority_backends`；`tests/kernels/moe/test_unquantized_backend_selection.py::test_select_cuda_flashinfer_trtllm_modular_backend / test_select_cuda_deepep_ht_falls_back_from_trtllm` |
+| multi-LoRA 分组与两阶段计算 | `vllm/lora/ops/triton_ops/lora_kernel_metadata.py::LoRAKernelMeta.prepare_tensors`；`vllm/lora/punica_wrapper/punica_gpu.py::PunicaWrapperGPU.update_metadata / add_lora_linear / add_shrink / add_expand`；`vllm/lora/layers/base_linear.py::BaseLinearLayerWithLoRA._apply_sync / _apply_lora_to_output`；`tests/lora/test_punica_ops.py::check_lora_shrink_kernel / check_lora_expand_kernel`；`tests/lora/test_layers.py` |
 | 成本比较入口 | `benchmarks/fused_kernels/layernorm_rms_benchmarks.py::get_bench_params / unfused_int8_impl / fused_impl`；`benchmarks/kernels/benchmark_moe_defaults.py::benchmark_config` |
 
 陌生读者应能先复算u/y/q，再从四个routing slot重建两个token输出；实际验证则先跑语义/guard测试，再测支持shape下的provider数值、scratch/capture生命周期与benchmark。EP的dispatch/combine、shared专家重叠、EPLB及在线换权布局约束继续到 [[18_vllm_distributed_inference_analysis|分布式推理]] 与 [[25_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不能把单卡算例外推为分布式完成保证。
@@ -319,3 +353,4 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 - [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 解释 native/codegen、opaque op、workspace 地址与 capture/replay 的生命周期边界。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — attention metadata/KV layout 的能力协商在此；本页不把 attention backend 重列成 Kernel family。
 - [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 TP/DP/EP 与 collective 顺序；本页只使用 local shape 和 parallel feature 作为 Kernel compatibility 输入。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型库]] — 拥有 LoRA 层包装、adapter 装入和驻留槽位；本页只消费已准备好的逐 token slot mapping。
