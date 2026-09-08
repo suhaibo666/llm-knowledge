@@ -4,7 +4,8 @@ The reviewer is never the writer. First apply `../page-review-rubric.md`, then r
 page when any one of these checks fails:
 
 - The introduction describes implementation before establishing the problem and solution shape.
-- A primitive example is presented as the full feature without proving its system placement.
+- A primitive example is presented as the full feature without proving its actual integration
+  boundary; for a standalone algorithm this may be its public function and input/output contract.
 - The smallest example cannot be replayed from named input identity/shape through each decisive
   intermediate state, layout, or owner to its merge/output.
 - A module, variant, or companion mechanism says what it does but omits why, completion/output,
@@ -13,6 +14,8 @@ page when any one of these checks fails:
   compute, communication or synchronization, reconstruction, applicable backward difference, and
   incremental cost; or that path is missing from the rendered principle figure required by the base
   algorithm-replay gate.
+  Check only operations the variant performs; local algorithms need no fictional communication,
+  persistent owner, or backward pass. Apply `../analysis-focus.md` to select the explanatory lens.
 - The variant set is asserted without an enumeration basis drawn from the source's own selection
   sites, or a sibling selection axis covering the same concern for another entity class is neither
   explained nor named with its owner.

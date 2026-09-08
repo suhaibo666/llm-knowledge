@@ -7,6 +7,10 @@ source fidelity; `../codebase.md` owns source anchors, state/data/control tracki
 execution-trace semantics. Do not repeat those contracts here or create a second top-level skill
 for the same work.
 
+Use `../analysis-focus.md` to choose what explains this feature: algorithm and data structure,
+numerical computation, interface rules, or stateful collaboration. Select the applicable questions
+inside each component; the profile is not a universal state-ownership outline.
+
 This profile is not for a repository architecture chapter, an exhaustive feature tree, or an API
 reference. Route those tasks as the core skill specifies.
 
@@ -19,8 +23,8 @@ explanatory order while adapting titles to the feature and host.
 
 - State the problem and pressure in **one compact paragraph**. Establish enough context to make the
   design necessary; do not split background into a chronology of mini-sections.
-- Describe the solution shape at concept level: what state, data, control, or ownership changes and
-  where the feature sits in the surrounding system.
+- Describe the solution shape at concept level: the key algorithm, representation, transformation,
+  interface rule, or stateful collaboration and where the feature is used.
 - Summarize benefits, costs, and constraints before entering implementation details.
 - Add a symbol/term table last and only when notation is reused later. Do not inventory names that
   the prose can define at first use.
@@ -32,11 +36,15 @@ explanatory order while adapting titles to the feature and host.
   use the smallest real request or transaction. Do not invent a toy example that changes semantics.
 - Expand from that example to the feature's **primitive → system** placement: selection/construction,
   participating modules, consumers, completion boundary, and adjacent owners.
+  For a standalone algorithm or pure function, its public input/output contract may be the full
+  feature boundary. Explain actual consumers or dispatch when relevant; do not invent a larger
+  service, publication phase, or multi-module lifecycle to satisfy the word "system".
 - **Per load-bearing component**, answer all applicable questions:
   1. What responsibility and input→output or pre-state→post-state contract does it own?
-  2. **Why this component** or boundary exists, and which obvious alternative loses under the stated
-     constraint?
-  3. How does state, data, or control move through it, including the output/completion semantics?
+  2. **Why this component** or rule is needed; for a design decision, which obvious alternative loses
+     under the stated constraint; for a derivation, why the operation is valid?
+  3. How does its algorithm, computation, representation or interface rule produce the result?
+     Explain state, data or control transfer and output/completion semantics where applicable.
   4. What guard, direct cost, system cost, unsupported case, or failure boundary does it introduce?
 - **Establish the variant set before explaining any variant.** Derive it from the source's own
   selection sites—the dispatch branch, the accepted values of the controlling field, the registry or
@@ -60,6 +68,7 @@ explanatory order while adapting titles to the feature and host.
 
 - Reconcile the component explanations into one end-to-end lifecycle. The last step must reach the
   feature's real result, externally visible state, or downstream handoff—not merely a helper return.
+  A pure function's returned value is its real result when that is the approved feature boundary.
 - Give one **cost ledger** that connects benefit to payment. Select only applicable dimensions:
   latency, throughput, CPU/accelerator work, memory, storage, network/I/O, synchronization or
   contention, startup, compatibility, implementation complexity, and operational burden.
@@ -72,13 +81,16 @@ explanatory order while adapting titles to the feature and host.
 Use prose and views together. Prose owns the causal argument; views own spatial, temporal, and
 transformational relationships that prose alone makes hard to reconstruct:
 
-- Add a **class / ownership view** when multiple classes, processes, or state-bearing objects
-  cooperate. It shows responsibility, dependency, and state ownership—not every inheritance edge.
+- Add a **class / ownership view** when cooperation among classes, processes, or state-bearing
+  objects is load-bearing to the feature. It shows responsibility, dependency, and relevant state
+  ownership—not every inheritance edge. Several stateless helpers alone need no ownership view.
 - For a real multi-hop function path, add a fenced **ASCII caller tree** from live entry/selection
   to completion or visibility. Render the path selected under `../codebase.md`'s execution-trace
   contract rather than defining a second hop-selection, elision, or annotation policy here. This is
   a compact textual source-reading index, not a published figure: it is outside figure-medium rules
   and cannot satisfy the principle-figure gate below.
+  For a single-function implementation, name the entry and follow its decisive operations; no
+  multi-hop tree is required when there are no load-bearing calls.
 - For a non-algorithmic unit, add a data-layout, state, or sequence figure when it answers a question
   that prose, the ownership view, and the caller tree do not answer. A **call graph does not replace**
   the state model, per-hop execution semantics, design reasons, or failure analysis.
@@ -122,6 +134,8 @@ When this trigger is present:
 - Give every distinct live algorithm or data plane a separately traceable lane or figure using the
   same concrete example. Show local compute, data/state/ownership movement, synchronization or
   communication, reconstruction, applicable forward/backward differences, and incremental cost.
+  Include each dimension where the path actually contains it; a local transform needs no invented
+  ranks, synchronization or backward pass.
   One comparison figure may cover several variants only when none of those paths is collapsed.
 
 | Trigger | Required closure |

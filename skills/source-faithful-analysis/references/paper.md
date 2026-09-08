@@ -54,28 +54,35 @@ omits exact dims.
   = `kv_lora_rank` 512 + RoPE 64; "256 experts" = top-8 of 256 + 1 shared; `index_topk`=2048.
 
 ## Cross-check against the reference implementation
-`config.json` 验的是**超参**，参考实现验的是**机制**——MTP 的第二头怎么接、router 的 aux-loss 挂在
-哪一步、sparse indexer 的 top-k 到底在哪个轴上做。这些论文常常只给一段散文，只有代码能定案。所以
-一篇 method/model 论文的分析，**至少要落 2 处「论文机制 ↔ 源码」对应**，指向冻结实现基线下的稳定 `path::qualified.symbol`；行号只在引用精确代码片段时选用。
+`config.json` verifies **hyperparameters**; the reference implementation verifies **mechanisms**:
+how a second MTP head connects, where a router attaches auxiliary loss, or which axis a sparse
+indexer selects along. A method/model-paper analysis with available implementation evidence must
+include **at least two paper-mechanism ↔ code correspondences** at stable `path::qualified.symbol`
+anchors on a frozen implementation baseline. Line numbers are optional for exact excerpts.
 
-1. **找实现**：论文页脚或 Introduction 末尾的仓库链接 → 没有就用「标题 / 一作 + 方法名」搜 GitHub →
-   再没有就找第三方复现（**必须标明是复现，不是官方**，并说明它可能与论文有偏差）。
-2. **取代码**：本库已在父目录维护上游 checkout（Megatron-LM / vLLM / pytorch …），优先复用并记下其
-   commit；不在其中的用 `git clone --depth 1 <url>` 到临时目录，同样记下 commit。
-3. **对照**：贴代码 ≤30 行，标 `路径/文件.py::限定符号`（需要逐字核对片段时可附紧凑
-   行范围），一句话说明它对应论文的哪个式子 / 哪一节。
-4. **代码状态必须在页头写明**，四种情况都不能无声跳过：
+1. **Find the implementation:** follow the repository link in the paper; otherwise search by title,
+   author and method. If only a third-party reproduction exists, label it **unofficial** and explain
+   that it may differ from the paper.
+2. **Obtain the code:** prefer the host's existing sibling checkout and record its commit. If absent,
+   clone to a temporary directory and record the commit. Apply the codebase pack's frozen-baseline
+   safeguards; never move an approved checkout during evidence collection.
+3. **Map mechanisms:** if an excerpt helps, keep it within 30 lines, identify
+   `path/file.py::qualified.symbol`, and explain which equation or section it implements. Add tight
+   line ranges only when verifying exact text.
+4. **State implementation status in the header.** Cover the applicable case; localize the labels:
 
-   | 状态 | 页头怎么写 | 正文怎么处理 |
+   | Status | Header content | Body treatment |
    |---|---|---|
-   | ✅ 官方已发布 | `实现基线: <repo> @ <commit>` | 落 ≥2 处 机制↔稳定源码符号对应 |
-   | ⏳ 官方声明将发布 | `官方实现未发布(README 声明 <日期>)` | 只据论文写，标出哪些机制待代码确认 |
-   | 🔁 仅第三方复现 | `第三方复现: <repo> @ <commit>(非官方)` | 可对照，但每处注明"复现实现，非作者代码" |
-   | ❌ 无任何实现 | `无公开实现` | 明说：机制细节只有论文口径，未经代码验证 |
+   | Official implementation released | `Implementation baseline: <repo> @ <commit>` | At least two mechanism ↔ stable-symbol correspondences |
+   | Official release announced but unavailable | `Official implementation unreleased (README announcement <date>)` | Use the paper; identify mechanisms awaiting code confirmation |
+   | Third-party reproduction only | `Third-party reproduction: <repo> @ <commit> (unofficial)` | Compare with explicit unofficial attribution at each correspondence |
+   | No implementation found | `No public implementation` | State that mechanism details follow the paper and are not code-verified |
 
-5. **冲突处理**：论文写的和实现不一致时——**实现是「是什么」的 ground truth，论文是「为什么」的
-   ground truth**。用 `> [!contradiction]` 标出两边口径，机制描述跟实现走，动机与取舍跟论文走。
-   （与上一节 config 的规则同源：数字跟权重，理由跟论文。）
+5. **Handle conflicts:** for the released behavior, implementation establishes what executes; the
+   paper supplies stated motivation and tradeoffs. Preserve both accounts with
+   `> [!contradiction]`; distinguish the paper's method from the shipped variant rather than
+   silently conflating them. This follows the config cross-check: shipped numbers come from the
+   pinned artifact, and paper rationale stays attributed to the paper.
 
 ## Paper-specific mechanism evidence
 
@@ -97,8 +104,8 @@ anchored future-work/version evidence required by the selected profile.
 |---|---|
 | Citing a number from the abstract, a blog, or memory | Open the body to that `§/Table`, read the passage, cite *that* with its conditions. |
 | Not recording the arXiv **version** | Pin id+version+date; `v1`≠`v2`. |
-| No 约束 section — every number is an improvement | Mine the Limitations §, the caption conditions and the regime it was tested at; state what the design costs. |
-| A 发展趋势 paragraph spun from your priors | Anchor it to the paper's future-work line (with §), a later version's change, or a beat-4 constraint — and mark it as inference. Otherwise drop it. |
+| No constraints discussion — every number is an improvement | Mine the Limitations §, the caption conditions and the regime it was tested at; state what the design costs. |
+| An outlook paragraph spun from your priors | Anchor it to the paper's future-work line (with §), a later version's change, or a beat-4 constraint — and mark it as inference. Otherwise drop it. |
 | A results claim with no table / no baseline column | Reproduce the table with its baseline; numbers without a baseline argue nothing. |
 | Guessing architecture hyperparameters from prose | Pull them from the released `config.json`; reconcile, flag paper-vs-weights gaps. |
 | Citing a long paper from a truncated WebFetch | Download the PDF, extract a page-markered dump, cite by page. |

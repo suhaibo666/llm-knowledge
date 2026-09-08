@@ -1,4 +1,4 @@
-# Live behavior scenarios for concrete feature analysis
+# Live behavior scenarios for source-faithful analysis
 
 These manual evaluations test judgment that static contract tests cannot prove. Evaluators work
 read-only and make **no repository writes**. Judge the produced analysis plan and reasoning, not
@@ -63,6 +63,36 @@ cover several variants. A caller tree, class diagram, prose, or table alone does
 gate. The direct cache invalidation control has no algorithmic transformation trigger and does not
 gain an empty figure requirement.
 
+## S5 — Subject selection with local source fixtures
+
+Use the current router, its selected references, and the two synthetic Python fixtures in
+`fixtures/`. These are skill-test inputs, not upstream implementation evidence. Give a fresh
+evaluator the following five tasks; request a compact source-grounded outline, one explanatory
+paragraph, the source route, conditional-depth/figure selection, and actual completion boundary.
+No wiki writes or figure rendering are required for this explanation-selection exercise.
+
+1. Explain `algorithms.py::lower_bound` as a concrete feature, using `[1, 2, 2, 4]` and target `2`.
+2. Explain `algorithms.py::quantize_row` and `reconstruct` as a numerical mechanism, using
+   `[0, 0.5, 1]`; inspect numerical edge behavior, not just the input guard.
+3. Explain `algorithms.py::parse_value` as a concrete feature, including both registered variants
+   and unsupported/invalid input.
+4. Explain `cache.py::Cache.refresh` as a concrete feature with concurrent refreshes, cancellation
+   and readers. Respect the fixture's single-event-loop scope.
+5. Consider a proposed composition that quantizes a row inside a cache loader. Separate what the
+   two files prove from the hypothetical integration, and identify evidence still needed.
+
+Green result: the first case centers on interval invariants, branch validity, termination and
+cost; the second on arithmetic, error and actual numerical limits; the third on dispatch and error
+contracts; the fourth on state, ordering, publication and cancellation; the fifth combines lenses
+without inventing source integration. Pure function results close their own paths. Ownership and
+visibility remain necessary for the actual cache collaboration. Algorithmic examples retain the
+principle-figure requirement, while non-algorithmic forwarding does not acquire one by association.
+
+The fixtures used on 2026-09-08 have SHA256 identities:
+
+- `algorithms.py`: `daddc58f12c8b7c1bc8c78b5f29b42a6649f3a837dc4058addb73b9fd1dd5a21`
+- `cache.py`: `3802c793374564c7378c8093d7e93f529693a682fbd906a1fb6b75ce02d7f0dd`
+
 ## Run log
 
 | date | run | result | observation |
@@ -76,3 +106,5 @@ gain an empty figure requirement.
 | 2026-09-04 | S4 baseline | expected gap | Three read-only evaluators confirmed that current prose/table coverage can pass without a principle figure or same-example variant replay; the ordinary non-algorithmic control should remain exempt. |
 | 2026-09-04 | S4 green | PASS | Fresh evaluators rejected the prose-only EP variants, required principle figures for PP/TP/CP/EP/packed algorithms, and preserved `figure-trigger: none` for the ordinary CRUD control. |
 | 2026-09-04 | S1 visual rerun | PASS | A fresh evaluator required TP's matrix-layout figure, local GEMM, reconstruction communication, forward/backward differences, and cost; prose and caller tree alone failed. |
+| 2026-09-08 | Subject-selection baseline | scoped control PASS | Before edits, an independent outline probe already avoided invented persistent owners for binary search and pure quantization. It identified the stronger per-major-unit rejected-alternative requirement. This was not a reproduced universal ownership-table failure; the motivating overgeneralization occurred in the preceding user conversation. |
+| 2026-09-08 | S5 green | explanation-selection PASS | One fresh evaluator completed all five fixture tasks, opened the hash-matched source, and ran Python 3.13.15 probes. It explained interval correctness, numerical error, parser delegation and cache publication separately, and labelled the proposed composition as unimplemented. It found finite-input quantization underflow/overflow instead of inferring safety from the guard. This was an outline/reasoning exercise, not a rendered-page or repeated statistical evaluation. |

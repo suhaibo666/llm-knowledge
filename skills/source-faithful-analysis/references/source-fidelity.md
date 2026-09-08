@@ -71,8 +71,9 @@ Repeat for every non-trivial claim:
 
 1. **Locate** the exact function, passage, table, field, row, or event.
 2. **Read** enough surrounding context to catch conditions and negative cases.
-3. **Model** the state, ownership, invariant, choice, or contract field required by the owning output
-   contract; do not introduce causal prose into a contract-style spec that forbids it.
+3. **Model** the decisive rule, representation, numerical transformation, evidence relationship,
+   state/ownership, or contract field required by the subject and owning output contract. Do not
+   introduce causal prose into a contract-style spec that forbids it.
 4. **Anchor** at the source pack's useful granularity. Code pages consolidate stable anchors into a
    compact source-reading route instead of repeating citations after every sentence or hop.
 

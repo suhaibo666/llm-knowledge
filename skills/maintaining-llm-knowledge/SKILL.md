@@ -1,13 +1,14 @@
 ---
 name: maintaining-llm-knowledge
-description: Use when creating, updating, renaming, merging, indexing or auditing pages in the llm-knowledge wiki - page types and the NN_ segment numbering, naming rules, the ingest workflow, cross-reference rules, merge-over-coexist, and the query/maintenance routines. Load it before writing into wiki/, not by default.
+description: Use when creating, updating, renaming, merging, indexing or auditing pages in the llm-knowledge wiki. Load it before writing into wiki/, not by default.
 ---
 
 # Maintaining the LLM Knowledge Wiki
 
-`CLAUDE.md` is the constitution: it fixes what the wiki *is* (three layers, the 功能树 as the only content authority, provenance, quality gates). This skill carries the *operations* - how to actually add, name, link, merge and audit a page. Load it on demand when you are about to write into `wiki/`.
+`CLAUDE.md` is the constitution: it fixes what the wiki *is* (three layers, the functional tree as the only content authority, provenance, quality gates). This skill carries the *operations*: how to add, name, link, merge and audit a page. Load it on demand when you are about to write into `wiki/`.
 
 Formula and diagram conventions live in their own skills: [`writing-obsidian-math`](../writing-obsidian-math/SKILL.md) and [`writing-mermaid-diagrams`](../writing-mermaid-diagrams/SKILL.md). The decomposition method for turning a source into pages is [`source-faithful-analysis`](../source-faithful-analysis/SKILL.md).
+
 ### Page Types
 
 | Type | Suffix | Purpose | Example |
@@ -16,158 +17,152 @@ Formula and diagram conventions live in their own skills: [`writing-obsidian-mat
 | Entity | `*_analysis.md` | Deep analysis of a specific paper/technology | `11_muon_analysis.md` |
 | Guide | `*_guide.md` | How-to or implementation walkthrough | `20_npu_lowering_guide.md` |
 | Quickstart | `*_quickstart.md` | Minimal path to a working example before the deep dive | `01_autograd_engine_quickstart.md` |
-| Deepdive | `*_deepdive.md`（无下划线分隔，非 `_deep_dive`） | Focused deep dive on one subtopic within a module | `22_npu_fusion_passes_deepdive.md` |
+| Deepdive | `*_deepdive.md` (no separator inside `deepdive`; not `_deep_dive`) | Focused deep dive on one subtopic within a module | `22_npu_fusion_passes_deepdive.md` |
 | Comparison | `comparison.md` | Side-by-side comparison of approaches | `npu/30_comparison.md` |
-| Changelog | `changelog.md` | Chronological log of all ingest operations | `wiki/changelog.md`（历史条目按季度归档于 `wiki/changelog/`） |
+| Changelog | `changelog.md` | Chronological log of all ingest operations | `wiki/changelog.md` (historical entries are archived by quarter under `wiki/changelog/`) |
 
-**合法后缀白名单只有这 6 种**：`_analysis`、`_guide`、`_quickstart`、`_deepdive`、`comparison`、`index`。不使用 `_deep_dive`（下划线版）、`_report`、`_methodology`、`_overview`、`_map`、`_model`、`_concepts`、`_details`、`_diagrams`、`_v2` 等历史遗留后缀。
+**Only these six page suffixes are allowed**: `_analysis`, `_guide`, `_quickstart`, `_deepdive`, `comparison`, `index`. The changelog is the dedicated log file above. Do not introduce legacy suffixes such as `_deep_dive`, `_report`, `_methodology`, `_overview`, `_map`, `_model`, `_concepts`, `_details`, `_diagrams`, or `_v2`.
 
-**禁止在 `wiki/` 内创建 `README.md`**——每个目录的入口一律是 `index.md`；`README.md` 是仓库根层面给人类浏览者看的文件类型，不是 wiki 页面类型。
+**Do not create `README.md` inside `wiki/`.** Every directory uses `index.md` as its entry point. `README.md` is a repository-level file for human visitors, not a wiki page type.
 
-**段位编号约定**：内容页文件名加两位数字前缀 `NN_`（`index.md` 不编号），十位数字表示"段"、决定阅读顺序，从文件名即可看出由浅入深的位置：
+**Segment numbering:** Content filenames have a two-digit `NN_` prefix (`index.md` is unnumbered). The tens digit identifies the segment and establishes a reading order from introductory to advanced:
 
-| 段 | 编号区间 | 含义 |
+| Segment | Number range | Meaning |
 |---|---|---|
-| 段 0 | `01`–`09` | 入门 / 导览（quickstart、knowledge map、overview 类） |
-| 段 1 | `10`–`19` | 核心机制主线（按流水线/学习顺序排列的 `_analysis` 页） |
-| 段 2 | `20`–`29` | 深潜 / 专题（`_deepdive`、专项分析、边角机制） |
-| 段 3 | `30`–`39` | 方法论 / 对照 / 工程实践（开发 guide、`comparison`、排查实践） |
+| 0 | `01`–`09` | Introduction / orientation: quickstarts, knowledge maps, overviews |
+| 1 | `10`–`19` | Core mechanisms: `_analysis` pages in pipeline or learning order |
+| 2 | `20`–`29` | Deep dives / special topics: `_deepdive`, focused analyses, peripheral mechanisms |
+| 3 | `30`–`39` | Methods / comparisons / engineering practice: development guides, `comparison`, troubleshooting |
 
-某段页面超出容量时占用相邻空段，并在该目录 `index.md` 的段位表里注明；硬件子目录（`npu/`、`cuda/` 等）页面较多时同一规则递归适用（子目录内独立编号，不占用父目录的号段）。少于 4 篇内容页的小目录不强制编号。
+If a segment exceeds capacity, use an adjacent empty segment and explain this in the directory's `index.md` segment table. Apply the same rule recursively in hardware subdirectories such as `npu/` or `cuda/`; their numbering is independent of the parent. Numbering is optional for small directories with fewer than four content pages.
 
 ### Naming Conventions
 
-- File names use `snake_case`（非 snake_case 一律视为需修正：无大写字母、无驼峰、无点号，如 `kimi_k2.5` 需写作 `kimi_k2_5`）
-- Index pages are always named `index.md`（每目录一个，作为入口，不编号）
-- One concept per page; prefer splitting over merging — 但主题**重叠**（不是同一概念的自然拆分）时适用下方 Update Principles 的 Merge over coexist
+- Filenames use `snake_case`: no uppercase letters, camelCase, or dots inside the stem. Correct nonconforming names; for example, use `kimi_k2_5`, not `kimi_k2.5`.
+- Index pages are always named `index.md`: one unnumbered entry point per directory.
+- One concept per page; prefer splitting over merging distinct subtopics. For overlapping topics, rather than natural subdivisions of one concept, apply **Merge over coexist** below.
 
 ### Ingest Workflow
 
 When a new source is added to `raw/`, follow this sequence:
 
-1. **Read** the source document thoroughly
-2. **Discuss** key takeaways with the user before writing
-3. **Create** a new wiki page in the correct 功能树 module (or update an existing one if the topic is already covered) — follow Page Types/Naming Conventions/段位编号 above
-4. **Update** the domain `index.md` to include the new page（条目表 + 段位，不画深层树）
-5. **Cross-reference**: Add `[[wiki links]]` to and from all related existing pages（遵守下方 Cross-Reference Rules）
-6. **Append** an entry to `wiki/changelog.md` documenting what was added/updated（示例性质的 `[[...]]` 用反引号转义，见 Cross-Reference Rules）
-7. **Update the radar baseline**: 如果这次分析把某个代码仓库的基线推进了，同步改 `docs/radar/watchlist.yaml` 里对应条目的 `kb_baseline`。漏了这一步，`tools/radar.py` 会每周继续报同一批已经处理过的陈旧漂移，很快就没人看这份周报了。**前提**：`kb_baseline` 是仓级单字段，`radar.py` 用它判断该仓**全部**钉基线页面的漂移——只有当该仓所有钉基线的页面都已推进到同一 commit（整域波次）才改它；只推进了一个子域或一棵子域功能树时不改，基线只写在该页/该树自己的页头（与 `feature-tree-analysis` 的宿主细则一致）。
-8. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout
+1. **Read** the source document thoroughly.
+2. **Discuss** key takeaways with the user before writing.
+3. **Create** a new wiki page in the correct functional-tree module, or update an existing page if the topic is already covered. Follow the page types, naming conventions, and segment numbering above.
+4. **Update** the domain `index.md` with the new page: entry table and segment, without a deep tree.
+5. **Cross-reference**: Add `[[wiki links]]` to and from related existing pages, following the Cross-Reference Rules below.
+6. **Append** an entry to `wiki/changelog.md` describing what was added or updated. Escape illustrative `[[...]]` syntax with backticks, as explained below.
+7. **Update the radar baseline when the entire repository domain advances.** `docs/radar/watchlist.yaml` has one repository-wide `kb_baseline`; `tools/radar.py` uses it to assess drift across **all** baseline-pinned pages for that repository. Update it only after all those pages have advanced to the same commit in a whole-domain wave. If only one subdomain or feature tree advances, keep its new baseline in its own header and leave the repository-wide field unchanged, consistent with the host rules in `feature-tree-analysis`. Omitting the repository-wide update after a completed wave causes repeated reports of already-resolved drift.
+8. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout.
 
 ### Cross-Reference Rules
 
-- Every page MUST contain a `## Related Pages` section at the bottom（`index.md` 豁免——它本身就是链接地图）。挑选 **3–7 条精选链接**，每条后面跟**一句话**说明关联是什么（不是链接堆砌）；多于 7 条说明该页需要收缩,不是塞进更多链接。
-- **裸基名默认合法**：内容页文件名在全库唯一，`[[page_name]]` 可以直接用，不强制加显示名——除非该链接直接充当句子的主语/宾语且文件名本身无法让读者看懂在指什么（判断有争议时倾向于加显示名，成本很低）。
-- **`index` 链接必须路径限定 + 显示名**：`index.md` 这个文件名在全库不唯一（每个目录一个），裸 `[[index]]` 一定歧义。永远写成 `[[<相对 wiki 根的路径>/index|<该目录的语义显示名>]]`，例如 `[[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM]]`。链接目标是某个**目录**本身（而非目录内某一篇具体页面）时，同样改写为指向该目录的 `index`，不要用裸目录名。
-- **禁止使用 `../` 相对路径**：链接路径一律从 `wiki/` 根开始写完整相对路径（如 `01_theory/06_distributed_parallelism/index`），不要用 `../`/`../../` 这类相对上跳——它们在目录迁移后极易失效且难以静态检查。
-- **示例链接必须转义**：如果 `[[...]]` 出现在正文中只是作为**语法示例**被讨论（而不是想让它被解析成真实链接），例如 changelog 里记录"把 `RL_PPO_Loss_and_GRPO_Analysis` 改名为 `rl_ppo_loss_and_grpo_analysis`"这类历史操作说明，一律用反引号包裹（`` `[[index]]` ``），不要让示例文本被解析成真链接。
-- Every new page MUST link to at least one existing page
-- When updating a page, check if other pages should gain a backlink
-- 验收基线：`python tools/check_links.py --strict` 必须 broken=0、ambiguous=0、bare_index=0（详见 `tools/check_links.py` 内的检查项说明）
+- Every page MUST contain a `## Related Pages` section at the bottom. `index.md` is exempt because it is already a link map. Select **3–7 links**, each followed by **one sentence** explaining the relationship. More than seven suggests that the page needs a narrower scope, rather than a longer link list.
+- **Bare basenames are valid by default.** Content filenames are globally unique, so `[[page_name]]` needs no display alias unless the link acts as a sentence's subject/object and its filename does not make its meaning clear. Prefer an alias when in doubt.
+- **Index links require a path and a display alias.** `index.md` is not globally unique; bare `[[index]]` is ambiguous. Use `[[<path relative to wiki root>/index|<semantic directory name>]]`, for example `[[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM]]`. Links to a directory also target its `index`, not a bare directory name.
+- **Do not use `../` paths.** Write link paths relative to the `wiki/` root, such as `01_theory/06_distributed_parallelism/index`. Parent traversal paths become fragile after directory moves and are harder to check statically.
+- **Escape example links.** When discussing `[[...]]` as syntax rather than an intended live link, wrap it in backticks, such as `` `[[index]]` ``. This includes changelog descriptions of historical renames, for example from `RL_PPO_Loss_and_GRPO_Analysis` to `rl_ppo_loss_and_grpo_analysis`.
+- Every new page MUST link to at least one existing page.
+- When updating a page, check whether other pages should gain a backlink.
+- Acceptance: `python tools/check_links.py --strict` must report broken=0, ambiguous=0, and bare_index=0. See the checker for its full set of rules.
 
 ### Update Principles
 
-- **Merge over coexist**（合并优于并存）：发现主题重叠时必须合并到权威页——不是"两份都保留、互相链接"。合并前先判定谁是权威版本（更全/基线更新/粒度更好），把被并页的独有增量吸收进权威页；**删除前必须先修复全部入链**指向权威页；删除后在 `wiki/changelog.md` 记录并注明并入目标。
-- Mark outdated claims with `> [!deprecated] Updated by [[page_name]]`
-- Mark contradictions with `> [!contradiction] See also [[page_name]]`
-- Record the date of each significant update in the page header
-- When a page grows too large (>500 lines), propose a split to the user
+- **Merge over coexist:** Merge overlapping coverage into an authoritative page instead of keeping two versions with reciprocal links. First identify the authoritative version by completeness, baseline freshness, and granularity; absorb the other page's unique contributions. **Repair every inbound link before deletion**, then record the merge and destination in `wiki/changelog.md`.
+- Mark outdated claims with `> [!deprecated] Updated by [[page_name]]`.
+- Mark contradictions with `> [!contradiction] See also [[page_name]]`.
+- Record the date of each significant update in the page header.
+- When a page grows too large (>500 lines), propose a split to the user.
 
 ### Quality Standards
 
-- Write in the same language as the source material (Chinese for Chinese sources, English for English sources)
-- Use Mermaid diagrams for architecture, data flow, and sequence visualizations（务必遵守 [`writing-mermaid-diagrams`](../writing-mermaid-diagrams/SKILL.md)）
-- Use LaTeX for mathematical formulas（必须遵守 [`writing-obsidian-math`](../writing-obsidian-math/SKILL.md)）
-- For code analysis, pin repository + commit and use a compact source-reading route of
-  repository-relative paths plus qualified symbols/config keys/test names. Line numbers are
-  optional for exact excerpts or ambiguous spots, not a per-claim default.
+- Skill instructions are written in English. **Wiki output language follows the user's request or the host's established page/domain convention**; if neither supplies a convention, use the source material's language. English skill prose does not require English wiki pages. Preserve exact source identifiers and required output-format literals.
+- Use Mermaid for architecture, data-flow, and sequence visualizations, following [`writing-mermaid-diagrams`](../writing-mermaid-diagrams/SKILL.md). Load [`drawing-wiki-figures`](../drawing-wiki-figures/SKILL.md) to choose the appropriate medium for each figure.
+- Use LaTeX for mathematical formulas, following [`writing-obsidian-math`](../writing-obsidian-math/SKILL.md).
+- For code analysis, pin repository + commit and use a compact source-reading route of repository-relative paths plus qualified symbols/config keys/test names. Line numbers are optional for exact excerpts or ambiguous spots, not a per-claim default.
+
+### Reader Navigation and Progressive Disclosure
+
+- Within the constitution's entry-table limits, make index entries explain what a reader can learn or accomplish. Use semantic link labels for reading routes instead of number-only sequences that require a lookup.
+- Keep cross-directory learning sequences in `wiki/courses/`: order, links, and one-line orientations only. Put explanations in their authoritative functional-tree pages and link to them.
+- Introduce the reader's problem and a concrete ordinary case before detailed variations, configuration inventories, and failure cases. Choose the explanatory focus through `source-faithful-analysis`; state ownership is relevant when persistent state or coordination explains the behavior, not a universal outline for algorithms.
+- Link to a prerequisite or deeper section where the reader needs it, with a short reason to follow the link. Keep the final Related Pages list curated. Navigation complements substantive coverage; it does not replace missing explanations.
+- When rewriting, preserve unique concepts, examples, corrections, configuration coverage, and link destinations, following the conservation rules in `source-faithful-analysis`. Manual reading review should check that a reader can enter through the index, follow the ordinary example, and reach the relevant deeper explanation without guessing page numbers.
 
 ### Baseline Header Convention
 
-代码分析页必须固定实现基线；这也是旧式行号引用被 `tools/check_locators.py` 校验时的解析
-输入。**新页一律用规范式**（每仓一行）：
+Code-analysis pages must pin an implementation baseline. This also supplies parsing input for legacy line citations checked by `tools/check_locators.py`. **Use the canonical format for new pages**, one line per repository. The Chinese label and punctuation below are exact host output-format literals; the placeholders are English instructions:
 
 ```
-> **源码基线**：`owner/repo@<完整或 ≥12 位 hex>`（`branch`，YYYY-MM-DD）
+> **源码基线**：`owner/repo@<full hex or at least 12 hex characters>`（`branch`，YYYY-MM-DD）
 ```
 
-- 一页分析多个仓时，每个仓都写一行（或在其小节内用同格式钉出）。正文默认用
-  `path::qualified.symbol` 等稳定源码锚点；若保留某仓的旧式 `path:line`，必须钉过该仓的
-  commit，否则 checker 会把它报为无法归属的引用。
-- 历史写法（`verl main @ 254a23ed`、`名称 vX@hex` 等）checker 宽容解析，但不再新增。
-- 该仓需在 `docs/radar/watchlist.yaml` 有条目及 `checkout:` 本地检出，否则引用只能记
-  `unresolved/unverifiable` warning 而无法验证。
-- 条件验收：只有当改动页仍含显式 `path:line` 时，才对受影响目录运行
-  `python tools/check_locators.py --dir <affected-domain>`。它验证遗留引用，不要求新内容生成行号。
+- When a page analyzes multiple repositories, give each its own baseline line, either in the header or the relevant section. Default to stable anchors such as `path::qualified.symbol`. If retaining a repository's legacy `path:line` citations, pin its commit so the checker can attribute them.
+- The checker tolerates historical formats such as `verl main @ 254a23ed` and `name vX@hex`; do not introduce them in new content.
+- The repository needs an entry and a local `checkout:` in `docs/radar/watchlist.yaml`; otherwise its references can only be reported as unresolved/unverifiable warnings, not verified.
+- Conditional acceptance: only when an edited page still contains explicit `path:line` citations, run `python tools/check_locators.py --dir <affected-domain>`. This validates legacy references; it does not require new content to produce line numbers.
 
-### 分析页的房子形状（House Page Shape）
+### House Page Shape for Analysis Pages
 
-分析方法归 [`source-faithful-analysis`](../source-faithful-analysis/SKILL.md)，那份契约刻意
-只管**语义顺序**、不管标题模板，好让它能被移植到 wiki 以外。**本库自己的外形约定写在这里**，
-免得每次都要靠"去读一篇范文"才能对齐——范文会被改、会漂移，约定不会。
+The analysis method belongs to [`source-faithful-analysis`](../source-faithful-analysis/SKILL.md). That portable contract defines **semantic order**, not a heading template. The conventions below define this wiki's page presentation without depending on an example page that may later change.
 
-页头是一个引用块，按此顺序，缺省不写空行：
+The header is a blockquote with the following order and no empty lines by default. The four Chinese labels and their punctuation are exact host output-format literals; write the placeholder content in the page's output language:
 
 ```
 > **源码基线**：`owner/repo@<hex>`（`branch`，YYYY-MM-DD）
-> **主题**：两三句话说清这一页讲什么，按正文顺序点出主要话题；可加一句核心代码在哪个目录
-> **适用范围**：一行——本页管什么、不管的交给谁
-> **最近更新**：YYYY-MM-DD。一句话
+> **主题**：Two or three sentences describing this page's topics in body order; optionally name the core code directory.
+> **适用范围**：One line stating the page's scope and where adjacent topics belong.
+> **最近更新**：YYYY-MM-DD. One sentence.
 ```
 
-页头只回答"这页讲什么"，不预演论点。主张、例外条件、论证细节放正文；展开的源码
-路径列表放源码阅读路线一节；改了哪些章节归 [[changelog]]。（2026-09-06 前的旧页头有
-**核心源码**、**中心结论** 两行，改页时顺手换成新式即可，不专门批量改。）
+The header answers what the page covers; it does not preview the argument. Put claims, exceptions, and reasoning in the body; expanded source paths in the source-reading route; and changed-section details in `wiki/changelog.md`. Older headers, before 2026-09-06, included separate core-source and central-conclusion fields. Migrate those headers while editing their pages; **do not run a separate bulk migration**.
 
-基线推进史、旧基线说明、叙事顺序声明**不留在页头**，归 [[changelog]]。
+Baseline history, old-baseline notes, and declarations of narrative order belong in `wiki/changelog.md`, not the header.
 
-正文里反复出现、值得照抄的三种表：
+The following tables are **optional presentation examples**, not three mandatory sections or a completeness checklist. Use the shape that helps explain the page's actual subject; prose, a worked example, or a figure may be clearer.
 
-| 用途 | 列 |
+| Purpose | Example columns |
 |---|---|
-| 收益与代价对照（放特性概览） | 维度 \| 直接收益 \| 必付成本或边界 |
-| 硬约束与失败边界（放约束一节） | 前提 \| 源码边界 \| 破坏后的行为 |
-| 配置契约（放最后一节） | 字段 \| 类型 \| 默认 \| 契约 |
+| Benefits and costs, in a feature overview | Dimension \| Direct benefit \| Required cost or boundary |
+| Hard constraints and failure boundaries, in a constraints section | Precondition \| Source boundary \| Behavior when violated |
+| Configuration contract, near the end | Field \| Type \| Default \| Contract |
 
-- **硬约束表的每一行都要点名真实的 assert / raise / warning 位置**，否则它只是复述文档。
-- **配置契约表按 config 类分小节**，节末用一行注明该类共多少字段、本表收几项、其余字段的
-  owner 见 `docs/coverage/megatron-lm.yaml` 这类覆盖清单。文件路径写在节末那行，不写进标题。
-- 改写既有页时，覆盖清单指派给本页的字段名**一个都不能少**——参见
-  `source-faithful-analysis` 的改写守恒条款。注意 `tools/check_coverage.py` 的 C2 只复验
-  **人工** owner，`auto: true` 的行不复验提及，因此这一条**门禁挡不住**，只能靠人/流程守。
+- **Ground each hard constraint in evidence appropriate to its behavior.** If the implementation has an explicit `assert`, `raise`, or warning, name that location. If there is no explicit guard, state that and anchor the enforcing computation, protocol invariant, or relevant test; explain the supported consequence, such as numerical error, an invalid result, or stalled progress. Do not invent an exception or treat the absence of a guard as evidence that no constraint exists. If the violation behavior has not been verified, label it as unverified. These semantic checks require source review; keyword counts cannot establish them.
+- **Group configuration contract tables by configuration class.** End each subsection with one line stating the class's total field count, how many the table covers, and where the remaining fields' owners are recorded in a coverage ledger such as `docs/coverage/megatron-lm.yaml`. Put the ledger path in that line, not in the heading.
+- During a rewrite, **retain every field assigned to this page by the coverage ledger**; see the conservation rule in `source-faithful-analysis`. `tools/check_coverage.py` C2 rechecks only **manual** owners, not mention coverage for `auto: true` rows. This requirement therefore needs manual/process review beyond the automated gate.
 
 ### MCP Tools
 
 Two MCP servers are configured in `.mcp.json`:
 
-1. **filesystem** (`@modelcontextprotocol/server-filesystem`) — Read, write, search, and manage files in `wiki/` and `raw/`. Use for all file operations.
+1. **filesystem** (`@modelcontextprotocol/server-filesystem`) — Read, write, search, and manage files in `wiki/` and `raw/`. Use for all file operations when this connector is available; otherwise use the runtime's file tools.
 2. **qmd** (`qmd mcp`) — Search engine over wiki pages. Currently operating in **BM25 keyword mode only** (no embedding model). Use `search` for keyword matching; `vsearch` and `query` require embeddings (not yet available on this system).
 
 When to use which:
-- **filesystem** for: reading/writing files, listing directories, exact grep
-- **qmd** for: keyword search across all wiki pages, finding pages that mention a specific term, cross-reference discovery
+- **filesystem** for: reading/writing files, listing directories, exact text search.
+- **qmd** for: keyword search across all wiki pages, finding pages that mention a specific term, cross-reference discovery. If unavailable, use local keyword search.
 
 ### Query Workflow
 
 When the user asks a question:
 
-1. **Search wiki first**: Use `qmd search` to find wiki pages matching relevant keywords
-2. **Navigate the graph**: Check the relevant `index.md` to understand the domain landscape and follow `[[wiki links]]`
-3. **Read the pages**: Use filesystem `read_file` to read the full content of the most relevant pages
-4. **Synthesize**: If the answer requires synthesizing multiple pages, do so and note which pages contributed
+1. **Search wiki first**: Use `qmd search` to find wiki pages matching relevant keywords, or local keyword search if the connector is unavailable.
+2. **Navigate the graph**: Check the relevant `index.md` to understand the domain landscape and follow `[[wiki links]]`.
+3. **Read the pages**: Use filesystem `read_file`, or the runtime's file tools, to read the full content of the most relevant pages.
+4. **Synthesize**: If the answer requires synthesizing multiple pages, do so and note which pages contributed.
 5. **Check raw sources on gap**: If the answer is NOT in the wiki, do NOT just say "not found". Instead:
-   - Scan `raw/` for relevant source documents (check filenames for topic keywords); if the topic is code-based, check whether a relevant sibling repo checkout is already referenced elsewhere in the wiki
-   - If a relevant source exists, **automatically ingest it** following the Ingest Workflow, then answer the question from the newly created wiki content
-   - If no relevant source exists, say so and offer to create a stub wiki page (in the correct 功能树 module, not a new standalone learning-track directory — see Courses) to track this knowledge gap
-6. **Grow the wiki**: Every query that reveals a gap should result in either a new wiki page or a note in the relevant index.md under Knowledge Gaps
+   - Scan `raw/` for relevant source documents using topic keywords in filenames; for code-based topics, check whether a relevant sibling repository checkout is already referenced elsewhere in the wiki.
+   - If a relevant source exists, **automatically ingest it** following the Ingest Workflow, then answer from the newly created wiki content.
+   - If no relevant source exists, say so and offer to create a stub wiki page in the correct functional-tree module, not a new standalone learning-track directory; see the constitution's Courses rules.
+6. **Grow the wiki**: Every query that reveals a gap should result in either a new wiki page or a note under Knowledge Gaps in the relevant `index.md`.
 
 ### Maintenance Workflow
 
-Periodically (or when the user requests):
+Periodically, or when the user requests:
 
-1. **Consistency check**: Run `python tools/check_links.py --strict`（broken/ambiguous/裸 index 必须为 0）
-2. **Math check**: Run `python tools/check_math.py --changed --strict`（本次变更中的公式错误和警告必须为 0）
-3. **Orphan check**: `check_links.py` 的 orphans 项已覆盖"无入链且未被任何 index.md 提及"的孤儿页；发现即整合入相应 index
-4. **Contradiction review**: Scan for `> [!contradiction]` callouts and propose resolutions
-5. **Staleness review**: Flag pages that haven't been updated in >30 days for review
-6. **Duplication review**: 发现同一主题在多个页面复述（而不是自然的"实现差异"）时，适用 Update Principles 的 Merge over coexist
+1. **Consistency check**: Run `python tools/check_links.py --strict`; broken, ambiguous, and bare_index must be zero.
+2. **Math check**: Run `python tools/check_math.py --changed --strict`; formula errors and warnings introduced by the change must be zero.
+3. **Orphan check**: `check_links.py` covers pages with no inbound links and no mention in an `index.md`. Integrate each orphan into its corresponding index.
+4. **Contradiction review**: Scan for `> [!contradiction]` callouts and propose resolutions.
+5. **Staleness review**: Flag pages that have not been updated in more than 30 days for review.
+6. **Duplication review**: When multiple pages repeat the same topic, rather than explain natural implementation differences, apply **Merge over coexist**.

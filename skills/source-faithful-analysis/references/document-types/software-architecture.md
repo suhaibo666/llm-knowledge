@@ -78,7 +78,9 @@ Give every module established in the static view a basic design subsection with 
 2. **Design pressure and choice:** why this module/boundary exists, the obvious alternative, and the
    criterion that rejected it.
 3. **Internal implementation:** a class/relationship/logic/sequence diagram chosen for the question,
-   plus a compact stable-symbol source route.
+   or an algorithm/numerical derivation when that explains the module, plus a compact stable-symbol
+   source route. Use `../analysis-focus.md` within each module: its place in the static architecture
+   does not make ownership the right explanation for every internal algorithm.
 4. **Constraints and limits:** guards, costs, unsupported combinations, fallback, failure, and
    observability.
 

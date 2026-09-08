@@ -1,56 +1,51 @@
-# skills/ — 公共 agent 技能
+# skills/ — Shared Agent Skills
 
-这里是本仓库**唯一**的一份技能定义，供所有 agent 共用。此前 `.claude/skills/` 与
-`.agents/skills/` 各存一份副本，两边已经开始漂移（`source-faithful-analysis` 的宿主
-说明一处写 `CLAUDE.md`、一处写 `AGENTS.md`），并且要靠一条单测强行比对来维持同步。
-现在只保留这一份。
+This directory is the repository's **single physical copy** of skill definitions, shared by all supported agents. The former `.claude/skills/` and `.agents/skills/` copies had started to drift, including conflicting host-instruction references, and needed a test merely to keep their contents synchronized. Only this shared copy remains.
 
-## 加载约定
+## Loading Conventions
 
-`CLAUDE.md` 是本知识库的**基本法**：它只定义知识库*是什么*——三层结构、功能树的唯一
-权威地位、溯源政策、质量门禁。**具体怎么写文档不属于基本法**，落在这里的技能中，
-**按需加载，不默认加载**。
+`CLAUDE.md` is the knowledge base's **constitution**. It defines what the knowledge base *is*: three layers, the functional tree as the sole content authority, provenance policy, and quality gates. Document-writing operations belong in the skills here, **loaded on demand, never by default**.
 
-判断该读哪一篇：
+Choose the skill for the operation:
 
-| 你要做的事 | 读 |
+| Task | Read |
 |---|---|
-| 往 `wiki/` 里新增/改写/重命名/合并页面，维护 index 与 changelog | [`maintaining-llm-knowledge`](maintaining-llm-knowledge/SKILL.md) |
-| 写或改任何 LaTeX 公式 | [`writing-obsidian-math`](writing-obsidian-math/SKILL.md) |
-| 给页面加图或改图——该不该画、用什么画、画成什么样 | [`drawing-wiki-figures`](drawing-wiki-figures/SKILL.md) |
-| 画或改 Mermaid 图（parser 陷阱） | [`writing-mermaid-diagrams`](writing-mermaid-diagrams/SKILL.md) |
-| 侦察一个新代码库或未规划的多页代码库子域，规划能力/架构/核心机制与文档蓝图，等待确认后编排实施 | [`planning-codebase-analysis`](planning-codebase-analysis/SKILL.md) |
-| 按需撰写或审查已批准/边界明确的软件架构或具体特性，按已批准/聚焦代码库机制合同写分析单元，或分析任意规模的论文、规范、数据集、事故、报告及其他非代码制品；加载对应文档 profile | [`source-faithful-analysis`](source-faithful-analysis/SKILL.md) |
-| 把一个代码仓梳理成代码仓功能树、为每个叶子功能点写契约式规格（输入输出/处理逻辑/边界约束/支持范围），或在基线推进后对账重验 | [`feature-tree-analysis`](feature-tree-analysis/SKILL.md) |
+| Add, rewrite, rename, or merge pages in `wiki/`; maintain indexes and changelog | [`maintaining-llm-knowledge`](maintaining-llm-knowledge/SKILL.md) |
+| Write or change any LaTeX formula | [`writing-obsidian-math`](writing-obsidian-math/SKILL.md) |
+| Add or change a page figure: whether a figure helps, which medium to use, and its visual form | [`drawing-wiki-figures`](drawing-wiki-figures/SKILL.md) |
+| Draw or change a Mermaid diagram, including parser pitfalls | [`writing-mermaid-diagrams`](writing-mermaid-diagrams/SKILL.md) |
+| Discover a new codebase or an unplanned multi-page codebase domain; plan capabilities, architecture, core mechanisms, and a document blueprint; await approval, then coordinate implementation | [`planning-codebase-analysis`](planning-codebase-analysis/SKILL.md) |
+| Write or review an approved/boundary-defined software architecture or concrete feature, write an approved/focused codebase mechanism, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale; load the matching document profile on demand | [`source-faithful-analysis`](source-faithful-analysis/SKILL.md) |
+| Inventory a repository as a feature tree with a contract-style specification for every leaf function point (inputs/outputs, processing logic, boundary constraints, supported scope), or reconcile and reverify after a baseline advance | [`feature-tree-analysis`](feature-tree-analysis/SKILL.md) |
 
-例如，“把一个新代码库整理成知识域”先读 `planning-codebase-analysis`；蓝图确认后，整仓架构页、具体特性页和聚焦机制页都读 `source-faithful-analysis`，分别选择 `software-architecture`、`feature-analysis`、`mechanism-analysis` profile；实际落盘时叠加 `maintaining-llm-knowledge`，公式和图按页面需要加载。功能树清单仍直接使用 `feature-tree-analysis`，不套用分析文章 profile。任意规模的非代码制品分析，以及未规划代码库中的单个聚焦机制分析，都不经过 planner。
+For example, organizing a new codebase into a knowledge domain starts with `planning-codebase-analysis`. After blueprint approval, repository architecture pages, concrete feature pages, and focused mechanism pages all use `source-faithful-analysis`, selecting the `software-architecture`, `feature-analysis`, or `mechanism-analysis` profile respectively. Add `maintaining-llm-knowledge` when writing into this wiki, and load math or figure skills when the page needs them. Feature-tree inventories use `feature-tree-analysis` directly, without an analysis-article profile. Non-code artifact analysis at any scale, and one focused mechanism in an otherwise unplanned codebase, do not go through the planner.
 
-## 各家 agent 怎么用
+## Agent Integration
 
-本目录是**唯一的物理副本**。两家 agent 的接入方式不同，因为它们的机制本来就不同：
+This directory is the **only physical copy**. The repository's two supported agents reach it through different entry points:
 
-- **Claude Code** — `.claude/skills` 是指向本目录的**软链接**（git 存为 symlink 对象，
-  mode `120000`）。这不是文档，是**发现机制**：有它，技能的 name/description 由 harness
-  主动呈现、可按名直接调用；没有它就只能靠模型自己记得去查表。
+- **Claude Code** uses `.claude/skills`, a symlink to this directory, stored by Git as a symlink object with mode `120000`. This is the repository's native discovery entry point:
 
   ```
   .claude/skills -> ../skills
   ```
 
-- **Codex** — **不建对称软链接**。查证过：`codex` 没有 `skills` 子命令，技能来自全局
-  `~/.codex/skills/` 与 plugin marketplace（`codex plugin`），**没有项目级技能发现**。
-  因此建一个 `.codex/skills` 只是好看，不产生任何作用。Codex 的加载路径就是读
-  `AGENTS.md` 里的表，再打开需要的那篇。
+- **Codex** reads the task-to-skill table in `AGENTS.md` and opens the required file in this directory. Keep this repository's explicit loading convention; do not create a mirrored `.codex/skills` directory or duplicate skill definitions.
 
-只保留这两家。历史上的 `.agents/skills/`（重复副本）与 `opencode.json` 已删除。
-`tools/test_math_skill.py` 会守住两条不变量：agent 侧任何 skills 路径都必须 resolve 到本目录，
-且全仓库每个技能只有一份物理 `SKILL.md`。
+Only these two integrations are maintained here. The historical `.agents/skills/` duplicate and `opencode.json` were removed. `tools/test_math_skill.py` guards two invariants: agent-side skill paths must resolve to this directory, and each skill has only one physical `SKILL.md` in the repository.
 
-## 改技能时
+## Language Contract
 
-技能是**规范**，不是随笔：
+Write skill instructions, reference guidance, evaluation prompts, and evaluation rubrics in **English** throughout `skills/`. This is the language of the reusable instructions, not a requirement for the artifacts they produce. Artifact language follows the user's request or the host's established convention; a Chinese wiki page can be produced from an English skill.
 
-- 规则要能被 `tools/` 下的检查器验证，或者明确写清"这条只能人工核对"。
-- 改了规则就同步改检查器与其单测（`tools/check_math.py`、`tools/check_links.py`、
-  `tools/test_*.py`），不要让文档与门禁各说各话。
-- 不要把同一条规则同时写进 `CLAUDE.md` 和技能——基本法只留"是什么"，技能只留"怎么做"。
+Preserve non-English text when its exact spelling is part of the evidence or interface: quoted source material, parser/regression fixtures, source identifiers, and required output-format literals such as wiki header labels. Explain each such exception in English near its use. These exceptions do not permit untranslated explanatory paragraphs or rubrics. Review language across referenced files and evaluations as well as top-level `SKILL.md` files.
+
+## Editing Skills
+
+Skills are **operational contracts**, not essays:
+
+- Make rules checkable by the tools under `tools/`, or explicitly identify the parts that require manual review.
+- When changing a rule, update its checker and tests (`tools/check_math.py`, `tools/check_links.py`, `tools/test_*.py`) where applicable so the instructions and acceptance gates agree.
+- Keep rule strength explicit: distinguish mandatory requirements, conditions that activate a requirement, and optional presentation examples. A useful table shape is not automatically a required section for every subject.
+- Select explanatory dimensions for the subject: algorithms may need mathematical reasoning, representations, and complexity; stateful or concurrent mechanisms may need ownership, transitions, and completion conditions. Keep the detailed selection method in `source-faithful-analysis` rather than copying it into every skill.
+- Do not repeat the same rule in both `CLAUDE.md` and a skill. The constitution defines what the knowledge base is; skills define how to operate it.

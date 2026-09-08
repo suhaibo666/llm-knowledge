@@ -25,6 +25,8 @@ OWNED OUTPUT
 - Owned concepts: <list>
 - Explicit exclusions and sibling owners: <list>
 - Completion test: <what a reader must be able to explain or trace>
+- Explanatory focus: <decisive algorithm/derivation, numerical transform, interface rule,
+  stateful collaboration, architecture, or empirical result; actual conditional triggers>
 
 METHOD
 1. Read the shared source-fidelity contract, required source pack(s), and selected document profile
@@ -37,7 +39,8 @@ METHOD
    explanation required by the profile.
 
 SOURCE-SPECIFIC PROOF
-- Code: trace live selection/entry, state owners, and the real path to completion or visibility;
+- Code: trace live selection/entry, decisive operations and the real result; include state owners
+  and completion or visibility when state or effects require them;
   record crossing objects, state transitions, execution semantics, guards, tests, and partial
   failure where the codebase pack triggers them.
 - Paper: pair claims with exact sections/tables/equations and baselines; state the evaluated regime,

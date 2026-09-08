@@ -52,12 +52,8 @@ def test_architecture_is_a_profile_not_a_second_top_level_skill():
 def test_architecture_routes_resolve_through_source_faithful_analysis():
     for path in ROUTE_DOCS:
         row = _route_row(path, "source-faithful-analysis")
-        if path.name == "README.md":
-            for phrase in ("软件架构", "特性", "机制", "按需"):
-                assert phrase in row
-        else:
-            for phrase in ("software architecture", "feature", "mechanism", "on demand"):
-                assert phrase in row.lower()
+        for phrase in ("software architecture", "feature", "mechanism", "on demand"):
+            assert phrase in row.lower()
         assert "analyzing-software-architecture" not in _text(path)
 
     planner = _text(PLANNER)
@@ -178,5 +174,5 @@ def test_architecture_profile_has_three_cross_domain_regression_evals():
     assert all(item["prompt"] and item["expected_output"] for item in payload["evals"])
 
     scenarios = "\n".join(f'{item["prompt"]}\n{item["expected_output"]}' for item in payload["evals"])
-    for phrase in ("静态责任图和动态生命周期", "ASCII 函数调用树", "实际执行命令", "异步服务", "writer 不能自行拆页"):
+    for phrase in ("static responsibility view", "dynamic lifecycle", "ASCII function caller tree", "actual execution command", "asynchronous service", "writer cannot split pages independently"):
         assert phrase in scenarios

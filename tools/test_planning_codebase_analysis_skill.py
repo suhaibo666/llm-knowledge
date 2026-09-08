@@ -62,13 +62,13 @@ def test_planner_has_seven_routing_and_behavior_evals():
 
     joined = [f'{item["prompt"]}\n{item["expected_output"]}' for item in payload["evals"]]
     scenario_categories = {
-        "unplanned whole codebase": ("新框架仓库", "能力地图", "覆盖矩阵"),
-        "focused mechanism": ("scheduler", "不重新规划整个代码库", "跨文件"),
-        "approved page contract": ("已经批准的蓝图", "不修改目录", "不包含内容"),
-        "directory-mirroring pressure": ("五个一级目录", "拒绝", "跨目录"),
-        "material ownership drift": ("不可拆分", "具体修订页面边界", "普通措辞"),
-        "scale and ratio pressure": ("数千个文件", "1:1", "固定源码/讲解比例"),
-        "concrete feature routing": ("具体特性", "feature-analysis", "primitive"),
+        "unplanned whole codebase": ("new framework repository", "capability map", "coverage matrix"),
+        "focused mechanism": ("scheduler", "Do not replan the whole codebase", "across files"),
+        "approved page contract": ("approved blueprint", "Do not change directories", "exclusions"),
+        "directory-mirroring pressure": ("five top-level directories", "Reject", "cross-directory"),
+        "material ownership drift": ("indivisible", "concrete revised page boundaries", "Ordinary wording"),
+        "scale and ratio pressure": ("thousands of files", "1:1", "fixed source-code/explanation ratio"),
+        "concrete feature routing": ("concrete feature", "feature-analysis", "primitive"),
     }
     for category, fragments in scenario_categories.items():
         assert any(all(fragment in scenario for fragment in fragments) for scenario in joined), (
@@ -128,30 +128,17 @@ def test_route_rows_preserve_codebase_planner_and_all_scale_source_meanings():
     for path in ROUTE_DOCS:
         planner_row = _route_row(path, "planning-codebase-analysis")
         source_row = _route_row(path, "source-faithful-analysis")
-        if path.name == "README.md":
-            planner_fragments = ("代码库", "多页", "蓝图", "确认")
-            source_fragments = (
-                "已批准/聚焦代码库机制",
-                "论文",
-                "规范",
-                "数据集",
-                "事故",
-                "报告",
-                "其他非代码制品",
-                "任意规模",
-            )
-        else:
-            planner_fragments = ("codebase", "multi-page", "blueprint", "approval")
-            source_fragments = (
-                "approved/focused codebase mechanism",
-                "paper",
-                "spec",
-                "dataset",
-                "incident",
-                "report",
-                "other non-code artifact",
-                "any scale",
-            )
+        planner_fragments = ("codebase", "multi-page", "blueprint", "approval")
+        source_fragments = (
+            "approved/focused codebase mechanism",
+            "paper",
+            "spec",
+            "dataset",
+            "incident",
+            "report",
+            "other non-code artifact",
+            "any scale",
+        )
         for fragment in planner_fragments:
             assert fragment in planner_row, f"planner route in {path} is missing {fragment!r}"
         for fragment in source_fragments:

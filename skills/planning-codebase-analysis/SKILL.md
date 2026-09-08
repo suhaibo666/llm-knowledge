@@ -52,12 +52,22 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
 - Per-page table: path/title, page type, thesis, reader question, owned concepts, explicit exclusions,
   core mechanisms, evidence entry points, approved repository commit, dependencies, visual candidates,
   and completion test.
+- Select each page's explanatory focus through the analysis skill's `references/analysis-focus.md`:
+  algorithm/derivation, numerical computation, interface rules, stateful collaboration, architecture,
+  or empirical evidence. Do not assign state-ownership prose as a generic implementation template.
 - Coverage matrix: each capability/lifecycle/mechanism has one authoritative page, permitted summaries elsewhere, and planned/covered/gap state.
+- Distinguish a topic being mentioned from being explained: check the actual entry/use, decisive
+  mechanism and example, source route, live variants/selection, relevant costs and boundaries.
+  Record missing depth within the existing owner before proposing more pages. The dimensions apply
+  to the subject; they are not mandatory chapter headings or per-configuration essays.
 - **Independent enumeration axis**: at least one mechanically enumerable surface reconciled against
   the matrix — for frameworks, typically the user-facing config/flag surface at the approved commit
   (`tools/check_coverage.py` + `docs/coverage/<domain>.yaml`). Every enumerated item maps to an
   owning page or an explicit exclusion; items the discovery map missed surface here, before writing.
 - Implementation order based on conceptual dependencies, not filename order.
+- Reader access: assign discoverable entry links and named prerequisites/follow-ups. Deliver waves
+  as coherent reading paths where practical, and test an orientation, mechanism-replay, or diagnosis
+  task appropriate to the audience. Cross-page guides carry links/orientation, not duplicate bodies.
 
 ## Planning rules
 - Derive content from user-visible capabilities and mechanism ownership, never directly from directories.

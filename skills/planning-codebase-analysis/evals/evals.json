@@ -3,44 +3,44 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "给你一个第一次接触的新框架仓库。请分析整体架构、模块和核心机制，并整理成一组 Wiki 文档。",
-      "expected_output": "先冻结仓库基线并只读侦察，产出能力地图、静态架构、代表性生命周期、文档蓝图和覆盖矩阵；在用户确认目录、页面边界、编号与范围之前不创建正文页面。",
+      "prompt": "You are given a new framework repository. Analyze its architecture, modules and core mechanisms and organize them into a group of Wiki documents.",
+      "expected_output": "Freeze the baseline and perform read-only reconnaissance; produce a capability map, static architecture, representative lifecycles, document blueprint and coverage matrix. Do not create page bodies before the user approves placement, page boundaries, numbering and scope.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "目录和页面职责已经确认。现在只分析 scheduler 的请求状态机、抢占和提交边界，完成 scheduler_analysis.md。",
-      "expected_output": "不重新规划整个代码库；将该页面视为一个分析单元，调用 source-faithful-analysis 并选择 mechanism-analysis 文档 profile，跨文件核验状态、调用链、设计理由和边界。",
+      "prompt": "Directory placement and page responsibilities are approved. Analyze only the scheduler request state machine, preemption and commit boundary in scheduler_analysis.md.",
+      "expected_output": "Do not replan the whole codebase. Treat the page as one analysis unit, route to source-faithful-analysis with mechanism-analysis, and verify state, execution, design reasons and boundaries across files.",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "按已经批准的蓝图实施 architecture_overview.md：该页拥有静态职责分层与端到端生命周期，不展开 scheduler 和 cache 的内部算法。",
-      "expected_output": "遵守已确认的页面所有权和不包含内容，进入 source-faithful-analysis 并选择 software-architecture 文档 profile，复用共享源代码证据合同；不修改目录，不把 scheduler/cache 深挖复制进概览。",
+      "prompt": "Implement architecture_overview.md from the approved blueprint. The page owns static responsibility layers and the end-to-end lifecycle, excluding scheduler and cache internal algorithms.",
+      "expected_output": "Respect approved page ownership and exclusions. Route to source-faithful-analysis with software-architecture and reuse the shared source-evidence contract. Do not change directories or duplicate scheduler/cache internals in the overview.",
       "files": []
     },
     {
       "id": 4,
-      "prompt": "这个仓库恰好有 api、engine、workers、models、kernels 五个一级目录，请直接按这五个目录规划五篇架构文档。",
-      "expected_output": "拒绝把目录树直接改名为架构；先从用户能力、职责、依赖方向和状态所有权验证页面边界，允许合并、拆分或跨目录形成一个机制页。",
+      "prompt": "This repository has five top-level directories: api, engine, workers, models and kernels. Plan exactly five architecture documents, one per directory.",
+      "expected_output": "Reject directory mirroring as architecture. Establish page boundaries from user capabilities, responsibilities, dependency direction and relevant state ownership. A coherent mechanism may require cross-directory coverage, merging or splitting.",
       "files": []
     },
     {
       "id": 5,
-      "prompt": "已批准把 executor 和 scheduler 写成两页，但侦察发现两者共同维护一个不可拆分的请求状态机。请继续按原计划写，不必再问。",
-      "expected_output": "识别概念所有权发生实质变化；把不可拆分的机制从分拆或模糊所有权改为一个权威页加链接摘要，即使页数和交叉链接不变、即使称为‘耦合补充’，仍是实质修订。泛化的‘继续/不必再问’不是对尚未呈现的修订所有权与覆盖契约的批准；停止受影响页面的实施，提交具体修订页面边界和覆盖矩阵，获得明确批准后才写作。普通措辞或仅链接编辑不触发此门槛。",
+      "prompt": "The approved blueprint separates executor and scheduler into two pages, but reconnaissance finds one indivisible request state machine across both. Continue with the original plan without asking.",
+      "expected_output": "Recognize material concept-ownership drift. Moving an indivisible mechanism from split or ambiguous ownership to one authoritative page plus summaries is material even if counts and links stay unchanged or it is called a coupling supplement. A generic continue instruction does not approve unpresented ownership/coverage changes. Stop affected implementation, present concrete revised page boundaries and coverage matrix, and obtain explicit approval before writing. Ordinary wording and link-only edits do not trigger this gate.",
       "files": []
     },
     {
       "id": 6,
-      "prompt": "这是一个包含数千个文件和几十个后端的大仓库。请确保每个目录都有对应分析页，越完整越好，并让每篇文档的源码与讲解比例固定为 1:1。",
-      "expected_output": "先按能力和高内聚子域缩小范围，选择代表性生命周期与核心机制；不按目录逐一建页，不使用页数、行数或固定源码/讲解比例作为覆盖、质量或完成标准。",
+      "prompt": "This large repository has thousands of files and dozens of backends. Give every directory an analysis page for maximum completeness and enforce a fixed 1:1 source-code/explanation ratio.",
+      "expected_output": "Scope by capabilities and cohesive subdomains, then choose representative lifecycles and core mechanisms. Do not create one page per directory or use page counts, line counts, or a fixed source-code/explanation ratio as coverage, quality or completion criteria.",
       "files": []
     },
     {
       "id": 7,
-      "prompt": "蓝图已经批准，现在写缓存失效这个具体特性页：需要从最小实例讲到系统集成、成本和边界。",
-      "expected_output": "不重新规划目录；通过 source-faithful-analysis 选择 feature-analysis 文档 profile，从 smallest primitive 展开到系统位置、逐组件职责与设计原因、真实完成边界、总成本和支持范围。",
+      "prompt": "The blueprint is approved. Write the cache invalidation concrete feature page from a smallest example through system integration, costs and boundaries.",
+      "expected_output": "Do not replan directories. Route through source-faithful-analysis to feature-analysis. Expand from the smallest primitive to actual system placement, component responsibilities and design reasons, the real completion boundary, aggregate cost and operating envelope.",
       "files": []
     }
   ]

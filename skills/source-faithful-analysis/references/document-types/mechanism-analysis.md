@@ -8,6 +8,11 @@ source pack.
 This profile owns the **causal page shape**. It does not own source locators, code-hop semantics,
 Wiki operations, or repository-wide planning.
 
+Use `../analysis-focus.md` to choose the subject's explanatory center. For an algorithm, develop
+the representation, decisive rule, correctness/termination, and complexity; for a numerical method,
+develop the transformation, error and execution cost. Ownership and publication are central when
+the mechanism has shared state or effects, not simply because its source is software.
+
 ## Central thesis and causal order
 
 Lead every analysis unit with its **central thesis**: the pressure that matters and the main design
@@ -16,8 +21,8 @@ choice made under it. Preserve this semantic order; headings may follow the host
 | Beat | Required answer |
 |---|---|
 | **1. Background / problem** | What workload, bottleneck, failure, requirement, or decision forced this unit to exist? What did the previous or naive approach do? |
-| **2. Why this design** | Which route won, what obvious alternative lost, and what criterion decided? If rationale is reconstructed rather than stated, mark it as analyst inference. |
-| **3. Mechanism and evidence** | What state/model makes the result happen, how does it execute, and which verified evidence proves it? |
+| **2. Why this design** | What makes the decisive rule valid or the design appropriate? For a design choice, which obvious alternative lost and what criterion decided? Mark reconstructed rationale as analyst inference. |
+| **3. Mechanism and evidence** | What representation, algorithm, numerical transformation, or state model makes the result happen, how does it execute, and which verified evidence proves it? |
 | **4. Constraints and failure boundary** | What must remain true, what does it cost, what is unsupported, and where or how does it fail? |
 | **5. Outlook** *(optional)* | What anchored change, deprecation, future-work statement, or constraint-driven pressure points forward? No anchor means omit it. |
 
@@ -27,9 +32,14 @@ reference documentation, not analysis.
 
 ## State model and execution trace
 
-For a stateful or multi-stage mechanism, explain its state/ownership model separately from the real
-execution trace. The model states owners and invariants; the trace proves transitions, boundary
-crossings, and completion. A call graph alone does not establish the mechanism's state model.
+For a local algorithm, explain its representation and invariants, then replay the decisive steps to
+the returned result and establish correctness and cost. Multi-step arithmetic alone does not call
+for a resource-ownership inventory.
+
+For a mechanism with persistent/shared state, cooperating components, or asynchronous effects,
+explain its state/ownership model separately from the real execution trace. The model states owners
+and invariants; the trace proves transitions, boundary crossings, and completion. A call graph alone
+does not establish the mechanism's state model.
 
 For code, use the Execution trace contract in `../codebase.md`; do not restate it. For a spec,
 incident, protocol, or paper, identify the corresponding state transition, evidence locator, and
@@ -48,9 +58,9 @@ the decisive intermediate state/layout/owner to its output. Include **at least o
 that makes this derivation reconstructable and marks the invariant, constraint, or cost that makes
 the algorithm work. A class diagram, caller tree, code excerpt, or prose/table alone does not count.
 For distinct live algorithms or data planes, reuse the same concrete example and give each path a
-separately traceable lane or figure through local compute, data/state/ownership movement,
-communication or synchronization, reconstruction, applicable forward/backward differences, and
-incremental cost.
+separately traceable lane or figure. Show local compute and the result; include
+data/state/ownership movement, communication or synchronization, reconstruction, applicable
+forward/backward differences, and incremental cost wherever those operations actually occur.
 
 **REQUIRED SUB-SKILL:** Use `drawing-wiki-figures` for medium choice, the written figure spec, the
 rendered artifact, and the stranger-reader check. The algorithmic trigger has already established
@@ -58,9 +68,9 @@ that a figure is required; optional figure-pruning guidance cannot waive it.
 
 ## Evidence-shaped output
 
-- **Code mechanism:** thesis and baseline → bottleneck/constraints → state/model → design versus
-  alternative → live implementation evidence → costs/failure boundary → compact source-reading
-  route.
+- **Code mechanism:** thesis and baseline → problem and decisive rule/design choice → smallest
+  example and representation → live implementation evidence → costs/failure boundary → compact
+  source-reading route. Expand state/ownership where the mechanism triggers it.
 - **Paper/general analysis:** motivation → mechanism/model → evidence with its baseline → rejected
   alternative or comparison → limits.
 

@@ -6,6 +6,7 @@ description: Use when writing, editing, reviewing, or generating Markdown notes 
 # Writing Obsidian Math
 
 Keep mathematical meaning, Obsidian rendering, and source readability correct at the same time. A formula is not finished until the repository checker and the manual semantic review both pass.
+These instructions are in English; the surrounding wiki prose follows the page's language and the user's request.
 
 ## Canonical delimiters
 
@@ -14,19 +15,19 @@ Use dollar delimiters everywhere in knowledge-base Markdown.
 Inline math:
 
 ```markdown
-策略比率为 $r_t=\exp(\log p_t-\log p_{\mathrm{old},t})$。
+The policy ratio is $r_t=\exp(\log p_t-\log p_{\mathrm{old},t})$.
 ```
 
 Display math, with each delimiter on its own line **and a blank line on each side**:
 
 ```markdown
-上一段正文。
+The preceding paragraph.
 
 $$
 L(\theta)=\mathbb{E}_{x\sim\mathcal D}[\ell_\theta(x)].
 $$
 
-下一段正文。
+The following paragraph.
 ```
 
 The blank lines are not cosmetic. Obsidian renders `$$` wherever it appears; the published
@@ -226,12 +227,12 @@ the surrounding quoted prose with a **bare `>` line**. A truly empty line would 
 callout; a `>` line is the in-quote blank that Python-Markdown needs to see the block:
 
 ```markdown
-> [!tip] 标题
-> 上一句说明。
+> [!tip] Title
+> The preceding explanation.
 >
 > $$
 > M_{\text{HBM}}^{\text{target}} = \text{device\_max} - \text{reduction\_memory}
 > $$
 >
-> 下一句说明。
+> The following explanation.
 ```

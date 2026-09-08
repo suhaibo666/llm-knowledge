@@ -1,29 +1,58 @@
 ---
 name: writing-mermaid-diagrams
-description: Use when adding or editing a Mermaid diagram in this wiki - which characters break the parser, the two severity tiers, and the mandatory post-generation review. Load it before drawing a flowchart, sequence or state diagram.
+description: Use when adding or editing a Mermaid flowchart, sequence diagram, or state diagram in this wiki.
 ---
 
 # Writing Mermaid Diagrams
 
-> 这篇只管 **mermaid 自己的 parser 陷阱**。「这段内容该不该画图、该用 mermaid 还是渲染图」
-> 见 [`drawing-wiki-figures`](../drawing-wiki-figures/SKILL.md)——二维网格与甘特类内容不该用 mermaid。
+This skill covers **Mermaid parser traps**. For whether to draw a figure and which medium to
+use, read [`drawing-wiki-figures`](../drawing-wiki-figures/SKILL.md). Use generated SVG for
+precise two-dimensional grids and proportional Gantt timelines.
 
-这些规则是本库实测沉淀：mermaid 渲染失败几乎全部来自「节点/连线文本里混进了 mermaid 自己的语法定界符」。新增或改写任何 mermaid 块前读一遍，写完按末尾的校验清单逐条过。
-Mermaid 渲染失败源于**节点/连线文本里混入了 mermaid 的语法定界符**(`[] () {} |` 和换行)。原理:mermaid 用 `[]`/`()`/`{}` 界定节点形状、用 `|` 界定连线标签,文本里再出现这些字符可能让解析器判断不出边界。**按严重度分两档**(本库实测沉淀):
+These instructions are in English; diagram labels follow the page's language and the user's request.
+Non-English labels are allowed. Use simple ASCII letters/digits for node IDs.
 
-> **① 必崩(零容忍)—— 形状内嵌套定界符**:`X[(无 [N,V] 激活)]`(圆柱 `[(...)]` 里又有 `[`)、`{判断[i]}`(菱形里有 `[`)这类**特殊形状内再出现 `[]`/`()`** 一定解析失败。修法:特殊形状(圆柱 `[(...)]`、子程序 `[[...]]`、菱形 `{...}`)内**只放最简纯文本**,绝不嵌套定界符 → `X["无 N×V 激活"]`。
->
-> **② 渲染器相关(求稳一律避免)**:`A["logits[N,V]"]`(带引号矩形标签里的 `[]`/`()`)、`A -. "文字" .-> B`(虚线内联引号标签)——这些在多数 mermaid 版本能渲、个别版本崩,**不稳定**。为可移植求稳:张量形状写 `N×d`/`B·S·V` 不写 `[N,V]`;带文字连线统一用管道标签 `A -->|文字| B` / `A -.->|文字| B`(文字内不放引号、括号、`|`)。已能渲的旧图不必为此大改,但新图按此写。
+Mermaid uses `[]`, `()`, and `{}` to delimit node shapes, and `|` to delimit edge labels.
+Embedding those delimiters or literal newlines in labels can make their boundaries ambiguous.
+The repository's observed failures fall into two severity tiers.
 
-**其它常见坑 → 修法:**
-- 管道标签里带引号/括号:`A -->|"文字(x)"| B` → `A -->|文字 x| B`。
-- 标签里直接敲回车换行 → 用 `<br/>`。
-- 中文/符号当节点 id → id 用英文数字(`H`、`NA`),中文/特殊字符放进 `["..."]` 标签里。
-- 子图标题 `subgraph id["标题"]`:标题可含 `( )`、`：`、`/`(已验证可渲),但**不可含 `[ ]` 或 `|`**;每个 subgraph 必须用**单独一行** `end` 闭合。
-- 代码块**首行**必须是图类型声明(`flowchart TB|LR`、`sequenceDiagram`、`graph TD` 等)。
+## 1. Parser failures: zero tolerance
 
-**生成后校验(必做,不可跳):**
-1. 写完一个 mermaid 块**立即重读**它,对照上面逐条扫:标签里有没有裸 `[] ()`、特殊形状有没有嵌套定界符、连线文字有没有引号/括号/`|`、有没有 `<br/>` 之外的换行。
-2. 提交前对本次改动的每个文件 `grep -n mermaid <file>` 定位所有图,**逐块**再过一遍清单。
-3. 有条件就实渲确认(mermaid-cli `mmdc`,或在线 live editor 粘一遍);不能渲就严格按清单人工核对。
-4. 发现问题就地改;**绝不**把"可能能渲"的块留到 commit。
+**Nested delimiters in special shapes** are unsafe: `X[(No [N,V] activations)]` nests brackets
+inside a cylinder, and `{Check[i]}` nests brackets inside a diamond. Keep labels in special
+shapes—cylinders `[(...)]`, subroutines `[[...]]`, diamonds `{...}`—to simple text without
+nested `[]` or `()`. A plain quoted rectangle is a safe alternative: `X["No N×V activations"]`.
+
+## 2. Renderer-dependent syntax: avoid in new diagrams
+
+Quoted rectangular labels such as `A["logits[N,V]"]`, and inline quoted dotted-edge labels
+such as `A -. "label" .-> B`, work in many Mermaid versions but fail in some renderers.
+For portability:
+
+- Write tensor shapes as `N×d` or `B·S·V`, not `[N,V]`.
+- Use pipe labels for all labeled edges: `A -->|label| B` or `A -.->|label| B`.
+- Keep quotes, parentheses, and `|` out of the edge-label text.
+- Existing diagrams known to render need not be rewritten solely for these preferences;
+  new diagrams must use the portable forms.
+
+## Other common traps
+
+For pipe labels, replace `A -->|"label(x)"| B` with `A -->|label x| B`.
+For subgraphs, `subgraph id["Title"]` may contain `( )`, `:`, or `/`, but not `[ ]` or `|`.
+
+| Trap | Correction |
+|---|---|
+| Literal newline within a label | Use `<br/>` |
+| Non-English text or symbols used as node IDs | Use IDs such as `H` or `NA`; put display text in `["..."]` |
+| Unclosed subgraph | Close each subgraph with `end` on its own line |
+| Missing diagram declaration | The first line of the code block must declare the type, such as `flowchart TB`, `flowchart LR`, `sequenceDiagram`, or `graph TD` |
+
+## Required review after generation
+
+1. Immediately reread each Mermaid block: check bare `[] ()` in labels, nested shape delimiters,
+   quotes/parentheses/`|` in edge text, and newlines other than `<br/>`.
+2. Before committing, locate every diagram in each changed file with `rg -n mermaid <file>`
+   and review each block against this checklist.
+3. Render when a renderer is available (`mmdc` or a Mermaid live editor). If rendering is
+   unavailable, perform the strict manual checklist and report that limitation accurately.
+4. Fix failures in place. Never leave a block whose syntax is merely hoped to work for a commit.

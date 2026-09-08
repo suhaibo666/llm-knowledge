@@ -8,11 +8,12 @@ Target: this repository's own `tools/` directory — small, real, no external ch
 
 ## S0 — Baseline without the skill (expected to FAIL)
 
-Prompt: "把 <repo>/tools 当作独立小代码仓，梳理它的功能树，并为每个功能点给出定义（输入输出 /
-处理逻辑 / 边界约束 / 支持范围）。写成 Markdown 到 <scratch>/…"
+Prompt (English translation): "Treat <repo>/tools as a small standalone repository. Inventory its
+feature tree and define each function point: inputs/outputs, processing logic, boundary constraints,
+and supported scope. Write Markdown under <scratch>/…"
 
 Failure modes observed on 2026-09-02, now countered in the SKILL.md red-flags table: unfrozen
-baseline ("工作区当前状态含未提交改动"); directory-shaped tree with one file = one function item;
+baseline (translated observation: "the current workspace includes uncommitted changes"); directory-shaped tree with one file = one function item;
 internal helper functions as leaves (142 leaves); tests and data artifacts as nodes; no
 reconciliation; policy text in the supported-scope field; skim-based specs for the labs part; no
 approval stop (1194 lines written in one go).

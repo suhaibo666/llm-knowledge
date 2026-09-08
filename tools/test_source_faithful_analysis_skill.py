@@ -49,6 +49,7 @@ def test_router_uses_exact_resolvable_paths_for_all_primary_profiles():
         "references/codebase.md",
         "references/paper.md",
         "references/general.md",
+        "references/analysis-focus.md",
         "references/document-types/mechanism-analysis.md",
         "references/document-types/feature-analysis.md",
         "references/document-types/software-architecture.md",
@@ -319,7 +320,7 @@ def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes(
     payload = json.loads(_text(EVALS))
     assert payload["skill_name"] == "source-faithful-analysis"
     by_id = {item["id"]: item for item in payload["evals"]}
-    assert set(by_id) == {1, 2, 3, 4, 5, 6, 7, 8}
+    assert set(by_id) == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
     assert all(item["prompt"] and item["expected_output"] for item in payload["evals"])
 
     expected_routing = {
@@ -331,6 +332,8 @@ def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes(
         6: ("conditional-depth-routing", {"codebase"}, "feature-analysis", set(), {"fixed-cost-dimensions", "empty-conditional-sections", "companion-without-evidence"}),
         7: ("algorithmic-implementation-visual-gate", {"codebase"}, "feature-analysis", {"algorithmic-visual", "parallel-distributed"}, {"prose-only-algorithm", "caller-tree-as-principle-figure"}),
         8: ("algorithmic-nondistributed-visual-gate", {"codebase"}, "feature-analysis", {"algorithmic-visual"}, {"parallel-distributed", "prose-only-algorithm"}),
+        9: ("local-algorithm-focus", {"codebase"}, "feature-analysis", {"algorithmic-visual"}, {"invented-state-owner", "invented-publication", "artificial-system-integration"}),
+        10: ("numerical-method-focus", {"codebase"}, "mechanism-analysis", {"data-representation", "algorithmic-visual"}, {"invented-state-owner", "invented-publication", "parallel-distributed"}),
     }
     for scenario_id, (kind, packs, profile, depth, forbidden) in expected_routing.items():
         scenario = by_id[scenario_id]
@@ -342,8 +345,8 @@ def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes(
         assert "active_profiles" not in scenario
         assert "forbidden_profiles" not in scenario
 
-    assert "原理图" in by_id[5]["expected_output"]
-    assert "原理图" in by_id[8]["expected_output"]
+    assert "principle figure" in by_id[5]["expected_output"]
+    assert "principle figure" in by_id[8]["expected_output"]
 
 
 def test_feature_profile_has_reproducible_live_behavior_scenarios():
@@ -392,7 +395,7 @@ def test_source_type_packs_instantiate_evidence_without_redefining_page_profiles
         assert "## Doc structure" not in text
         assert "## Canonical analysis contract" not in text
 
-    for phrase in ("arXiv id + VERSION + date", "released artifact", "机制 ↔ 源码", "✅ 官方已发布", "❌ 无任何实现"):
+    for phrase in ("arXiv id + VERSION + date", "released artifact", "paper-mechanism ↔ code", "Official implementation released", "No implementation found"):
         assert phrase in paper
     for phrase in ("Spec / RFC / standard / contract", "Dataset / schema / table", "Running system / incident / logs / metrics", "Business / financial / market report"):
         assert phrase in general

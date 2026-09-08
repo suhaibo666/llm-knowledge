@@ -31,10 +31,12 @@ changing only the header commit is not code evidence.
 1. Inspect the directory shape to roughly two levels; exclude generated/vendor/build artifacts.
 2. Find construction and selection sites before treating a class as live. Separate current,
    compatibility, fallback, experimental, and removed paths.
-3. Locate the orchestrator, state-bearing structures, registries, admission/resource managers,
-   protocol boundaries, negative paths, and tests.
-4. Build a compact evidence map: live entry/selection → state owner/invariants → actual call path →
-   completion/visibility → guards/tests/history.
+3. Locate the decisive algorithm, data structure, arithmetic, parser, or cooperating components.
+   For stateful/system paths, include orchestrators, state-bearing structures, registries,
+   admission/resource managers and protocol boundaries. Inspect negative paths and tests.
+4. Build a compact evidence map: live entry/selection → decisive operations and invariants →
+   actual call path or local computation → result → guards/tests/history. Include state owners and
+   completion/visibility boundaries where state or effects cross execution boundaries.
 
 The source tree tells you where evidence lives; it does not determine the explanatory order or
 software-layer classification.
@@ -42,6 +44,11 @@ software-layer classification.
 ## Execution trace evidence contract
 
 For every load-bearing path, record enough of this ledger that a reader can continue in source:
+
+Select applicable fields, not a fixed ledger for every algorithm. In a pure function, input,
+decisive operations, returned result, correctness and complexity may close the whole explanation.
+Local loop variables are algorithmic state, not evidence of distributed ownership or publication.
+For shared state, asynchronous work or effects, the corresponding fields below are load-bearing.
 
 | Field | Required explanation |
 |---|---|
@@ -57,12 +64,17 @@ Trace only hops that change state/owner, cross an execution boundary, enforce an
 completion/visibility. **Collapse pure forwarding helpers** only in non-direct summaries; an exact
 caller tree retains them when omission creates a false edge, or marks the edge `transitive/elided`.
 
+Within one function, trace the arithmetic, branch, recurrence, indexing or data-structure operation
+that establishes the result. Do not replace algorithm explanation with the containing function's
+name or manufacture caller/callee hops where execution is local.
+
 ### Evidence presentation
 
 Keep investigation precision separate from citation density. Open every implementation, guard,
 test, and history spot needed; scratch notes may be detailed. In the page, name participating
 symbols in prose and add one deduplicated **compact source-reading route** per mechanism: entry /
-selection → state owner → state-changing worker → completion/visibility → negative test. Add an
+selection → decisive algorithm or worker → result and verification. On stateful or asynchronous
+paths, include state owner → state-changing worker → completion/visibility → negative test. Add an
 anchor only for a distinct boundary or design decision; never append `file:line` to every sentence
 or ledger row.
 

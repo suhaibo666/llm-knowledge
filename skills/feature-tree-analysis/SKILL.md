@@ -4,7 +4,7 @@ description: >-
   Use when a repository or repo subdomain must be inventoried as a feature tree — major modules →
   function items → sub-functions → leaf function points — with a contract-style spec per function
   point (inputs/outputs, processing logic, boundary constraints, supported scope), or when
-  re-verifying such a tree after a baseline bump. Triggers: 梳理功能树 / 功能点清单 / 功能点定义 /
+  re-verifying such a tree after a baseline bump. Triggers: feature-tree inventory / function-point definitions /
   feature inventory / function-point spec / capability breakdown / "list everything this repo
   provides with per-feature I/O and constraints". Not for why-design analysis: a focused mechanism
   goes to source-faithful-analysis alone; a whole codebase goes to planning-codebase-analysis first,
@@ -15,7 +15,7 @@ description: >-
 # Feature-Tree Analysis
 
 Turn a repository (or a subdomain of one) into a **repo feature tree** — major modules → function
-items → sub-functions → leaves (function points, 功能点) — plus a contract-style spec per function
+items → sub-functions → leaves (function points) — plus a contract-style spec per function
 point: inputs, outputs, processing logic, boundary constraints, supported scope. The deliverable
 answers "what exactly does this repo provide, and what is each feature's contract". The
 acceptance bar is **coverage with an audit trail** — the tree and every leaf's ownership recorded
@@ -24,7 +24,7 @@ that only opens when every leaf is `verified` — plus **verifiable contracts**.
 depth is not the bar. A zero reconciliation is a mechanical floor, not a proof of completeness:
 reviewer judgment (rubric R2) and user sampling sit on top of it.
 
-> Terminology: in this repo, "功能树" by default means the wiki's own directory authority (see
+> Terminology: in this repo, "functional tree" by default means the wiki's own directory authority (see
 > `CLAUDE.md`). This skill's product is always called the **repo feature tree** — the functional
 > decomposition of the analyzed repository. The two are unrelated.
 
@@ -91,7 +91,8 @@ Per `skills/README.md`, every rule states how it is verified:
 - **Host = this wiki**: manifest at `docs/feature-tree/<domain>.yaml`; tree overview page
   `NN_<repo>_feature_tree_analysis.md` (rendered from `nodes` + `leaves`) + one spec page per
   module (the `_analysis` suffix is on the whitelist); canonical baseline header
-  `> **源码基线**：owner/repo@hex（branch，YYYY-MM-DD）`; Related Pages / changelog / all five
+  `> **源码基线**：owner/repo@hex（branch，YYYY-MM-DD）` (exact Chinese host output label);
+  Related Pages / changelog / all five
   quality gates apply in full; split a spec page over 500 lines by sub-module.
   **`kb_baseline` in `docs/radar/watchlist.yaml` is repo-wide** — `tools/radar.py` reports
   upstream drift against it for every page pinned to that repo. Advance it only when the feature

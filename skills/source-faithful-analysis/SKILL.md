@@ -48,6 +48,11 @@ Use the profile as a semantic contract, not a fixed heading or length template. 
 choose the profile matching its primary reader question and use links for adjacent owners; do not
 merge multiple full profiles into one oversized page.
 
+Read `references/analysis-focus.md` to select the explanation appropriate to that reader question:
+algorithm/derivation, numerical computation, stateful collaboration, interface rules, architecture,
+or empirical evidence. Apply conditional dimensions to the source operations that trigger them;
+state ownership is not the default outline for every implementation.
+
 ## 4. Route workflow products away
 
 - New whole codebase or unplanned multi-page codebase domain → `planning-codebase-analysis`.

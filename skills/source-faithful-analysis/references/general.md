@@ -42,5 +42,5 @@ redefining the profile's explanatory order.
 | Quoting a report's headline number with no basis | Cite the page and the comparison/assumption behind it; flag undisclosed basis. |
 | A dataset claim with no row-count / filter | Profile it; state N and the filter. A number without its denominator argues nothing. |
 | Treating marketing copy as observed product behavior | Drive the product; cite a screenshot/version. |
-| An aspect written up with no 背景 — straight to "the spec says" | Open with the problem the clause/metric/report exists to settle; a rule with no problem behind it can't be judged. |
-| A 发展趋势 paragraph with no anchor | Anchor it to a stated roadmap / errata / newer version or to the beat-4 constraint, and mark it as inference — or omit it. |
+| An aspect written up with no problem context — straight to "the spec says" | Open with the problem the clause/metric/report exists to settle; a rule with no problem behind it can't be judged. |
+| An outlook paragraph with no anchor | Anchor it to a stated roadmap / errata / newer version or to the beat-4 constraint, and mark it as inference — or omit it. |
