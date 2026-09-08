@@ -12,6 +12,41 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-08：vLLM 三批最终整合完成
+
+- 接收第三批八篇系统专题：Serving、分布式、编译/CUDA Graph、融合算子、IR Pass、跨实例KV、插件和在线更新；各页已通过非作者复核。三批共24篇，加先前架构样稿，共25篇有效正文；沿用原路径与编号。
+- 删除完成迁移的旧 `02_vllm_system_design_principles_analysis.md`：全局动机归 [[03_vllm_architecture_overview_analysis|架构概览]]，连续调度归 [[11_vllm_scheduler_analysis|Scheduler]]，分页归 [[12_vllm_kv_cache_management_analysis|KV]]，异步归Engine及两代Runner，能力选择与图成本归Attention及编译页。03/05入链已转指相应正文；历史日志只转义旧链接，不回写当时状态。
+- [[02_engineering/03_infer_frameworks/vllm/index|vLLM目录]] 清除迁移旧页与过渡说明；父索引及总索引重算为vLLM25篇正文+index、推理框架34页（含index）。保留使用、调优、排障、架构、机制五类入口，不新增课程或重复专题。
+- [[01_llm_inference_technology_stack_analysis|技术栈父入口]] 的vLLM代码与依赖重核到 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，使用/调优/排障转到01/05/06；其他框架保留原观察时间。[[16_vllm_model_runner_v2_analysis|Runner V2]] 补明graph NONE仍可能调用编译代码，与23的两轴解释一致。
+- 域内25篇及父级vLLM基线一致后更新radar kb_baseline，修正本地checkout路径；源码检出未改变。旧02删除守恒与共享差量由独立审阅者复核，覆盖缺口仍明确保留；详细记录见 `docs/research/2026-09-08-vllm-final-integration.md` 与同日前三批报告。
+- 最终文档门禁与全域页面渲染结果见整合记录；本轮未运行GPU推理/多机通信/性能测量，未提交或推送工作区。
+
+## 2026-09-08：vLLM 第二批完善请求、执行与生成解释主线
+
+- 完成请求与调度四页：[[04_vllm_request_semantics_analysis|请求语义]]、[[10_vllm_engine_architecture_analysis|Engine]]、[[11_vllm_scheduler_analysis|Scheduler]]、[[12_vllm_kv_cache_management_analysis|KV管理]]。以具体请求重放协议转换、在途队列、预算与抢占、共享前缀和部分块复制；明确token稳定、设备完成与connector保存完成的区别。
+- 完成模型与执行四页：[[13_vllm_model_library_analysis|模型与权重加载]]、[[14_vllm_attention_backends_analysis|Attention Backend]]、[[15_vllm_model_runner_v1_analysis|Runner V1]]、[[16_vllm_model_runner_v2_analysis|Runner V2]]。补QKV/TP真实分片、KV地址、行迁移与稳定row、staged/UVA、异步结果及受限DBO的逐步解释；选择条件与实际设备验证分开。
+- 完成生成特性四页：[[18_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[19_vllm_multimodal_execution_analysis|多模态]]、[[20_vllm_speculative_decoding_analysis|投机解码]]、[[21_vllm_quantization_analysis|量化]]。补概率过滤/grammar回滚、图片占位与embedding切片、standard/block验证与adaptive边界、AWQ pack/FP8误差/TP scale和在线量化按层组合，保留旧稿有效内容并按源码纠正冲突。
+- 十二页统一核验至 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`。非作者复核12/12通过，51图全部渲染目视，9项真实图文数值测试通过，另对投机验证完整两token分布做有理数枚举。源码与测试只读核验，不称为GPU、真实推理或性能实测。
+- [[02_engineering/03_infer_frameworks/vllm/index|vLLM域索引]] 整理为26篇正文各一个入口和语义阅读依赖；父索引只保留本级页面与子域入口，总索引移除重复的下级快捷项。递归重算vLLM为27页、推理框架为35页（含index）。旧02的D/E迁移去向已核对，原页保留到最终集中整合；全域radar尚未提前更新。
+- 旧内容逐节去向、覆盖缺口、12篇非作者源码抽查与验证边界记录于 `docs/research/2026-09-08-vllm-explanation-wave.md`。LoRA内部数值与具体VLM视觉网络等未展开部分显式登记，不用通用接口链接代替覆盖。
+- 全库链接448页五项缺陷均0，公式/排版/资源增量检查各0错误0警告；页面构建的变更路由链接/锚点/资源/历史路由检查通过（构建孤页项按作用域跳过，全库wikilink孤页为0）。12篇浏览器检查覆盖87处公式并通过。未修改源码检出或提交、推送知识库。
+
+## 2026-09-08：vLLM 第一批补齐使用、调优与排障入口
+
+- 重构 [[01_vllm_feature_optimizations_guide|使用指南]]：从环境准备、固定 commit 安装，到同一小模型的离线聊天、服务启动、HTTP/Python 客户端和流式输出；补返回字段、chat-template fallback、generation-config 缺省与硬上限的区别，以及常用配置的解析边界。
+- 新增 [[05_vllm_performance_tuning_guide|性能评测与调优]]：承接旧01的负载合同、benchmark、指标、资源诊断、实验卡、质量/SLO/成本门与回滚；增加完整 A/B/回滚教学案例。按源码补明 Python/Rust benchmark 选择、客户端 semaphore 排队不进入默认 TTFT/E2E/goodput、在线 warmup 重复首请求与缓存污染等边界。
+- 新增 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]：以启动时最大上下文 KV 容量不足为贯穿案例，覆盖环境/日志、health/metrics、Profiler、OTLP trace 与分层定位，要求处置后以新请求与新观测验证，并说明缩短上下文的能力代价。
+- [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 保留指标产生、时钟、聚合、采样、FT/fatal/NaN机制；操作步骤归06。补首次SCHEDULED保留、每请求抢占histogram、health局限、FT启用条件与局部失败无回滚；将旧行号引用改为稳定符号路线，新增请求事件和受控恢复两张已渲染复核的图。
+- 四页沿用先前03样稿和域索引已确立的新基线 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`。[[02_engineering/03_infer_frameworks/vllm/index|域索引]] 新增五类读者入口，03只补使用/调优/排障导航；父索引与总索引按目录重算为 vLLM **26篇正文+index**、推理框架 **35页（含index）**。其余21篇仍在旧基线，未改全域radar。
+- 迁移逐节核对、页面边界、覆盖与后续缺口、非作者复核记录保存于 `docs/research/2026-09-08-vllm-reader-entry-wave.md`。旧01的调优内容均有明确去向；旧02的机制迁移仍待后续D/E/G批次逐项核验，本批保留原页。
+- 四篇正文均通过非作者独立复核。全库链接检查448页各项为0；公式、Markdown、资源增量检查均0错误0警告。页面构建检查通过（作用域内17页，broken links/anchors/assets/legacy routes均0，构建orphans按作用域跳过；全库wikilink orphan检查通过），五篇vLLM正文的MathJax检查通过（无公式页）。教学案例与静态源码核验不等于GPU、HTTP、性能、Profiler、OTLP或故障注入实跑，本批未执行这些运行任务。
+
+## 2026-09-08：vLLM 架构概览重构为直接阅读入口，开始迁移新源码基线
+
+- [[03_vllm_architecture_overview_analysis]] 改为「从一次模型计算到并发推理服务」：先解释并发请求、prefill/decode 与 KV Cache，再介绍六个模块、A/B/C 两步调度例子、请求往返过程及模块设计取舍。新增可追踪的调用树和稳定源码符号路线，将宽时序图拆成用户过程与 Engine 单步两张图。
+- 按用户提供的 `/Users/suhaibo/97-llm/vllm` 当前提交 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 重新核验；明确前端队列阈值拒绝、普通抢占 stale 输出可交付与丢弃模式、延迟释放及新的 launcher 入口。保留两代 Runner、模型加载、拓扑变体、跨模块能力和旧式接口兼容边界；注明 api_server 弃用警告中 `server` 与实际 CLI `serve` 的拼写冲突。
+- 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 索引]] 的架构阅读入口，取消对系统设计原则的先读要求，注明仅本页完成新基线迁移，其余 23 篇仍在旧基线。未删除或改写 01/02，未更新全域 radar 基线。
+- 独立复核覆盖源码主线、旧稿内容保留和图示可读性；四幅 Mermaid 已渲染并目视检查。链接、公式、Markdown 和资源检查通过；页面构建检查通过。调度数字是条件明确的教学例子，未运行 GPU 推理、部署或性能测试。
 ## 2026-09-07：Megatron 34–35 按房子形状重组，并补齐冻结基线内 DSv4 的最新优化
 
 - [[34_deepseek_v4_tensor_parallel_analysis]] 从「TP 边界案例」扩成「单卡执行面」：两道 TP=1 守卫（`TransformerConfig.__post_init__` 与 `DSv4HybridAttention.__init__`）与参数所有权账本仍是主线，新增 CSA 索引集合（滑窗行 ∪ indexer top-k 压缩行、`-1` 无效位、THD 按段拼接）、FlashMLA / cuDNN DSA / cudnn-frontend / Triton 融合内核族的分派矩阵与两种回退策略（缺 FlashMLA / cuDNN 直接 `ImportError`，fused compressor 静默回 eager 且只警告一次）、FP8 下的精度驻留（`mark_keep_in_fp32` 与 `get_fp8_disabled_context`）、`mla_up_proj` 重算 / `save_original_input` / `backward_dw`，以及 mHC 的完整参数 + `sequence_parallel` 同步标记 + Triton → cuTile → native 三后端。§5.3 按 git 历史点名 `f553f2fe4`（#4894）、`108cb6bcb`（#5984）、`ec2aff43e`（#5308）、`710925795`（#6279）、`608545cfc`（#6349）、`059c16cd1`（#5960）、`9d46c924d` / `d8b71082e` / `2f2f8ebae`（mHC）等基线内提交。冻结源码推翻或补正旧稿三处：`dsa_indexer_*` 字段默认值是 `None` 而非算例里的 64 / 128 / 512；仓内名为 `dsv4_hybrid_fused` 的功能测试配置把 `--attention-backend` 写了两次、最后一次是 `unfused`，`use_fused_dsa_kernels` 因此恒假，该测试实际跑的是 PyTorch 回退；`_forward_thd` 的 compressor GEMM 没有 `_forward_sbhd` 那层 `fp8_autocast(enabled=False)` 包裹（只记录不对称，运行时行为归 TE 依赖边界）。旧页的 §7 通信账本、§8 硬约束 7 行、§9 配置归位（`init_method` / `output_layer_init_method` / `attention_dropout` → 10、`params_dtype` → 23、`moe_shared_expert_intermediate_size` → 14）全部保留在新 §2.9 / §5.1 / §6。
@@ -807,7 +842,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）
 
-**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
+**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：`[[02_vllm_system_design_principles_analysis]]` 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
 
 **改了什么**（机制正文与既有 `file:line` 一律未动，只动章节顺序、标题与新增段落）：
 

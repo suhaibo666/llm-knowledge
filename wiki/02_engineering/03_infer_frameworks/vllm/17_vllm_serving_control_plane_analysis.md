@@ -1,211 +1,226 @@
 ---
-title: "vLLM Serving 控制面：用分阶段就绪约束服务拓扑"
+title: "vLLM Serving 控制面：从一个入口扩为多个推理副本"
 ---
 
-# vLLM Serving 控制面：用分阶段就绪约束服务拓扑
+# vLLM Serving 控制面：从一个入口扩为多个推理副本
 
-> [!question] 本页回答什么
-> `vllm serve` 如何把 launcher、API 进程、DP coordinator、Core client、EngineCore 与 worker 组成一个可对外服务的整体？请求如何选中 DP engine？哪个组件宣告 ready、传播死亡并收紧 shutdown deadline？
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
+> **主题**：从两个推理副本接收请求的场景出发，解释 API 与 Engine 的部署拓扑、分阶段就绪和 DP 负载选择。随后追踪进程故障怎样影响对外服务，以及退出预算怎样在进程管理者之间传递。
+> **适用范围**：拥有 Serving 拓扑、通信端点、readiness、DP 路由与进程退出；请求协议归请求语义页，Engine 内部执行归 Engine 页，collective 归分布式推理页，故障状态与观测细节归可靠性页。
+> **最近更新**：2026-09-08。按固定新基线复核启动、路由、健康和退出，补数值实例及新行为边界。
 
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
-> **中心命题**：Serving 控制面的核心不是 HTTP 路由，而是一套跨进程所有权协议：launcher 先选择拓扑并持有进程故障域，worker、EngineCore、coordinator、Core client 与 API app 再按依赖顺序逐级解锁；运行期 DP 路由只用统计反馈做软负载均衡，真正的资源准入仍在 Engine 内；退出期则由同一个 deadline 和故障信号把已分散的所有权重新收拢。
-> **所有权边界**：本页拥有启动、通信端点、ready/liveness、DP 路由反馈、服务级背压、进程故障域和 shutdown。协议请求的解析、输出渲染与取消语义见 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]]；Engine 内部 `add/step/output` 事务边界见 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 架构]]。
-> **最近更新**：2026-08-30。按 frozen source `6b110bad` 重建控制面所有权、分阶段 readiness、DP 反馈与故障边界。
+## 1. 两个副本都加载了模型，下一条请求应该交给谁？
 
-## 一、背景：监听端口不等于服务已经成立
+假设原来一个在线服务只有一个推理副本，现在扩成 E0、E1 两个 **DP 副本**：每个副本接收自己的请求、维护自己的调度队列和 KV Cache。DP 是 data parallel，表示请求批次可以分到不同副本；一个副本内部仍可由多张卡共同执行，具体见 [[22_vllm_distributed_inference_analysis|分布式推理]]。
 
-一个可接受请求的 vLLM 服务至少横跨五类 owner：
+两个 API 进程 A0、A1 共用一个 HTTP 入口，把前端处理负担分开。现在请求 R 到达 A0：E0 报告等待 5 条、运行 10 条、KV 使用率 100%；E1 没有等待、运行 20 条、KV 使用率 20%。只比较请求总数会选择 E0，但它已在高 KV 压力下积累等待；当前内部路由会给 E0 的等待施加惩罚，最终选择 E1。后文将逐项算出 30 与 20 这两个分数。
 
-| owner | 持有的状态 | 它不能代替谁 | 证据 |
-|---|---|---|---|
-| launcher / process manager | 顶层模式、子进程集合、signal、全局 shutdown deadline | 不判断单请求能否分配 KV | `vllm/entrypoints/cli/serve.py:76-153`、`vllm/entrypoints/cli/serve.py:395-410` |
-| API process | 监听 socket、应用与 Core client 生命周期 | 不拥有 Engine 内的 scheduler 状态 | `vllm/entrypoints/launchers/api_server/entry.py:36-160`、`vllm/entrypoints/launchers/api_server/entry.py:179-201` |
-| DP coordinator | 各 engine 的 waiting/running/KV 统计与请求到达 wave | 不接收请求，也不作最终 admission | `vllm/v1/engine/coordinator.py:305-469` |
-| Core client | engine 地址与 ready 响应、请求到 engine 的映射与本地 inflight | 不承诺目标 engine 一定有容量 | `vllm/v1/engine/core_client.py:503-781`、`vllm/v1/engine/core_client.py:1435-1543` |
-| EngineCore / worker | 模型、KV cache、scheduler 与 device execution | 不拥有 HTTP 入口和服务进程拓扑 | `vllm/v1/engine/core.py:110-170`、`vllm/v1/engine/core.py:254-345`、`vllm/v1/executor/multiproc_executor.py:640-680` |
+这还只是服务已经就绪后的选择。若 E1 仍在加载模型，不能仅因为 HTTP 端口出现就把它当作可用副本；若 E0 的 worker 随后死亡，也不能假设 A0 存活就代表服务仍然健康。Serving 控制面把这些问题拆成三个阶段：**启动时确认各层准备完成，运行时用反馈选择副本，退出时收拢进程与未完成工作。**
 
-CLI 先拒绝互斥的 load-balancing 组合，再按 multi-port、external LB、Rust frontend、hybrid LB 或 internal LB 推导 API server 数量；elastic expert parallel 还会把 API 数限制为一个；`vllm/entrypoints/cli/serve.py:76-142`。这不是“同一服务多开几个 worker”的小优化，而是在选择谁绑定端口、谁创建 core、谁路由和谁负责终止。
+这里的数字是根据源码规则构造的教学输入，不是测量结果。普通请求的解析、结果渲染和客户端取消见 [[04_vllm_request_semantics_analysis|请求语义]]；本页从“服务由谁启动，请求送往哪个 Engine”开始。
 
-最终入口只有四类：multi-port DP supervisor、headless engine、多个 API 进程（含 Rust frontend）和单 API 进程；`vllm/entrypoints/cli/serve.py:144-153`。headless 的非 head 节点可直接启动本地 executor 并原地监控，head 节点则持有 `CoreEngineProcManager`；`vllm/entrypoints/cli/serve.py:178-258`。因此“frontend 数”“DP engine 数”和“worker 数”不是可互换的计数。
+## 2. 先决定拓扑：增加 API 与增加 DP 解决不同问题
 
-## 二、为什么是分层控制面，而不是一个总 supervisor
+增加 API 进程分担 HTTP、输入输出处理；增加 DP 副本增加独立队列和模型执行容量。两者的数量可以不同，worker 数又取决于副本内的并行配置。`ServeSubcommand.cmd` 先拒绝多个互斥 LB 模式，再推导 API 数并选择入口。
 
-最直接的替代方案，是由 launcher 创建全部进程，等端口出现后立即把服务标为 ready，再由一个 round-robin 把请求送往任意 core。它少了 handshake、coordinator 和多级 manager，却破坏了三个必要不变量：
+| 部署选择 | 未显式设置时的 API 数 | 请求在哪里选择副本 |
+|---|---|---|
+| Internal LB | 全局 `data_parallel_size` | 各 API 的 Core client 在所管理的全部 DP ranks 中选择 |
+| Hybrid LB | `data_parallel_size_local`，未提供则 1 | 外部入口选择本地服务组；组内 client 在本地 ranks 中选择 |
+| External LB，或显式 `data_parallel_rank` | 1 | 外部 LB 选择 rank；该 API client 固定发送到自己的 core |
+| Multi-port external LB | 顶层默认 1；supervisor 为每个本地 DP rank 启动独立 server | 外部 LB 选择对应端口，supervisor 汇总本地 children 的健康 |
+| Headless | 0 | 此进程不启动 HTTP API，为别处的 frontend 提供执行部分 |
 
-1. **配置一致性**：frontend 与 core 必须同意 rank、headless 模式和 config hash，不能只同意一个端口。
-2. **依赖完成性**：worker 加载完成不代表 KV cache 已分配，core 构造完成也不代表所有 DP engine 已互相可见。
-3. **故障归属**：API、coordinator、core 与 worker 的重启/退出条件不同，单一“进程是否活着”无法表达服务还能否接流量。
+表中是 CLI 的默认解析，不是推荐配置。`data_parallel_start_rank` 在未选择其他相关模式时推导 hybrid；multi-port、external、hybrid 同时启用会抛 `ValueError`。Rust frontend 默认按一个多线程进程处理，显式 API count 大于一会被改为一；elastic EP 当前也把 API count 限至至多一。其后才分流到 supervisor、headless、multi-API 或 single-API 四类入口。
 
-当前实现把这些条件拆成一串单向门闩。每一级只宣告自己能证明的事实，上一级只能在下游证明完成后继续：
+Headless 还要区分两种职责：同一 DP 副本内 `node_rank_within_dp > 0` 的节点直接启动 `MultiprocExecutor` 并监控 workers；其余 headless 路径由 `CoreEngineProcManager` 持有本地 cores。headless 拒绝 hybrid，且本地 engine 数必须大于零。这些计数和选择不能从“每 GPU 一个 worker”的示意图反推。
 
-> [!note] 分析推断
-> “单一 supervisor + 端口即 ready”是为解释现有机制而重建的对照方案，不是源码或设计文档声称曾采用过的历史方案。其三个缺口分别由下文的 handshake 校验、分阶段资源初始化与多类 sentinel/status 机制证明。
+### 谁保存哪份状态？
 
+| 组件 | 持有的状态与责任 | 它不能证明的事实 |
+|---|---|---|
+| Launcher / process manager | 模式、子进程集合、signal、启动屏障与退出预算 | 请求已经获得 KV 或生成结果 |
+| API process | HTTP socket、应用状态、Engine client 生命周期 | Engine 内部真实 token/KV 余量 |
+| DP coordinator | 各 engine 的 waiting/running/KV 统计；MoE 的 wave 状态 | 某条请求已被调度；它不接收推理请求正文 |
+| Core client | engine 地址与身份、ready 元数据、请求到 engine 映射、本地未完成计数 | 全部 API 的实时负载，以及目标一定能立即执行 |
+| EngineCore / workers | Scheduler、KV、模型与设备执行状态 | 外部 LB 已迁走流量，HTTP 调用者已消费最终结果 |
+
+**分析推断**：如果只让一个 round-robin 根据进程存活分发，既会在启动未完成时送入请求，也会忽略高 KV 压力和跨 API 的反馈延迟。源码采用分阶段 ready 与负载评分，能够把这几种不同事实分别确认；这不是关于历史实现曾如何演进的断言。
+
+## 3. 从进程创建到 API 可用：每种 READY 只证明自己的阶段
+
+### 3.1 先发布实际地址，再允许 Engine 连接
+
+多 API 主流程在 `launch_core_engines()` 上下文中创建 API manager。API child 的 Core client 先 bind 请求与输出通道，再通过 pipe 回报实际 ZMQ endpoint；父进程收齐后，才把地址交入随后执行的 engine handshake。对于 `tcp://host:0`，零是请操作系统选端口的占位值，不能把它当作最终可连接地址。
+
+`APIServerProcessManager.gather_actual_addresses` 按 `client_index` 收集地址，同时观察 children 的 sentinel，并在共享收集 deadline 到期时报错。pipe 与退出事件同时到达时先读 pipe，以免把“已回报后退出”误作“未回报”；真正未回报就退出或 pipe EOF 都会使收集失败。地址已回报也只证明 bind 成功，不证明 child 之后仍然存活。
+
+单 API 的 client 自己启动 engines 时，同样先 bind 并读取 `LAST_ENDPOINT`。Ray DP 是这里的明确分支：主流程使用预分配地址，不走 Python children 的动态地址回收。vLLM 向 ZMQ、操作系统 socket 和 Ray 交付了端点/启动请求；本页核验的是 vLLM 的调用与检查，未验证这些外部运行库内部的传输或调度实现。
+
+### 3.2 设备、缓存、数据通道和全局屏障逐级闭合
+
+| 完成信号 | 发出前发生什么 | 收到后能确认什么 |
+|---|---|---|
+| Worker `READY` | `WorkerProc` 初始化设备、加载模型并建立响应句柄 | worker 构造完成；其后仍有 message queue 就绪等待，不能跳到 HTTP 可用 |
+| Core 数据通道 ready response | EngineCore 构造 executor、profile/分配 KV、compile/warmup、创建 Scheduler；input thread 连接 frontends 并订阅 coordinator | frontend 知道 engine identity、实际模型长度及 cache 元数据，ROUTER 可以向该 engine 发消息 |
+| Coordinator `READY` | 收齐初始全部 engine 订阅 | 这组 DP 的 coordinator 通道已经连通；不是推理探针 |
+| Launcher handshake `READY` | Core input thread 已等到 coordinator READY，设置本地 ready event，构造过程结束 | launcher 可把该 core 从 CONNECTED 改为 READY；仍需等待其他 cores |
+| API app 建立并开始 HTTP serving | Engine client context 建立、查询 supported tasks、初始化 app state | HTTP 前端完成自身启动；不替代外部 LB 或端到端请求验证 |
+
+Executor 父进程会通过 `WorkerProc.wait_for_ready` 收齐所有 worker 响应，EOF 或非 READY 状态使初始化失败。EngineCore 构造时还把 executor-failure callback 注册到 executor，失败会进入控制面，而不是只由 HTTP 层发现。
+
+普通文本主线中，Worker READY 之后 Core 仍需收集各 worker 的 KV spec、确定布局与可用显存、生成 cache 配置、同步可能缩小的模型长度，再初始化 KV 并 compile/warmup。因此“模型已加载”不是“缓存已可用于请求”。具体容量算法见 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+
+两种 Core ready 的次序尤其重要：**input thread 先给各 frontend 发数据通道 response，再等 coordinator READY，最后 launcher handshake 才发送 READY。** 多 API 中 frontend 可以先拿到元数据，launcher 则继续等待完整拓扑；这是一组并发分支，不能改画成“全部启动屏障通过后 frontend 才收到元数据”的单一链。单 API 自己拥有 engines 时，client 构造先退出 launch 上下文、经过 launcher 屏障，随后才消费已发来的数据通道 response。
+
+`MPClient._apply_ready_response` 会取各 engine `max_model_len` 的较小值、累计 `num_gpu_blocks`，同步实际 `block_size` 与 `mamba_block_size`，并校验 DP stats 地址一致；`kv_cache_size_tokens` 和 `kv_cache_max_concurrency` 保持每 engine 信息，不跨 DP 求和。新 response 还携带并行规模和能力等元数据，不能把“response 已解码”解释为每个字段都被 Python client 汇总。逐 engine 等待受 `VLLM_ENGINE_READY_TIMEOUT_S` 限制，超时明确抛错。
+
+`wait_for_engine_startup` 在收 HELLO/READY 的同时观察 engines、coordinator 和 watched frontends 的 sentinel，核验 rank、local/headless 和合法状态转换；陌生 rank、模式不符、成员提前退出都使启动失败。**collective 配置 hash 的一致性检查只在 coordinated MoE DP 中执行**，并非所有拓扑的普遍校验。
+
+### 3.3 Coordinator 是否存在，取决于模型与 LB 模式
+
+新基线 `VllmConfig.needs_dp_coordinator` 要求 DP 大于一，并满足：模型配置为空、模型为 MoE，或不是 external LB。实际在线启动还要求非 offline 且在 DP rank 0 创建 coordinator。
+
+因此 dense 模型的 internal/hybrid LB 也有 coordinator，但只收集和广播统计；MoE 还开启 wave coordination。**wave 是一轮需要多 rank 一起推进的工作状态**：有请求的 rank 必须让空闲 ranks 知道需要参与，collective 原因归 [[22_vllm_distributed_inference_analysis|分布式推理]]。其启动通知不是完成确认：coordinator 发出 START_DP_WAVE 后不立即认定 engines 已运行，而是等 engine 自己的 start-wave 通知；pause 状态的 engine 可能丢弃启动通知。
+
+这保留了一个共同原则：地址回报证明地址，订阅屏障证明通道，engine 通知证明其报告的运行状态。任何一个都不能替代真实请求完成。
+
+## 4. 回到请求 R：统计反馈怎样变成一次 DP 选择？
+
+### 4.1 三个输入，一次线性扫描
+
+`EngineCoreClient.make_async_mp_client` 在 external DP LB 时选择固定目标的 `DPAsyncMPClient`，internal/hybrid 选择 `DPLBAsyncMPClient`；普通单 core 使用 `AsyncMPClient`。下述评分属于内部选择器。请求已指定 `data_parallel_rank`，或 late-interaction pooling 已给出 engine index 时，会绕过评分；请求语义的约束归 [[04_vllm_request_semantics_analysis|请求语义]]。
+
+对每个候选 engine，选择器读取：coordinator 快照中的 waiting、running 和 KV usage；本 API client 对该 engine 的精确 inflight；API client 总数 `client_count`。评分规则依次是：
+
+1. 取 **client_count 乘本地 inflight** 与 **waiting 加 running** 中较大者，作为基础负载。前者为本地 burst 提供不会被陈旧快照抹掉的下限，后者包含其他 API 带来的压力。
+2. 若 waiting 非零，再加 **waiting 乘 6，乘 KV usage 超过 0.5 的部分**；usage 不超过 50% 时惩罚为零，usage 为 100% 时额外加三倍 waiting。
+3. 从当前扫描起点依次检查，选择分数最小者；同分保持先遇到的 engine。选择后将快照中的 waiting 乐观加 `client_count`，扫描起点向后旋转一位。
+4. 保存请求 ID 到 engine 的映射，并将本 client 对该 engine 的 inflight 加一。之后异步发送 ADD，请求携带 `client_index` 与 `current_wave`。
+
+扫描开销随候选 engine 数线性增长，源码仍把大 DP 使用 power-of-two-choices 留作 TODO。乘 `client_count` 不是观测到了别的 API 的精确计数，而是源码用于估计负载的缩放；各 API 并没有共享一个同步的 inflight counter。
+
+### 4.2 用同一条请求对比 KV 压力的作用
+
+回到 A0 接收的 R，两个 API 意味着 `client_count=2`。先令 A0 在 E0、E1 上的 inflight 都为 0：
+
+| 候选 | waiting / running / KV | 基础负载 | KV 惩罚 | 最终分数 |
+|---|---|---|---|---|
+| E0 | 5 / 10 / 1.0 | 0 与 15 取大，得 15 | 5 乘 6 乘 0.5，得 15 | 30 |
+| E1 | 0 / 20 / 0.2 | 0 与 20 取大，得 20 | 无 waiting，得 0 | 20，选中 |
+
+只把 E0 的 KV usage 改成 0.2，其惩罚变成 0，最终分数为 15，于是同一组请求数会改选 E0。这个对照正是 `test_dplb_kv_pressure_amplifies_waiting_penalty` 的两种输入。它解释了为何总请求数少的副本未必优先，但不证明这个启发式在任意负载都最优。
+
+<!-- Figure spec: conceptual decision flow for the same R and two engines. Two lanes start from identical waiting/running counts and client_count=2, local inflight=0. High-KV lane computes E0 base15+penalty15=30 versus E1=20, selects E1, then records R→E1 and inflight1. Low-KV lane changes only E0 usage to0.2, computes E0=15 versus E1=20, selects E0 and records R→E0. Blue marks selected-owner record; orange marks high-KV penalty. Final shared box states routing publication is not Scheduler admission or request completion. Not a call graph or proportional chart. -->
 ```mermaid
-sequenceDiagram
-    participant L as Launcher
-    participant D as DP coordinator
-    participant C as Core client
-    participant E as EngineCore
-    participant W as Worker processes
-    participant A as API process
-
-    L->>D: bind coordinator endpoints
-    L->>E: launch core processes
-    L->>A: launch API process
-    A->>C: create Core client
-    C->>E: connect input and output endpoints
-    E->>W: initialize device and load model
-    W-->>E: worker READY
-    E->>E: profile and allocate KV cache
-    E->>E: compile or warm up model
-    E->>D: subscribe for DP updates
-    E-->>C: data channel ready with config and cache metadata
-    C-->>A: client initialization complete
-    A->>A: build application state
-    A-->>L: frontend endpoint reported
-    D-->>E: coordinator READY
-    E-->>L: startup handshake READY
-    L->>L: startup barrier accepts topology
-
-    alt frontend or core exits early
-        A-->>L: process sentinel becomes readable
-        E-->>L: process sentinel becomes readable
-        L->>L: fail startup or terminate service group
-    else worker fails at runtime
-        W-->>E: executor fault
-        E-->>C: fault status or channel death
-        C-->>A: client error
-        A-->>L: watchdog exits frontend
-    end
+flowchart TB
+    A["同一条请求 R 到 A0<br/>两个 API，本地 inflight 均为 0<br/>E0 等待5／运行10；E1 等待0／运行20"]
+    A -->|E0 KV 100%，E1 KV 20%| B["高 KV 路径<br/>E0：基础15 ＋ 惩罚15 ＝ 30<br/>E1：基础20 ＋ 惩罚0 ＝ 20"]
+    A -->|仅把 E0 KV 改成 20%| C["低 KV 对照<br/>E0：基础15 ＋ 惩罚0 ＝ 15<br/>E1：基础20 ＋ 惩罚0 ＝ 20"]
+    B --> D["选 E1，记录 R → E1<br/>E1 本地 inflight 变为 1<br/>乐观 waiting 由 0 加到 2"]
+    C --> E["选 E0，记录 R → E0<br/>E0 本地 inflight 变为 1<br/>乐观 waiting 由 5 加到 7"]
+    D --> F["向所选 engine 提交 ADD<br/>实际 KV／token 准入由 Scheduler 决定<br/>finished_requests 回传后才释放 inflight"]
+    E --> F
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class A,C,F neutral
+    class D,E acc1
+    class B acc2
 ```
 
-这张图刻意不画单请求的渲染路径，也不展开 EngineCore 内一次 step 的事务；它只描述“服务何时有资格存在”。
+图中两个分支是替换输入后的两次独立推演，不是把 R 复制发送两次。waiting 的乐观修改属于 API 侧缓存，尚未改动 Engine Scheduler 的真实等待队列。
 
-## 三、启动协议：地址、身份与资源逐级闭合
+### 4.3 为什么还需要本地 inflight？
 
-### 3.1 launcher 先固定进程拓扑和通信端点
+Coordinator 在统计变化时按默认 100 ms 更新间隔发布，无变化时约每 5 秒刷新；MoE 另有按同步 step 收集的窗口，dense 则没有统一 step 边界。API stats task 排空消息只取最新快照，所以快照会整体替换 `lb_engines`。
 
-多 API 路径先建立监听地址和 engine 配置，再进入 `launch_core_engines()` 上下文，随后启动 API manager；`vllm/entrypoints/cli/serve.py:262-370`。当 frontend 使用动态 TCP 端口时，父进程不能把预分配的 `host:0` 当成最终地址：每个 API child 必须经 pipe 回报实际 endpoint，manager 同时观察 child sentinel；未回报就死亡会直接使收集失败；`vllm/v1/utils.py:166-191,247-312`。对应测试覆盖了端口非零且唯一，以及 child 在回报前死亡必须抛错；`tests/entrypoints/launchers/api_server/test_api_server_process_manager.py:318-401`。
+考虑空载 E0/E1，A0 连续收到 R、S，R 先选 E0。此时 A0 对 E0 的 inflight 是 1。即使陈旧快照把两边 waiting/running 都重置为零，S 仍看到 E0 基础负载至少为 2，而 E1 为 0，因此选 E1。若仅修改快照 waiting，重绑定会抹掉刚发出的请求，burst 就会错误地反复压向“空”副本。旋转起点进一步去除平局总偏向同一 rank 的问题。
 
-Engine 侧同样由 consumer 先 bind；TCP 的最终 port 可以推迟到 bind 后才确定；`vllm/v1/engine/utils.py:1039-1084`。这种“接收者先占端点”的约束消除了 producer 和 consumer 同时抢端口的竞态。
+但本地计数不是 send 完成就减一：Core 输出里的 `finished_requests` 被 `DPLBAsyncMPClient.process_engine_outputs` 消费时，才移除映射并减 inflight。abort 也按原映射分组送回原 engine，不能重新做 LB；发送 abort 本身不表示 Engine 已完成取消。更下游的请求终态和输出消费见 [[10_vllm_engine_architecture_analysis|Engine 运行]]。
 
-### 3.2 worker READY 只证明设备与模型已装载
+### 4.4 路由反馈、前端 admission 与 Scheduler 是三道不同决策
 
-`WorkerProc` 构造阶段先初始化 device，再加载 model，随后才向父进程发送 `READY`；`vllm/v1/executor/multiproc_executor.py:640-680,911-924`。executor 父进程会等所有 worker 的 ready message；`vllm/v1/executor/multiproc_executor.py:779-814`。
+所有候选都拥挤时，评分仍然选一个最小者；它没有“全部过载则拒绝”的分支。client 输出用无上限 `asyncio.Queue`，ZMQ 工厂对相关 socket 设置 HWM 为 0；这两处传输设置也不能充当有界请求 admission。
 
-这个 ready 不能越级解释为“HTTP 可用”。此时 EngineCore 仍可能没有完成 KV 容量测量、cache block 分配和 warmup。
+> [!contradiction] 旧页面的全局结论需要缩小
+> 旧稿据无界 queue/HWM 推断“Serving 没有容量闸门”。新基线已经有 `AsyncLLM.check_admission`：可配置 `max_num_queued_reqs` 和 `max_num_queued_tokens` 触发前端拒绝。因此保留的准确结论是：**DP 评分和消息传输自身不提供硬容量上限**；可选前端 admission、目标选择和 Engine Scheduler 的真实 KV/token admission 不能互相代替。前端计数属于各自 AsyncLLM，不是 coordinator 下发的全局容量保证。
 
-### 3.3 Core 有两种 ready：数据通道响应与 launcher handshake
+完整的请求拒绝合同由 [[04_vllm_request_semantics_analysis|请求语义]] 解释，Engine 内部本步何时推进由 [[11_vllm_scheduler_analysis|Scheduler]] 解释。这里的路由算法既不自动迁移已经接收的 R，也不提供失败后的请求重放。
 
-EngineCore 先构造 executor，再初始化 KV cache，最后才创建 scheduler；`vllm/v1/engine/core.py:110-170`。KV 初始化会收集各 worker 的 KV spec、profile 可用显存、确定 block 配置、初始化 cache，随后 compile 或 warm up；`vllm/v1/engine/core.py:254-345`。
+## 5. E0 故障后，哪些信号会改变整个服务？
 
-EngineCore 进程在初始化期间注册 executor-failure callback，并用 fault sentinel 把失败纳入控制面；`vllm/v1/engine/core.py:1028-1068`。初始化完成后，input thread 先订阅 coordinator，再向每个 frontend 发送携带模型长度、KV block 数、block size 和初始 DP stats 的数据通道 ready response；随后才阻塞等待 coordinator 的 `READY`；`vllm/v1/engine/core.py:1652-1749`。
+### 5.1 默认进程故障路径与 multi-port 聚合健康
 
-这份 response 足以让 Core client 完成自身初始化，却不等于 launcher 的拓扑屏障已经通过。EngineCoreProc 只有等 input thread 收到 coordinator READY 后才能结束构造；包围整个构造过程的 handshake context 随后才向 launcher 发送带 config hash 的 `READY`；`vllm/v1/engine/core.py:1115-1147,1213-1250`。两种 ready 分开，正是因为“数据通道已知 cache 元数据”和“全体 DP 订阅已闭合”不是同一事实。
+单 API client 对自己拥有的 engine manager 启动存活监控；异常退出会设置 `engine_dead` 并进入清理。多 API children 不拥有这些 engine 进程，父级 `wait_for_completion_or_failure` 同时观察 API children、coordinator 与 engine manager：进程非零退出或 manager 报告意外死亡都会抛服务级错误，主流程 finally 清理进程组。正常零退出与异常退出在这里有区别，不能说任何 sentinel 一亮就抛错。
 
-### 3.4 coordinator READY 是全体订阅屏障
+API watchdog 每 5 秒检查一次 `engine.errored and not engine.is_running`；默认要求 HTTP server 退出。`VLLM_KEEP_ALIVE_ON_ENGINE_DEATH` 可保留 HTTP 进程，但不能使已经失败的 Engine 恢复处理。fatal 输出与 process monitor 怎样让等待者收到异常，由 [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] 统一展开。
 
-DP coordinator 只在配置需要跨 engine stats/wave 时创建；`vllm/config/vllm.py:705-726`。它绑定统计和 wave endpoint、向父进程报告地址，然后等待所有 EngineCore 完成订阅，再广播 `READY`；`vllm/v1/engine/coordinator.py:59-137,146-250`。这使“某个 core 可运行”和“整个 DP 反馈环已连通”成为两个独立条件。
+Multi-port supervisor 是另一套聚合合同：启动 children 后，先轮询每个 child 的 `/health`，全部通过才启动 supervisor 自己的 HTTP server。因此启动初期外部可能尚不能连接 supervisor 端口，而非必然得到 503。ready 后，任何 child 退出，或一次探测批次最终未全部通过，都会撤销 ready 并关闭本地 children；连接错误可按阈值重试，HTTP 非 200 立即视为探测失败。
 
-### 3.5 Core client 把 READY 收敛成 API 可启动条件
+supervisor 的 `/health`、`/ready`、`/readyz` 都只返回这份聚合 ready 状态，false 为 503。普通 API `/health` 则调用 `AsyncLLM.check_health`，把 `EngineDeadError` 转为 503；render-only 无 engine 时直接为 200。这不是一次模型推理，也不会逐个检查 FT 的 UNHEALTHY。外部 LB 如何探测和撤走流量属于部署系统的责任，本页没有核验外部 LB 的实现。
 
-`MPClient` 在外部地址模式下连接已存在的 engine；否则自己创建 `CoreEngineProcManager`。两条路径最终都按 engine identity 等待 ready response；`vllm/v1/engine/core_client.py:503-672`。收到响应后，它同步模型长度、KV block、block size 和 DP stats；`vllm/v1/engine/core_client.py:740-781`。
+### 5.2 显式 FT 是窄例外，健康响应仍不是恢复证明
 
-API worker 只有在 engine client context 建立并查询 supported tasks 后才 build app、初始化 app state 并开始 HTTP serving；退出时 context 负责关闭 client；`vllm/entrypoints/launchers/api_server/entry.py:36-160,179-201`。所以 API app 的构造位于数据通道 ready response 之后；但这不取代 launcher 对 coordinator 与全部进程的全局屏障。
+`enable_fault_tolerance` 默认关闭；开启时只支持单 API，配置校验拒绝 `_api_process_count > 1`。Worker sentinel 还要求 `deepep_low_latency` 或 `nixl_ep` all-to-all backend。因此开篇两个 API 的例子不能原样加一个 FT 开关就获得恢复能力。
 
-最后，launcher 的 startup barrier 同时检查 engine、coordinator 和 watched frontend 的 sentinel，并验证 rank、headless 属性与 config hash；`vllm/v1/engine/utils.py:1250-1410`。多 API 主流程在 barrier 通过后继续观察 frontend、coordinator 和 engine manager，任一关键成员异常退出都升级为服务故障；`vllm/entrypoints/cli/serve.py:372-393`，`vllm/v1/utils.py:525-587`。
+启用 FT 后，busy-loop 异常先 abort 旧请求并清 batch queue，本地 executor 已失败时标记 DEAD，否则标记 UNHEALTHY。只有 UNHEALTHY 接受外部 retry；恢复操作完成后才回 HEALTHY，超时仍进入 fatal 路径。它不回滚已发生的局部副作用，也不自动重放旧请求。完整状态机、Worker 清理和依赖边界在 [[27_vllm_observability_reliability_analysis|可靠性机制]]；本页保留的部署结论是：**恢复状态、HTTP 健康、处置后新请求真正完成，需要分别验证。**
 
-## 四、DP 路由：统计反馈是软背压，不是资源承诺
+## 6. 退出：请求等待预算如何传给多个进程管理者？
 
-### 4.1 coordinator 汇总两类反馈
+单 API 收到 SIGTERM/SIGINT 后，launcher 先在执行线程中等待 engine client shutdown，再要求 HTTP server 退出并取消 watchdog；API worker 随后退出 backend context，最后 await HTTP shutdown task、关闭 socket。收到 signal、client shutdown 返回、HTTP 完成退出不是同一个事件。
 
-coordinator 接收 engine 的 waiting/running/KV cache usage，并接收 frontend 的新请求 wave；`vllm/v1/engine/coordinator.py:305-469`。变化中的 stats 最快按约 100 ms 间隔发送，长期无变化时仍会周期刷新；`vllm/v1/engine/coordinator.py:256-283`。它是反馈广播器，不是集中 scheduler。
+EngineCore 收到退出请求后停止接受新 ADD。`shutdown_timeout=0` 立即 abort 未完成请求；正值选择 drain，让已接收工作继续推进。`_handle_shutdown` 等 `has_work()` 为 false 才进入资源 teardown；外层 process manager 则限制等待时间并能强制结束进程。drain 不等于保证每个请求成功完成：请求可能失败，或耗尽父级预算后被终止。
 
-### 4.2 Core client 用本地 inflight 修正陈旧快照
+多 API 主流程在用户请求 shutdown 时只创建一个绝对 `shutdown_by`：先把预算交给 API manager，再用剩余时长调用 local engine manager，最后交 coordinator。假设总等待预算为 30 秒，API manager 消耗 24 秒，则后两者共享约 6 秒，不是各自再获得 30 秒。各 manager 对自己的 children 也先发 SIGTERM、在同一个 deadline 内逐个 join，最后 kill 仍未退出的进程树。
 
-`DPLBAsyncMPClient` 同时维护 request-to-engine 映射和 client-local inflight；`vllm/v1/engine/core_client.py:1435-1454`。选 engine 时，它以本地 inflight 与 coordinator 报告的 waiting/running 较大者作为负载基线；若目标已有 waiting 且 KV usage 超过 50%，再施加 KV 压力惩罚。选中后立即乐观增加本地计数，并旋转平局起点；`vllm/v1/engine/core_client.py:1472-1523`。请求完成再减少对应 engine 的 inflight；`vllm/v1/engine/core_client.py:1536-1543`，abort 也必须按原映射回到同一个 engine；`vllm/v1/engine/core_client.py:1591-1611`。
+这条预算规则有明确范围：异常清理没有用户 timeout 时，通用 process cleanup 使用 5 秒 best-effort；ROCm 在请求 timeout 与 process timeout **同时为零**时允许专用设备清理宽限，正请求 timeout 消耗完之后不能重新获得宽限。Multi-port supervisor 还把 `CHILD_EXIT_GRACE_S` 加到进程等待预算，并把同一等待预算用于全部 children。故“共享 deadline”约束的是相应等待阶段，不是承诺整个操作系统 teardown 严格不超过请求 drain timeout。
 
-这个设计解决的是反馈延迟：一批请求若在下一次 stats 到达前连续进入，纯快照算法会全部选择同一“最空”engine；本地乐观计数让 burst 仍能摊开。测试明确覆盖 burst 的轮转、coordinator backpressure 和 KV 压力惩罚；`tests/v1/engine/test_engine_core_client.py:247-285`。
+信号传递和进程树终止经过 Python multiprocessing、操作系统与设备 runtime；本页验证 vLLM 如何传递预算和收集退出，不据此保证所有设备故障都能在固定时刻回收显存。退出后资源与新请求的操作检查见 [[06_vllm_debugging_troubleshooting_guide|调试与排障]]。
 
-### 4.3 背压边界：避免热点，不等于拒绝过载
+## 7. 已知边界、文档漂移与验证路线
 
-Core client 的 async 输出队列由无上限 `asyncio.Queue()` 构造；`vllm/v1/engine/core_client.py:978-1016`。底层 ZMQ socket 又把 `RCVHWM` 与 `SNDHWM` 设为 0；`vllm/utils/network_utils.py:310-342`。这意味着 serving 控制面没有一个可作为 admission limit 的消息条数硬上限。
+> [!contradiction] 同基线部署文档仍把 KV-aware LB 写为未来能力
+> `docs/serving/data_parallel_deployment.md` 的 internal LB 说明仍称只依据 running/waiting、KV-aware 是未来改进；当前 `DPLBAsyncMPClient.get_core_engine_for_request` 已实现上述 KV 惩罚。本页保留冲突并以 live code 为准。
 
-因此这里的“backpressure”必须准确理解为：
+`docs/design/arch_overview.md` 的典型进程数与“DP 大于一就有 coordinator”也只能作简化图解：API 数取决于 CLI 模式，dense external LB 可以不需要 coordinator，hybrid client 的管理范围又局限本地。定位部署时应先重建实际模式与候选 rank，不能由一张全局示意图认定连接范围。
 
-- coordinator stats 和 client-local inflight **改变路由偏好**，降低继续压向热点 engine 的概率；
-- EngineCore Scheduler 才根据 token budget、KV 和队列状态决定实际推进；
-- 若所有 engine 都饱和，路由算法仍会选出其中一个，而不是自动向 HTTP client 返回过载。
+源码中的 config hash、ready 元数据、统计/wave、FT status 与共享 deadline，都是显式跨进程协作信息。**分析推断**：这些信息使局部状态可被上层核验，但仍有陈旧快照、异步故障与队列容量边界；“反馈更及时、过载更可观察”是基于限制提出的改进方向，不是源码承诺的路线图。唯一在评分器直接标出的算法后续项是较大 DP 的 P2C TODO。
 
-把这三层混为一谈，会误以为 KV-aware 路由已经提供了端到端有界排队。它没有；它是软反馈，不是容量闸门。
+### 从症状找验证入口
 
-> [!warning] 文档与实现冲突
-> 官方 data-parallel deployment 文档仍称内部 LB 只依据 running/waiting，KV-aware routing 是未来工作；`docs/serving/data_parallel_deployment.md:75-77`。当前 frozen source 已在 waiting 非零且 KV usage 超过阈值时加入 KV 惩罚；`vllm/v1/engine/core_client.py:1488-1505`。本页以代码行为为准。
+| 需要验证的行为 | 已打开的测试合同或观察点 |
+|---|---|
+| API child 的动态端口能否用于连接 | `test_gather_actual_addresses_end_to_end` 要求全部 endpoint 端口非零且唯一；`test_gather_actual_addresses_child_crash_before_report` 要求 child 未回报就退出时抛错 |
+| 陈旧快照能否抹掉 burst 负载 | `test_dplb_burst_round_robins_despite_snapshot_rebinds` 在重绑零快照后要求四 engine 的 inflight 各为 2 |
+| 统计和 KV 惩罚是否改变选择 | `test_dplb_snapshot_backpressure_overrides_inflight` 验证远端压力胜过本地零计数；`test_dplb_kv_pressure_amplifies_waiting_penalty` 验证本页 30/20 与 15/20 对照 |
+| 何时释放路由计数 | `test_dplb_finished_requests_release_inflight` 消费 finished set 后才要求计数归零、映射消失 |
+| 退出是否结束新旧请求与进程 | `test_request_rejection_during_shutdown` 接受状态错、连接错或协议错，要求十次新请求至少一次失败；`test_multi_api_server_shutdown` 覆盖双 API 与 SIGTERM 后清理，不是“每个新请求必返固定 503”的保证 |
 
-## 五、运行期故障：把“谁死了”转换成“服务还能做什么”
+以上是源码阅读与测试合同静态核验。本轮未运行多卡模型、在线服务、GPU 故障注入、Ray/Rust frontend 或第三方通信库。若端口存在但服务不工作，依次区分实际 endpoint、Worker/Core/Coordinator 的 ready、client 元数据同步与全局启动屏障；若路由偏斜，联合看快照、本地 inflight、KV 惩罚和映射；若退出拖延，检查哪个等待阶段消耗预算。单次 `/health=200` 不能结束这些验证。
 
-### 5.1 默认语义是故障域收缩，不是假装降级
+### 源码阅读路线
 
-API launcher 的 watchdog 周期检查 engine client；当 client 已 errored 且不再 running 时，除非显式设置 keep-alive-on-engine-death，否则要求 HTTP server 退出；`vllm/entrypoints/launchers/launcher.py:180-202`。Core client 的 monitor 观察本地 engine process；异常退出会进入 client error 路径；`vllm/v1/engine/core_client.py:677-738`。
+路径均相对上方固定基线的 vLLM 仓库；每行聚合一个核验问题，符号用于继续阅读而非充当调用图。
 
-多进程服务由 `wait_for_completion_or_failure()` 同时观察 API children、coordinator 与 core manager；API 非零退出或 engine failed 都会抛出服务级错误；`vllm/v1/utils.py:525-587`。DP supervisor 更严格：它先探测所有本地 rank 的 `/health`，全部通过才启动 supervisor HTTP；ready 后任一 child 或 probe 失败都会清掉 ready 并关闭全组；`vllm/entrypoints/launchers/dp_supervisor.py:270-315,402-523`。
-
-supervisor 自己的 `/health`、`/ready` 和 `/readyz` 只反映这份聚合状态；未 ready 返回 503；`vllm/entrypoints/launchers/dp_supervisor.py:177-238`。普通 API 的 health handler 则把 `EngineDeadError` 转为 503；`vllm/entrypoints/serve/instrumentator/health.py:22-33`。liveness 与 readiness 因而不是端口探针的同义词。
-
-### 5.2 fault tolerance 是显式启用的窄例外
-
-启用 fault tolerance 后，`EngineCoreSentinel` 才接管 executor fault：它 abort 当前请求并清 batch；executor 已失败则进入 `DEAD`，否则进入 `UNHEALTHY` 并把状态推给 client，只有 unhealthy 状态可尝试 recovery；`vllm/v1/fault_tolerance/engine_core_sentinel.py:35-136`。wrapper 受配置开关控制，恢复超时仍升级为 fatal；`vllm/v1/fault_tolerance/engine_core_sentinel.py:173-195`。
-
-所以“worker 出错后服务继续”不是默认承诺。即使启用恢复，也存在清空在途工作、暂时 unhealthy、恢复失败转 fatal 的边界。E2E 测试还受 NIXL 与硬件条件限制；`tests/v1/fault_tolerance/test_fault_tolerance_e2e.py:3-6,320-378`。
-
-## 六、退出协议：一个 deadline 穿过全部 owner
-
-单 API launcher 收到 shutdown signal 后，按 timeout 选择 drain 或 abort，先关闭 engine client，再结束 HTTP server 并取消 watchdog；`vllm/entrypoints/launchers/launcher.py:119-177`。这保证入口停止、backend 清理和监听退出由同一个 owner 排序。
-
-多进程路径把一个绝对 deadline 依次交给 API manager、local engine manager 和 coordinator，每一级只能消费剩余预算；`vllm/entrypoints/cli/serve.py:395-410`。API manager 先发 `SIGTERM`，在共享 deadline 内 join，最后才 kill 未退出的进程树；`vllm/v1/utils.py:598-650`。DP supervisor 对 children 使用同样的“转发 signal—等待剩余预算—强制终止”结构；`vllm/entrypoints/launchers/dp_supervisor.py:525-568`。
-
-这比“每层各有一个完整 timeout”更严格：后者会让总退出时长随 owner 数量相加。测试验证了 shutdown 期间新请求被拒绝，以及多 API 进程在 SIGTERM 下退出；`tests/entrypoints/launchers/test_shutdown.py:464-557`。
-
-EngineCore 本身还区分 drain 与 abort：shutdown 输入会停止接收新的 ADD，并决定等待在途请求还是中止；`vllm/v1/engine/core.py:1492-1584`。这是服务控制面给 Engine 的生命周期指令，不等于本页拥有 Engine 内部的请求状态事务。
-
-## 七、约束、冲突与排查顺序
-
-### 7.1 不能跨越的边界
-
-- **端口已监听不是 ready**：必须继续追踪 worker、KV/warmup、coordinator、Core ready 与 startup barrier。
-- **coordinator 不是 scheduler**：它广播统计和 wave，不做 token/KV admission。
-- **软路由不是有界队列**：HWM 0 与无界 async queue 使控制面不能声称提供硬容量上限。
-- **process alive 不是 healthy**：fault sentinel、client error、aggregated readiness 与 HTTP probe 分别表达不同层的事实。
-- **全局 timeout 不是每层 timeout**：清理阶段必须传递剩余预算。
-
-### 7.2 另一个文档漂移点
-
-架构概览文档用固定的“典型进程数”和“DP 大于一就有 coordinator”解释拓扑；`docs/design/arch_overview.md:69-112`。当前代码的 API 数依赖 load-balancing 模式，而 coordinator 还受 MoE 与 external LB 条件约束；`vllm/entrypoints/cli/serve.py:76-142`，`vllm/config/vllm.py:705-726`。排障时应从实际 CLI 分支与 config predicate 开始，不应从示意图反推运行进程。
-
-### 7.3 最短排查路径
-
-1. 在 `serve.py` 确认实际进入的四类拓扑和推导出的 API count。
-2. 检查 API/Core/coordinator 最终绑定地址，而不是只看预分配地址。
-3. 沿 Worker READY → Core READY → coordinator READY → client ready → app build 找到卡住的门闩。
-4. 对路由偏斜，同时比较 coordinator stats、client-local inflight、KV penalty 和 request-to-engine 映射。
-5. 对“端口活着但请求失败”，区分 engine error、聚合 readiness、health 503 和 keep-alive 配置。
-6. 对退出超时，检查是否仍在传递同一个 deadline，以及哪个 owner 消耗了剩余预算。
-
-## 八、发展趋势：控制面正在变得更显式，但仍不是统一编排器
-
-> [!note] 分析推断
-> “控制面协作数据正在显式化”是对多处实现的归纳，不是源码自陈的路线图：launcher handshake 传递并校验 config hash；`vllm/v1/engine/core.py:1238-1250`、`vllm/v1/engine/utils.py:1386-1405`。数据通道 ready response 传递 cache 元数据与 DP stats endpoint，Core client 再同步它们；`vllm/v1/engine/core.py:1652-1692`、`vllm/v1/engine/core_client.py:740-781`。coordinator 先更新本地 waiting/running/KV counts，再把聚合 stats 发布给 frontends；`vllm/v1/engine/coordinator.py:305-419`、`vllm/v1/engine/coordinator.py:259-283`。fault sentinel 把 status 包装进输出，client 收到后刷新本地状态；`vllm/v1/fault_tolerance/engine_core_sentinel.py:105-118`、`vllm/v1/engine/core_client.py:1041-1071`。shutdown deadline 则由 launcher 换算成各 manager 的剩余 timeout；`vllm/entrypoints/cli/serve.py:395-410`。这些事实共同支持“跨 owner 协作信息更显式”这一分析，但不证明某条既定演进路线。
-
-源码仍保留两个清晰限制：DP 选择器中的 power-of-two-choices 仅是 TODO；`vllm/v1/engine/core_client.py:1478-1481`，控制面队列也没有硬 admission cap。
-
-因此合理的演进方向不是把 scheduler 移进 coordinator，而是让控制面反馈更及时、过载信号更可观察、入口 admission 更明确，同时保持 EngineCore 对真实 KV/token 状态的唯一所有权。这一段是基于当前边界的推断，不代表已有实现承诺。
+| 问题 | 已打开的稳定入口 |
+|---|---|
+| 拓扑和进程数怎样确定？ | `vllm/entrypoints/cli/serve.py::ServeSubcommand.cmd / run_headless / run_multi_api_server`；`vllm/v1/engine/core_client.py::EngineCoreClient.make_async_mp_client` |
+| 最终地址怎样发布并验证？ | `vllm/v1/utils.py::APIServerProcessManager.gather_actual_addresses`；`vllm/v1/engine/core_client.py::MPClient.__init__`；`tests/entrypoints/launchers/api_server/test_api_server_process_manager.py::test_gather_actual_addresses_end_to_end / test_gather_actual_addresses_child_crash_before_report` |
+| Worker 到 Core 两种 ready 怎样排序？ | `vllm/v1/executor/multiproc_executor.py::WorkerProc.__init__ / worker_main / wait_for_ready`；`vllm/v1/engine/core.py::EngineCore.__init__ / _initialize_kv_caches / EngineCoreProc.__init__ / _make_ready_response / process_input_sockets / _perform_handshakes / _perform_handshake` |
+| 全局屏障与 frontend 怎样接上？ | `vllm/v1/engine/utils.py::launch_core_engines / wait_for_engine_startup`；`vllm/v1/engine/core_client.py::MPClient._apply_ready_response`；`vllm/entrypoints/launchers/api_server/entry.py::build_async_engine_client_from_engine_args / build_and_serve / run_server_worker` |
+| Coordinator 何时存在、反馈什么？ | `vllm/config/vllm.py::VllmConfig.needs_dp_coordinator`；`vllm/v1/engine/coordinator.py::DPCoordinator / DPCoordinatorProc.process_input_socket / _send_start_wave` |
+| 评分、发送与完成怎样串起来？ | `vllm/v1/engine/core_client.py::DPAsyncMPClient._ensure_stats_update_task / add_request_async / DPLBAsyncMPClient.get_core_engine_for_request / process_engine_outputs / abort_requests_async`；`tests/v1/engine/test_engine_core_client.py::test_dplb_burst_round_robins_despite_snapshot_rebinds / test_dplb_snapshot_backpressure_overrides_inflight / test_dplb_kv_pressure_amplifies_waiting_penalty / test_dplb_finished_requests_release_inflight` |
+| 软路由与前端拒绝边界在哪？ | `vllm/v1/engine/core_client.py::AsyncMPClient.__init__`；`vllm/utils/network_utils.py::make_zmq_socket`；`vllm/v1/engine/async_llm.py::AsyncLLM.check_admission` |
+| 进程死亡与健康如何影响服务？ | `vllm/v1/utils.py::wait_for_completion_or_failure`；`vllm/entrypoints/launchers/launcher.py::watchdog_loop / terminate_if_errored`；`vllm/entrypoints/launchers/dp_supervisor.py::DPSupervisor.run / _probe_all_children / _monitor_children / _build_dp_supervisor_app`；`vllm/v1/engine/async_llm.py::AsyncLLM.check_health / errored`；`vllm/entrypoints/serve/instrumentator/health.py::health` |
+| FT 为什么不能直接套到多 API？ | `vllm/config/parallel.py::ParallelConfig._validate_parallel_config`；`vllm/v1/fault_tolerance/engine_core_sentinel.py::EngineCoreSentinel.on_fault / handle_command / retry / fault_tolerant_wrapper`；`vllm/v1/worker/sentinel/gpu_worker_sentinel.py::WorkerSentinel.__init__` |
+| 退出预算在哪里收紧？ | `vllm/entrypoints/cli/serve.py::run_multi_api_server`；`vllm/entrypoints/launchers/launcher.py::serve_http`；`vllm/v1/utils.py::shutdown`；`vllm/v1/engine/utils.py::get_engine_process_shutdown_timeout`；`vllm/v1/engine/core.py::EngineCoreProc._handle_shutdown / _reject_add_in_shutdown`；`vllm/entrypoints/launchers/dp_supervisor.py::DPSupervisor._shutdown_children`；`tests/entrypoints/launchers/test_shutdown.py::test_request_rejection_during_shutdown / test_multi_api_server_shutdown` |
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 全系统组件地图与跨页责任边界。
-- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — API 解析、输出渲染、取消与请求级错误传播。
-- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] — Core client 之后的 Engine 事务与状态提交边界。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 路由完成后的 token/KV admission owner。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP、PP、DP 与 executor/worker 拓扑。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — probe、指标、trace 与生产故障诊断。
+- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 从单次模型计算建立整体模块地图，解释本页在在线服务中的位置。
+- [[04_vllm_request_semantics_analysis|请求语义]] — 解释 API 解析、前端拒绝、输出渲染与请求级取消。
+- [[10_vllm_engine_architecture_analysis|Engine 运行]] — 接续选定 Engine 后的执行协作、请求终态与输出消费。
+- [[11_vllm_scheduler_analysis|Scheduler]] — 解释真正的 token/KV 准入，与本页软路由反馈区分。
+- [[22_vllm_distributed_inference_analysis|分布式推理]] — 解释副本内 TP/PP 与跨 DP 的 MoE collective，以及 worker 故障域。
+- [[27_vllm_observability_reliability_analysis|可观测性与可靠性]] — 展开 FT/fatal 状态、信号可见性以及健康响应的局限。

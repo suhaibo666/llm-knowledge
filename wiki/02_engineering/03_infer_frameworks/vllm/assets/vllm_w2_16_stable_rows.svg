@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="475" viewBox="0 0 1040 475"><title>MRV2：稳定状态行与每步batch视图</title><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#2A313B;font-size:20px}.neutral{fill:#fff;stroke:#C7CCD3}.ghost{fill:#F7F6F3;stroke:#DDD9D2}.acc1{fill:#EAF1FD;stroke:#2563EB}.acc2{fill:#FCF1E6;stroke:#C3651F}.heading{font-size:24px;font-weight:600}.cap{font-size:19px;fill:#6B7280}.arrow{stroke:#2563EB;stroke-width:2.5;fill:none}</style><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#2563EB"/></marker></defs><rect width="1040" height="475" fill="white"/>
+<text x="30" y="34" class="heading">请求不因排序搬家：只改变 batch_idx → state_idx</text>
+<text x="30" y="79" class="heading">持久状态表（X 已退出）</text>
+<text x="600" y="79" class="heading">本步执行视图 [B, A]</text>
+<rect x="30" y="100" width="70" height="35" class="ghost"/>
+<text x="38" y="125" class="">state</text>
+<rect x="100" y="100" width="75" height="35" class="ghost"/>
+<text x="108" y="125" class="">请求</text>
+<rect x="175" y="100" width="120" height="35" class="ghost"/>
+<text x="183" y="125" class="">computed</text>
+<rect x="295" y="100" width="160" height="35" class="ghost"/>
+<text x="303" y="125" class="">block table</text>
+<rect x="30" y="135" width="70" height="45" class="ghost"/>
+<text x="38" y="164" class="">0</text>
+<rect x="100" y="135" width="75" height="45" class="ghost"/>
+<text x="108" y="164" class="">—</text>
+<rect x="175" y="135" width="120" height="45" class="ghost"/>
+<text x="183" y="164" class="">—</text>
+<rect x="295" y="135" width="160" height="45" class="ghost"/>
+<text x="303" y="164" class="">—</text>
+<rect x="30" y="180" width="70" height="45" class="neutral"/>
+<text x="38" y="209" class="">1</text>
+<rect x="100" y="180" width="75" height="45" class="neutral"/>
+<text x="108" y="209" class="">B</text>
+<rect x="175" y="180" width="120" height="45" class="neutral"/>
+<text x="183" y="209" class="">5</text>
+<rect x="295" y="180" width="160" height="45" class="neutral"/>
+<text x="303" y="209" class="">[28]</text>
+<rect x="30" y="225" width="70" height="45" class="ghost"/>
+<text x="38" y="254" class="">2</text>
+<rect x="100" y="225" width="75" height="45" class="ghost"/>
+<text x="108" y="254" class="">空位</text>
+<rect x="175" y="225" width="120" height="45" class="ghost"/>
+<text x="183" y="254" class="">—</text>
+<rect x="295" y="225" width="160" height="45" class="ghost"/>
+<text x="303" y="254" class="">—</text>
+<rect x="30" y="270" width="70" height="45" class="neutral"/>
+<text x="38" y="299" class="">3</text>
+<rect x="100" y="270" width="75" height="45" class="neutral"/>
+<text x="108" y="299" class="">A</text>
+<rect x="175" y="270" width="120" height="45" class="neutral"/>
+<text x="183" y="299" class="">18</text>
+<rect x="295" y="270" width="160" height="45" class="neutral"/>
+<text x="303" y="299" class="">[12,13]</text>
+<rect x="600" y="100" width="100" height="55" class="ghost"/>
+<text x="609" y="134" class="">batch</text>
+<rect x="700" y="100" width="100" height="55" class="ghost"/>
+<text x="709" y="134" class="">请求</text>
+<rect x="800" y="100" width="100" height="55" class="ghost"/>
+<text x="809" y="134" class="">state</text>
+<rect x="900" y="100" width="100" height="55" class="ghost"/>
+<text x="909" y="134" class="">query</text>
+<rect x="600" y="155" width="100" height="55" class="neutral"/>
+<text x="609" y="189" class="">0</text>
+<rect x="700" y="155" width="100" height="55" class="neutral"/>
+<text x="709" y="189" class="">B</text>
+<rect x="800" y="155" width="100" height="55" class="acc1"/>
+<text x="809" y="189" class="">1</text>
+<rect x="900" y="155" width="100" height="55" class="neutral"/>
+<text x="909" y="189" class="">1</text>
+<rect x="600" y="210" width="100" height="55" class="neutral"/>
+<text x="609" y="244" class="">1</text>
+<rect x="700" y="210" width="100" height="55" class="neutral"/>
+<text x="709" y="244" class="">A</text>
+<rect x="800" y="210" width="100" height="55" class="acc1"/>
+<text x="809" y="244" class="">3</text>
+<rect x="900" y="210" width="100" height="55" class="neutral"/>
+<text x="909" y="244" class="">2</text>
+<path d="M460 202L592 182" class="arrow" marker-end="url(#a)"/>
+<path d="M460 292L592 237" class="arrow" marker-end="url(#a)"/>
+<text x="600" y="303" class="heading">idx_mapping = [1,3]</text>
+<text x="30" y="364" class="cap">state row 2 的空洞保留；新请求可复用该槽，A/B 原行不变。</text>
+<text x="30" y="404" class="">GPU 按 mapping 读取：B 的 last_sampled=205，A 的 prompt[18:20]=118,119。</text>
+<text x="30" y="447" class="">得到 input_ids=[205,118,119]；Query 边界=[0,1,3]；seq_lens=[6,20]。</text>
+</svg>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="442" viewBox="0 0 800 442" role="img" aria-labelledby="title desc"><title id="title">Packed KV cache：不同group解释同一物理block范围</title><desc id="desc">三个group的每block字节数分别为9、12、8 KiB，统一stride取最大值12 KiB。group视图互相覆盖，但同一block ID同一时刻只交给一个group。</desc><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#0f172a}.title{font-size:21px;font-weight:600}.body{font-size:17px}.small{font-size:15px;fill:#475569}.neutral{fill:#fff;stroke:#64748b}.ghost{fill:#f8fafc;stroke:#94a3b8;stroke-dasharray:4 3}.acc1{fill:#dbeafe;stroke:#2563eb}.acc2{fill:#ffedd5;stroke:#ea580c}</style><rect width="100%" height="100%" fill="white"/>
+<text x="24" y="32" class="title" text-anchor="start">Packed layout：相同 block ID 的三种 group 视图</text>
+<text x="24" y="61" class="small" text-anchor="start">教学输入：A page 2 KiB，B page 1 KiB，C page 4 KiB</text>
+<text x="24" y="85" class="small" text-anchor="start">每行是不同解释；不表示同一 ID 可同时交给三个 group。</text>
+<text x="24" y="149" class="body" text-anchor="start">group 0</text>
+<text x="24" y="173" class="small" text-anchor="start">9 KiB / block</text>
+<rect x="195" y="125" width="90" height="58" class="acc1"/>
+<text x="240" y="150" class="body" text-anchor="middle">A0</text>
+<text x="240" y="171" class="small" text-anchor="middle">2 KiB</text>
+<rect x="285" y="125" width="90" height="58" class="acc1"/>
+<text x="330" y="150" class="body" text-anchor="middle">A1</text>
+<text x="330" y="171" class="small" text-anchor="middle">2 KiB</text>
+<rect x="375" y="125" width="90" height="58" class="acc1"/>
+<text x="420" y="150" class="body" text-anchor="middle">A2</text>
+<text x="420" y="171" class="small" text-anchor="middle">2 KiB</text>
+<rect x="465" y="125" width="45" height="58" class="acc1"/>
+<text x="487.5" y="150" class="body" text-anchor="middle">B0</text>
+<text x="487.5" y="171" class="small" text-anchor="middle">1 KiB</text>
+<rect x="510" y="125" width="45" height="58" class="acc1"/>
+<text x="532.5" y="150" class="body" text-anchor="middle">B1</text>
+<text x="532.5" y="171" class="small" text-anchor="middle">1 KiB</text>
+<rect x="555" y="125" width="45" height="58" class="acc1"/>
+<text x="577.5" y="150" class="body" text-anchor="middle">B2</text>
+<text x="577.5" y="171" class="small" text-anchor="middle">1 KiB</text>
+<rect x="600" y="125" width="135" height="58" class="acc2"/>
+<text x="667.5" y="150" class="body" text-anchor="middle">空余</text>
+<text x="667.5" y="171" class="small" text-anchor="middle">3 KiB</text>
+<text x="24" y="232" class="body" text-anchor="start">group 1</text>
+<text x="24" y="256" class="small" text-anchor="start">12 KiB / block</text>
+<rect x="195" y="208" width="180" height="58" class="neutral"/>
+<text x="285" y="233" class="body" text-anchor="middle">C0</text>
+<text x="285" y="254" class="small" text-anchor="middle">4 KiB</text>
+<rect x="375" y="208" width="180" height="58" class="neutral"/>
+<text x="465" y="233" class="body" text-anchor="middle">C2</text>
+<text x="465" y="254" class="small" text-anchor="middle">4 KiB</text>
+<rect x="555" y="208" width="180" height="58" class="neutral"/>
+<text x="645" y="233" class="body" text-anchor="middle">C4</text>
+<text x="645" y="254" class="small" text-anchor="middle">4 KiB</text>
+<text x="24" y="315" class="body" text-anchor="start">group 2</text>
+<text x="24" y="339" class="small" text-anchor="start">8 KiB / block</text>
+<rect x="195" y="291" width="180" height="58" class="neutral"/>
+<text x="285" y="316" class="body" text-anchor="middle">C1</text>
+<text x="285" y="337" class="small" text-anchor="middle">4 KiB</text>
+<rect x="375" y="291" width="180" height="58" class="neutral"/>
+<text x="465" y="316" class="body" text-anchor="middle">C3</text>
+<text x="465" y="337" class="small" text-anchor="middle">4 KiB</text>
+<rect x="555" y="291" width="180" height="58" class="acc2"/>
+<text x="645" y="316" class="body" text-anchor="middle">空余</text>
+<text x="645" y="337" class="small" text-anchor="middle">4 KiB</text>
+<text x="24" y="395" class="body" text-anchor="start">block stride = max(9, 12, 8) = 12 KiB；下一 ID 从此范围后开始</text>
+<text x="24" y="424" class="small" text-anchor="start">KV 可用内存 60 KiB → 5 个 pool blocks；扣除 null block 后可分配 4 个</text>
+</svg>

@@ -1,190 +1,268 @@
 ---
-title: "vLLM 模型库：把 checkpoint 提交为可执行并行模型的 ABI"
+title: "vLLM 模型库：从 checkpoint 到可执行模型"
 ---
 
-# vLLM 模型库：把 checkpoint 提交为可执行并行模型的 ABI
+# vLLM 模型库：从 checkpoint 到可执行模型
 
-> **读者问题**：Hugging Face config 中的 architecture 和一串 checkpoint tensor，怎样经过类解析、统一构造、名称/分片映射与可选 LoRA 接合，变成每个 rank 上可执行且没有明显漏载的模型？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
-> **中心命题**：vLLM 的“模型支持”不是 registry 里的一行类名，而是一条跨层 ABI：Registry 决定类与能力，统一构造器产生带稳定前缀的 rank-local module graph，模型的 name mapper 把 checkpoint identity 翻译成 runtime parameter 与 packed shard identity，并行层自己的 `weight_loader` 才把数据提交到本 rank 的物理 slice；LoRA 随后复用同一套 module/packed-name 语义，把 adapter 接到已构造的执行图上。
-> **所有权边界**：本页拥有内建/外部模型注册与 class resolution、`VllmConfig + prefix` 构造 ABI、通用 checkpoint name mapping 与基础权重提交、TP/PP-aware parameter loading、packed parameter、基础模型上的 LoRA wrapper/adapter attachment。
-> **排除概念**：逐 step request row、buffer、graph 与 LoRA batch mapping 属于 `15`；attention metadata/backend 协商属于 `14`；量化格式、scale、post-load transform 与 kernel dispatch 属于 `21`；rank group 创建和 collective ordering 属于 `22`；插件发现与进程级初始化属于 `28`。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建；代表模型改为共同 ABI 的证据，并明确 packed shard 完整性与 LoRA attach 的失败边界。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **主题**：解释 architecture 如何选出模型类，以及构造器、名称映射和参数加载器怎样把 checkpoint 写入当前 rank 的模型。随后说明加载完成、IPC 权重缓存与 LoRA 接合的边界。
+> **适用范围**：模型选择、构造、基础权重加载及模型支持接口；量化数值算法见量化页，attention 能力选择见后端页，设备 batch 与通信分组分别见 runner 和分布式页。
+> **最近更新**：2026-09-08。补充小模型分片例子、当前加载变体和实际完整性限制。
 
-## 1. 背景：模型名称不是可执行性证明
+## 1. 为什么 checkpoint 不能直接变成一个模型
 
-外部 checkpoint 给出的是逻辑 tensor 名与全局 shape；serving rank 实际需要的是部分 PP layer、TP-local parameter、融合后的 QKV/MLP parameter，以及能够被 attention、LoRA 和后续处理按全名定位的 module graph。官方模型贡献指南因此把 `prefix`、并行层替换与 `load_weights()` 列为三个独立要求，而不是把“注册 architecture”当作完成条件（`docs/contributing/model/basic.md:14-23`；`docs/contributing/model/basic.md:88-110`）。
+拿到一个 Qwen2 checkpoint，配置声明 `architectures=["Qwen2ForCausalLM"]`，权重里有 `model.layers.0.self_attn.q_proj.weight`。这仍没有回答三个问题：运行哪一个 Python 类？当前 GPU 应保留这个矩阵的哪一部分？运行时把 Q、K、V 合成一个投影后，这个名字还应写到哪里？
 
-**为什么不直接 `state_dict(strict=True)`（分析推断）。** PyTorch strict load 假设 checkpoint key 与 runtime parameter 一一同名同形；vLLM 则会让 `q_proj/k_proj/v_proj` 三个外部名字写入一个 `qkv_proj`，再由这个 parameter 的 loader 选择 packed offset 和当前 TP rank 的 slice。Qwen2 的 mapping 明写了五个 constituent → fused/shard 映射，QKV layer 再按 `q/k/v` 算不同 offset/size（`vllm/model_executor/models/qwen2.py:323-331`；`vllm/model_executor/layers/linear.py:1059-1083`）。名称映射与物理写入必须分层，不能由一个通用 tensor copy 猜出。
+vLLM 将这三个选择分开：**Registry 选择模型类，构造器建立当前 rank 的模型和参数形状，模型与层的加载器把外部名字翻译为本地参数中的具体位置。** 文件加载器负责提供 tensor；它不能单凭文件名推断融合、张量并行（TP）和流水线并行（PP）的模型语义。
 
-| 直观替代 | 破坏的合同 | 当前路线支付的成本 | 证据 |
-|---|---|---|---|
-| architecture 名直接 import 一个类 | capability inspection 会导入可选依赖，甚至污染父进程 CUDA 状态 | lazy registry、文件 hash cache 与子进程 inspection | `vllm/model_executor/models/registry.py:914-947`；`vllm/model_executor/models/registry.py:998-1049` |
-| 每个模型使用任意构造签名 | loader 必须按模型类型拼 kwargs，组合模型也无法统一嵌套 | 统一 `VllmConfig + prefix`，暂留旧式兼容分支 | `docs/design/arch_overview.md:215-225`；`vllm/model_executor/model_loader/utils.py:54-93` |
-| checkpoint loader 直接写 parameter | 文件格式层必须理解 PP、TP 与 packed layout | iterator、model mapper、parameter loader 三段 ABI | `vllm/model_executor/model_loader/base_loader.py:42-80`；`vllm/model_executor/models/utils.py:420-446` |
-| 为 adapter 另建一份模型 | 重复基础权重，也失去 base model 的 fused/parallel module identity | 原地 wrapper 与有限 adapter slots | `vllm/lora/model_manager.py:407-542`；`vllm/lora/model_manager.py:1173-1180` |
+下面使用一个**教学用 Qwen2 配置**贯穿说明：hidden size 为 8，4 个 query head、2 个 KV head，每个 head 宽 2，MLP intermediate size 为 12，TP=2、PP=1，不量化。它不是某个公开 checkpoint 的尺寸，也不是性能实验。关注一层时，checkpoint 中的 Q 为 8×8、K/V 各为 4×8，gate/up 各为 12×8；矩阵统一按 PyTorch 实际存储的“输出维×输入维”书写。
 
-> [!note] 分析推断
-> 上表的替代方案与取舍是从 live code、tests 和同 commit design guide 重建的因果解释；除统一构造器一项有官方 design rationale 外，不声称作者逐项写过这些比较。
+如果直接按同名同形复制，运行时 `qkv_proj.weight` 找不到同名的独立 Q/K/V 权重。即使先把全局 Q/K/V 拼起来再平均切两半，也不会得到“每个 rank 都有自己 Q、K、V”的正确分片。必须先知道每个 constituent（融合前的独立投影）的身份，再各自选 rank slice，最后写入本地融合参数。
 
-## 2. 静态责任：同一个“模型”跨越五个 ABI owner
+**设计取舍（分析推断）**：把文件读取、模型名称和参数布局分开，让 safetensors、PT 等读取路径共享模型语义，也让不同模型复用并行层。但代价是 registry 能力、构造出的完整前缀、名称转换和参数写入规则必须一致；注册表中的一行名字不能独自证明模型可运行。官方构造接口设计另有明确理由：统一配置参数便于扩展，也便于组合视觉塔与语言模型。
 
-| owner | 输入 → 输出 | 拥有的状态/不变量 | 不拥有 | 承重证据 |
-|---|---|---|---|---|
-| Registry | architecture 候选 + model config → class、最终 architecture、capability info | architecture 映射、lazy/imported class、inspection cache、unsupported/fallback 决策 | module graph 与 tensor copy | `vllm/model_executor/models/registry.py:880-925`；`vllm/model_executor/models/registry.py:1274-1378` |
-| Constructor | class + `VllmConfig + prefix` → rank-local module graph | module 全名、PP-present layers、parameter shape 与 layer type | checkpoint tensor 来源 | `vllm/model_executor/model_loader/utils.py:37-94`；`vllm/model_executor/models/qwen2.py:334-392` |
-| Format loader | load config → `(checkpoint_name, tensor)` iterator | load format 到 loader/iterator 实现的选择、文件读取与 source prefix | tensor 的 runtime owner/shard | `vllm/model_executor/model_loader/__init__.py:32-63`；`vllm/model_executor/model_loader/default_loader.py:244-340` |
-| Model/parameter loader | tensor stream → mapped runtime name + local parameter slice | rename/drop/packed shard identity、TP slice、shape copy、loaded-name set | quant kernel layout | `vllm/model_executor/models/utils.py:46-147`；`vllm/model_executor/layers/linear.py:555-580` |
-| LoRA manager | executable base graph + adapter checkpoint → wrapped modules + registered slot | wrappable target set、packed child mapping、adapter slot ownership | 当步请求选择哪个 slot | `vllm/lora/model_manager.py:71-152`；`vllm/lora/worker_manager.py:106-154` |
+## 2. 先选模型类，再确认它承诺的接口
 
-图 1 只画本页拥有的 construction/commit path。蓝色主线表示基础模型必须完成的提交；橙色分支表示 LoRA 是在可执行 base graph 上的可选 attachment。逐 step runner state 和量化内部 post-process 刻意不入图。
+### 2.1 同一个 architecture 可以落到不同实现
+
+`_get_model_architecture()` 从 HF config 取得候选 architecture，交给 `model_config.registry.resolve_model_cls()`。本例在内建表中映射到 `qwen2` 模块的 `Qwen2ForCausalLM`。实际选择还受 `model_impl`、候选顺序和任务转换影响：
+
+| 条件 | 选择规则及边界 |
+|---|---|
+| `model_impl="transformers"` | 先对首个候选解析 Transformers 实现；模块必须通过 backend compatibility 检查，缺模块或不兼容会明确报错 |
+| `model_impl="terratorch"` | 先尝试注册的 `Terratorch` 类 |
+| 所有原始候选都未注册，`model_impl="auto"` 且 `convert_type` 为 `none` | 在名称规范化前尝试 Transformers fallback；不是永远“先试规范化后的内建类” |
+| 普通候选循环 | 按顺序 `_normalize_arch()`，允许从任务后缀找到可转换的内建 base architecture，再尝试加载类 |
+| 循环仍未成功，所有原始候选都未注册且为 `auto` | 再尝试 Transformers fallback；已注册但加载失败的候选不满足这个兜底条件 |
+| 类已选出，`convert_type="embed"` 或 `"classify"` | 分别套 embedding 或 sequence-classification adapter；`none` 保留原类 |
+
+空候选列表立即 `ValueError`。最终失败会区分已登记但检查/加载失败、曾经支持但已移除、迁到外部插件，以及从未支持；不要把它概括为“随便调用一个 AutoModel”。Transformers 路径会把 model/revision、code revision 和 `trust_remote_code` 交给动态类解析，并检查 `is_backend_compatible()` 或 `_can_set_attn_implementation()`。本页只验证 vLLM 的调用与检查，未验证外部 Transformers 动态加载内部行为。
+
+### 2.2 能力查询为什么不直接导入全部模型
+
+控制面常常只需要知道模型是否支持生成、pooling、PP、多模态或内部状态，尚不需要实例。内建表因此保存 `_LazyRegisteredModel(module_name, class_name)`；`inspect_model_cls()` 查询 `_ModelInfo`，`load_model_cls()` 才在当前进程真正 import 类。
+
+inspection 先查模型源码 hash 对应的文件缓存。没有命中时，在子进程导入并提取能力，避免模型导入初始化父进程 CUDA。当前基线还支持 `vllm.models.*` 等完整模块路径；若入口是 package 的 `__init__.py`，hash 纳入其目录下所有 Python 子模块，避免只检查导出文件而漏掉实现变化。对应测试同时覆盖 package cache 与“inspection 后 CUDA 仍未初始化”。缓存不是 checkpoint 内容校验，也不证明所有外部依赖兼容。
+
+外部 `register_model()` 接受真正的 `nn.Module` 子类，或 `module:class` 字符串；字符串形式保留懒导入，错误类型或格式会被拒绝，重复 architecture 会覆盖登记。插件如何被发现及在哪个进程调用注册，接续 [[28_vllm_extension_plugin_system_analysis|插件与扩展边界]]；本页负责注册后的类选择。
+
+### 2.3 “支持”意味着下游可以调用哪些方法
+
+| 模型接缝 | 要满足的内容 | 在本页路径中的作用 |
+|---|---|---|
+| 生成与 pooling | Registry 提取相应能力；Qwen2 的 `forward()` 返回隐藏状态，`compute_logits()` 另行投影 | 类可实例化不等于已运行生成；还要有 runner 消费这些接口 |
+| `SupportsPP` | `make_empty_intermediate_tensors` 与接收 `intermediate_tensors` 的 `forward()` | 当前 stage 必须能接收/交出中间状态，构造也必须只保留所属层 |
+| `SupportsMultiModal` | `embed_multimodal()` 按输入项在 prompt 中的顺序产生 embedding，`embed_input_ids()` 合并文本和多模态 embedding；另有 placeholder 与处理器接缝 | 视觉塔、语言模型仍要各自带稳定前缀；多模态数据处理和设备执行见 [[19_vllm_multimodal_execution_analysis|多模态执行]] |
+| `SupportsLoRA` | 支持声明、`packed_modules_mapping`、`embedding_modules` 及实例 manager 接缝 | adapter 名称必须能找到实际可包装的基础层，详见第 7 节 |
+| `SupportsQuant` | 向量化配置传递 rename-only mapper 和 packed module mapping | 保留原 projection 名让逐层量化配置命中，再由层创建相应参数；数值算法归 [[21_vllm_quantization_analysis|量化派发]] |
+
+Llama 和 Qwen2 都采用这些共同构造/加载接口并声明 LoRA、PP、量化支持，Llama 还明确提供输入 embedding 与 LM head 的 LoRA 名称表。它们是同一接口的不同实例，不需要在此平铺所有模型结构。registry 的全架构 import/能力测试与初始化测试的代表模型子集也体现这一点；测试包含平台、依赖版本等 skip 条件，不能据此声称每个架构在每台设备都实跑通过。
+
+## 3. 构造器先分配什么，再加载什么
+
+`initialize_model()` 在 current-config/compile scope 中调用 `model_class(vllm_config=..., prefix=...)`，并记录 reload metadata。`VllmConfig` 让嵌套模块读到同一份模型、缓存、量化等配置；`prefix` 则是模块在整棵模型中的名字。Qwen2 外层传入 `model`，decoder 继续派生 `model.layers.0.self_attn.qkv_proj`。attention 注册和逐层量化匹配都依赖这种完整前缀，它不是日志装饰。
+
+Qwen2 构造器用 `QKVParallelLinear` 代替独立 Q/K/V，用 `MergedColumnParallelLinear` 合并 gate/up，用 `RowParallelLinear` 构造 attention 输出投影和 MLP down projection。本例每个 rank 此时得到尚未初始化的 `qkv_proj.weight` 8×8 和 `gate_up_proj.weight` 12×8；正确数值要等下一节加载后才存在。
+
+若 PP>1，`make_layers()` 只构造当前 stage 的层，其余位置放 `PPMissingLayer`，而不是先加载完整模型再删除。Qwen2 的 embedding 通常在首 stage；词嵌入 tying 或 speculative decoding 的特定需求也可让其他 stage 持有它。末 stage 才持有最终 norm 与 LM head。通用加载器遇到 `PPMissingLayer` 或 `StageMissingLayer` 停止整个子树加载，所以别的 stage 的 checkpoint tensor 不该成为本 rank 的漏载错误。
+
+这与前向接口一致：Qwen2 首 stage 从 token 或 `inputs_embeds` 得到隐藏状态，非首 stage 消费 `IntermediateTensors`；**非末 stage** 返回中间状态，末 stage 归一化后返回最终隐藏状态，再由 `compute_logits()` 产生 logits。此处只接到模型方法的输入输出，batch、KV 初始化和实际执行见 runner 页。
+
+> [!contradiction] 文档接口与当前代码有两个差异
+> `docs/design/arch_overview.md` 的统一构造签名说明要求旧式外部模型迁移；live `initialize_model()` 仍发 `DeprecationWarning`，再按签名猜 `config/cache_config/quant_config/lora_config/scheduler_config/prefix` 继续构造。统一签名是当前标准，旧兼容桥尚未删除。另外 `SupportsPP.forward` 的 docstring 写“仅末 rank 返回 IntermediateTensors”，Qwen2 的实际分支相反；应以非末 stage 交出中间状态的实现理解本例。
+
+## 4. 一条权重怎样写进融合参数
+
+### 4.1 文件格式选择与模型选择是两个独立轴
+
+`get_model()` 根据 `LoadConfig.load_format` 找 loader，再让它加载已经由 model config 选定的 architecture。当前登记关系如下；它是选择地图，不表示不同 loader 都复用 Default loader 的逐 tensor 路径。
+
+| `load_format` | 选中实现 |
+|---|---|
+| `auto`、`hf`、`pt`、`safetensors`、`fastsafetensors`、`instanttensor`、`mistral`、`npcache` | `DefaultModelLoader`，内部再选择文件与 iterator |
+| `dummy` | `DummyModelLoader` |
+| `runai_streamer` | `RunaiModelStreamerLoader` |
+| `sharded_state`、`runai_streamer_sharded` | `ShardedStateLoader` |
+| `tensorizer` | `TensorizerLoader` |
+| `modelexpress` | `ModelExpressModelLoader` |
+| `ipc_cache` | `IpcModelLoader`，复用已处理权重，见第 6 节 |
+
+未知格式会报错。`register_model_loader()` 允许登记 `BaseModelLoader` 子类，重复格式会告警后覆盖。Default 路径将来源收敛成 `(name, tensor)` iterator：根据文件类型选 safetensors/PT、可选多线程及专用读取器；`npcache` 当前只接受非 safetensors。主来源之后还能接上 `model.secondary_weights` 的多个来源，并给每个来源加自己的 prefix。这里验证的是 vLLM 的选择与传参，不将第三方文件库的内部 IO 或吞吐视为已验证事实。
+
+### 4.2 名字被翻译，数据仍是原来的 tensor
+
+本例外层 `Qwen2ForCausalLM.load_weights()` 创建 `AutoWeightsLoader`，沿 `model` 子模块递归到 `Qwen2Model.load_weights()`，在那里应用 `hf_to_vllm_mapper`。以下省略相同的 `model.layers.0.` 前缀：
+
+| checkpoint 名 | runtime 名 | 随 tensor 传递的 `shard_id` |
+|---|---|---|
+| `self_attn.q_proj.weight` | `self_attn.qkv_proj.weight` | `q` |
+| `self_attn.k_proj.weight` | `self_attn.qkv_proj.weight` | `k` |
+| `self_attn.v_proj.weight` | `self_attn.qkv_proj.weight` | `v` |
+| `mlp.gate_proj.weight` | `mlp.gate_up_proj.weight` | `0` |
+| `mlp.up_proj.weight` | `mlp.gate_up_proj.weight` | `1` |
+
+`WeightsMapper` 依次应用 renaming、regex、substring、stacked、prefix、suffix 规则；映射到 `None` 的项被丢弃。`apply()` 只改名字、在原 tensor 上附加 `shard_id` 并继续 yield，不分片、不拼接、不复制数值。量化配置可追加 KV scale 映射；旧 rotary cache tensor 有明确 drop 规则。rename-only 版本去掉 stacked 和 `None` drop，供 LoRA 与量化层名列表复用，避免把需要保留的独立 projection 名提前合并。
+
+`AutoWeightsLoader` 再沿点分名称递归模块。子模块有 `load_weights()` 就可接管，普通叶参数用自己的 `weight_loader`，没有则走默认复制。当前也加载持久 registered buffers 与 BatchNorm 统计，排除非持久 buffer。未知 module/parameter 或给单个参数追加 nested name 通常报错；但有明确的 ignore prefix/suffix 配置、意外 `.bias` 等例外，不能称为“所有额外名字都拒绝”。
+
+### 4.3 融合前分别分片，融合后仍能拆回各投影
+
+本例 rank 0 的 Q 取全局输出行 0:4，rank 1 取 4:8；K/V 分别取 0:2 和 2:4。每个 rank 的 `qkv_proj.weight` 都按本地 Q→K→V 排列，三段起点为 0、4、6，长度为 4、2、2。gate/up 同理：各取全局 6 行，写入本地 gate_up 的 0:6 和 6:12。
+
+<!-- Figure spec: 用名称转换和切片操作图而非二维矩阵布局。两条独立lane共用TP=2/rank1教学输入。Q/K/V三个输入框标shape与全局行范围，经对应shard_id与slice框指向一个本地QKV结果框，注明各目标行。gate/up另一路经各自slice指向本地gate_up。输出节点标前向按相同边界split；不变量为每个constituent各自选当前rank的行，禁止先拼全局矩阵再均分。 -->
 
 ```mermaid
-flowchart LR
-    C["HF config<br/>architecture candidates"] --> R["Registry inspect<br/>and resolve class"]
-    R --> K["model class"]
-    V["VllmConfig<br/>plus prefix"] --> G["rank-local<br/>module graph"]
-    K --> G
-    W["checkpoint<br/>tensor iterator"] --> N["name mapper<br/>plus shard identity"]
-    G --> N
-    N --> P["parameter loader<br/>commits local slice"]
-    P --> T["loaded-name<br/>coverage gate"]
-    T --> E["executable<br/>base model"]
-    E --> L["LoRA wrappers<br/>and adapter slots"]
-
+flowchart TB
+    Q["Q 8×8<br/>q_proj.weight"] --> QS["shard q<br/>取行 4:8"]
+    K["K 4×8<br/>k_proj.weight"] --> KS["shard k<br/>取行 2:4"]
+    V["V 4×8<br/>v_proj.weight"] --> VS["shard v<br/>取行 2:4"]
+    QS --> QR["rank 1 的 qkv_proj.weight 8×8<br/>Q 写 0:4；K 写 4:6；V 写 6:8"]
+    KS --> QR
+    VS --> QR
+    QR --> SPLIT["前向投影输出宽 8<br/>仍按 4、2、2 拆成 Q、K、V"]
+    G["gate 12×8<br/>gate_proj.weight"] --> GS["shard 0<br/>取行 6:12"]
+    U["up 12×8<br/>up_proj.weight"] --> US["shard 1<br/>取行 6:12"]
+    GS --> GR["rank 1 的 gate_up_proj.weight 12×8<br/>gate 写 0:6；up 写 6:12"]
+    US --> GR
+    GR --> ACT["前向输出宽 12<br/>前 6 维做 SiLU，再乘后 6 维"]
     classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
     classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
-    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a,stroke-width:2px
-    class C,R,K,V,G,W,N neutral
-    class P,T,E acc1
-    class L acc2
+    class Q,K,V,G,U,SPLIT,ACT neutral
+    class QS,KS,VS,QR,GS,US,GR acc1
 ```
 
-这条链的关键不是调用先后本身，而是 identity 逐级变得更具体：architecture string 先变成 class，class 变成当前 rank 的 module/parameter namespace，checkpoint key 再变成 runtime parameter 与 constituent shard，最后才成为设备 parameter 的某个 slice。任一级只产生下一层的输入，不能提前宣称“模型已加载”。
+图中切片是视图选择，最后才向目标 parameter view 执行 `copy_`。不需要先分配全局融合矩阵。本地 QKV 比例不一定相等，Qwen2 前向也明确按 `q_size, kv_size, kv_size` 拆分；MLP 则对融合输出做 `SiluAndMul`，之后进入 down projection。融合参数保留的是投影边界，不是消除投影身份。
 
-## 3. Registry：先判能力，再在需要构造时导入类
+在普通非量化权重上，层会安装 v2 weight loader，最终落入 `ModelWeightParameter` 所继承的 column/row parameter 方法。QKV 层算本地 offset/size，parameter 方法同时 narrow 目标段与 checkpoint 的当前 rank 行，断言形状后复制；旧式 parameter loader 仍存在，使用参数上的维度属性执行同类选择。名称末尾相同不表示所有量化参数布局相同，packed bit/scale 布局另由 [[21_vllm_quantization_analysis|量化页]] 解释。
 
-### 3.1 为什么 inspection 与 loading 分开
+两个变体仍要守住同一规则：
 
-Registry 既要回答“这个 architecture 支持 PP/多模态/生成等能力吗”，又要给 loader 一个真实 Python class。若每次 capability query 都 import 模型，可选依赖或 module-level CUDA 初始化会进入控制面；当前 `_LazyRegisteredModel.inspect_model_cls()` 先用源码 hash 查 `_ModelInfo` cache，miss 时在子进程 import，而 `load_model_cls()` 才在当前进程真正 `import_module`（`vllm/model_executor/models/registry.py:930-1049`）。回归测试特意要求会初始化 CUDA 的模型在 inspection 后仍保持 CUDA 未初始化，并单独触发 class loading（`tests/models/test_registry.py:80-110`）。
+- **KV head 少于 TP rank 数**：例如改成 1 个 KV head、仍 TP=2。Q 仍各取 4 行，两个 rank 的 K/V 都取唯一 head 的 2 行。实现用 `tp_rank // num_kv_head_replicas` 选 K/V 来源，避免错误地向不存在的第二个 KV head 分片。Q head 必须能被 TP 整除；KV head 与 TP 也必须满足分片或复制的整除条件。
+- **磁盘上已经融合**：`shard_id=None` 时，QKV loader 先按全局 Q/K/V 边界切开 checkpoint，再递归到上面的独立 shard 路径；Merged loader 同样拆 constituent。它仍不是对整块融合矩阵直接均分。Merged 还支持连续 tuple shard id；越界或非连续组合拒绝，QKV 则只接受 `q/k/v/None`。
 
-内建表在 `ModelRegistry` 构造时全部转为 lazy `module_name + class_name` 记录；外部注册既可传 class，也可传 `module:class` 字符串，字符串路径的公开理由就是避免 fork 后重新初始化 CUDA（`vllm/model_executor/models/registry.py:1087-1131`；`vllm/model_executor/models/registry.py:1469-1486`）。插件何时被发现、在哪个进程调用注册属于 `28`；注册以后怎样解析 class 属于本页。
+普通 column parallel 的参数沿输出维切，前向保留本地输出，只有 `gather_output=True` 才 all-gather。Row parallel 参数沿输入维切：本例 down 的全局 8×12 变成本地 8×6，每个 rank 对自己的 6 维激活计算部分输出，默认 all-reduce 得到完整输出；bias 只在 rank 0 加一次。`input_is_parallel=False` 时层先切输入，`reduce_results=False` 又要求不直接重复加 bias。这里解释参数布局与消费它的运算如何对应，分组构造和 collective ordering 接续 [[22_vllm_distributed_inference_analysis|分布式推理]]。
 
-### 3.2 resolution 是有序决策，不是字典查找
+### 4.4 共享 embedding 要按同一个对象处理
 
-`_get_model_architecture()` 从 HF config 取 architecture 候选交给 registry；resolution 根据 `model_impl` 决定强制 Transformers/Terratorch、先试 in-tree、在 `auto` 下回退兼容 Transformers backend，最后才报 unsupported，随后还可把生成 class 转成 embedding/classification adapter（`vllm/model_executor/model_loader/utils.py:203-235`；`vllm/model_executor/models/registry.py:1326-1378`）。因此 registry 返回的是“在当前 config policy 下被选中的 class”，不是某个名字的永恒唯一实现。
+词嵌入 tying 让 `model.embed_tokens.weight` 与 `lm_head.weight` 指向同一份参数。`AutoWeightsLoader` **只对 `VocabParallelEmbedding` 的共享别名去重**，按模块遍历的首个名字作为 canonical name。若两个名字都出现，只加载 canonical；若 checkpoint 只给出被跳过的别名而 canonical 缺失，会在可收集完整 loaded-name 的前提下报错，避免共享 storage 未初始化。其他共享参数不被这一特殊规则一概跳过。
 
-失败边界是显式的：空 architecture 列表立即报错；已注册但 import/inspection 失败与从未支持、历史移除、迁出插件是不同错误；Transformers module 存在但 backend-incompatible 时也会拒绝（`vllm/model_executor/models/registry.py:1133-1158`；`vllm/model_executor/models/registry.py:1230-1246`；`vllm/model_executor/models/registry.py:1279-1283`）。这比“找不到就任意 `AutoModel`”多一层能力门，代价是 registry、backend compatibility 和 fallback order 必须持续一致。
+测试用 vocabulary=16、hidden size=2，分别把 embedding 填 1、head 填 2：tied 时最后共享值保持 1，untied 时 head 得到 2；另一测试仅给 head，要求报 canonical 缺失。这比“去掉重复 key”更强，因为检查的是对象共享和加载来源是否一致。
 
-## 4. 统一构造 ABI：先建立 rank-local namespace
+## 5. 什么时候才算加载完成
 
-### 4.1 `VllmConfig + prefix` 为什么是 ABI
+常规 `BaseModelLoader.load_model()` 在目标 dtype/device 范围内依次完成：构造 → 具体 loader 写权重 → 可适用的 loaded-name 检查 → 在线量化的 layerwise finalize → `process_weights_after_loading()` → `model.eval()` 返回。`LoadConfig.device` 可以覆盖初始加载设备。`download_model()` 只准备文件，`initialize_model()` 只建立模型，`load_weights()` 返回也不等于已经完成所有运行格式处理。
 
-官方 design 文档给出的明确理由是可扩展性、统一创建和组合模型：新配置进入 `VllmConfig` 后无需继续扩张每个 constructor，runner 也不必按模型猜签名（`docs/design/arch_overview.md:210-225`）。live `initialize_model()` 检查 constructor 是否同时接收 `vllm_config` 与 `prefix`，在带 compile context 的 current-config scope 中构造，并记录 reload metadata（`vllm/model_executor/model_loader/utils.py:37-61`）。
+后处理次序本身是模型库的接缝：先尝试重新 tying 相同的 embedding/head，再逐层处理 `QuantizeMethodBase`，随后处理 deferred attention/多模态 encoder、HPC 模块，再调用可选模型级 hook。若后处理替换了参数对象，还会重新协调参数的 TP rank/size，避免 `disable_tp` 层后续 refit 用到错误 rank。CPU offload 参数在处理时临时迁到目标设备，context 的 `finally` 再恢复 CPU/UVA 状态；具体量化和 kernel-format 转换归量化页，不能概括为“所有量化都在全量权重读取之后才发生”，在线量化可能边加载边处理。
 
-`prefix` 不是装饰性日志名。模型贡献指南要求所有 vLLM module 递归传递完整 state-dict name，以避免 attention layer 注册冲突并让 per-layer 配置命中正确对象（`docs/contributing/model/basic.md:18-24`）。在 Qwen2 中，外层把 `prefix.model` 交给 backbone，embedding、decoder layers 与 LM head 各自继续派生稳定全名；PP rank 不拥有的 embedding/layers/head 则以 missing-layer placeholder 表示（`vllm/model_executor/models/qwen2.py:334-392`；`vllm/model_executor/models/qwen2.py:450-472`）。
+### 5.1 loaded-name 集合不等于完整数值证明
+
+Default loader 默认只对“非量化且 model 返回 loaded-name 集合”启用 tracking，也可显式覆盖。它比较 `named_parameters()` 和 loaded set，但实际豁免范围比名字上的“量化例外”更宽。
+
+> [!contradiction] 纠正旧稿的漏载保证
+> 旧稿把默认非量化路径写成“任何完全未触达的参数都会报错”。当前 `DefaultModelLoader.track_weights_loading()` 会对带 `uses_meta_device` 或 `process_weights_after_loading` 方法的 quant method，把该模块参数补入 loaded set。**`UnquantizedLinearMethod` 也有这个后处理方法，普通 linear 参数因此也可能被豁免。** 所以这里只能保证尚未被豁免的缺失参数会报 `Following weights were not initialized`；不能保证每个普通权重都实际到达。
+
+即便没有这项豁免，Q、K、V 也都会回报同一个 `qkv_proj.weight`。**分析推断**：仅收到 Q 就可能让这个名字进入 set，因此 name-level gate 无法证明 K/V 都到齐，不能检测全部 constituent 缺失或重复写入。到达 tensor 的 shape/shard-id 合法，与 checkpoint 完整，是两个不同问题。
+
+| 负向输入 | 实际结果或检查局限 |
+|---|---|
+| 不存在的 module/parameter 名 | 递归加载通常 `ValueError`；显式 skip/ignore 和 PP placeholder 除外 |
+| 非法 packed shard id | Merged/QKV 验证拒绝；范围与类型规则分别由对应层定义 |
+| tensor 不能切成目标形状 | narrow 或 copy 前的 shape 断言失败 |
+| 未豁免参数完全没加载 | tracking 启用且返回集合时，集合差检查报错 |
+| fused parameter 少一段 | 通用名称集合不足以证明完整，须模型专项检查/完整 checkpoint 回归 |
+| 写入中途失败 | 已完成的 `copy_` 不会自动回滚；常规 `load_model()` 异常向调用者传播，不返回可用模型 |
+
+因此结束标志是 loader 成功返回经过后处理的 eval model，而不是“某个 key 已出现”或“内存已分配”。这也不证明首次模型前向、attention backend 或 GPU 数值回归已经通过；那些需要实际执行环境。
+
+## 6. IPC 权重缓存：输入已经是处理后的参数
+
+`load_format="ipc_cache"` 选择另一条活跃路径。每个 GPU 的 daemon 先正常加载一个 TP shard，完成后处理，再导出 `TensorEntry` 和别名表；重启的 engine 不必重新读取并处理同一份 checkpoint。CUDA tensor 通过 PyTorch reduction/rebuild 的 IPC handle 传递，非 CUDA tensor 按值发送。这里进入 PyTorch/CUDA 的共享分配行为是外部依赖边界，本次只验证 vLLM 的句柄导出、重建调用和生命周期约束。
+
+<!-- Figure spec: IPC复用采用从上到下的状态/选择图，两个模式左右分支后汇合。daemon完整加载后的entries+aliases经get_state和key/GPU核对进入meta模型注册，分zero_copy共享或copy克隆，汇入已处理模式后处理与剩余meta物化，成功返回eval；copy在返回前请求release。图中明确socket响应不是模型完成，完整结果依赖注册和后处理。 -->
+
+```mermaid
+flowchart TB
+    D["daemon 已加载并后处理<br/>TP shard 与别名表"] --> S["get_state 响应<br/>核对 key 与 GPU UUID"]
+    S --> M["engine 构造 meta 模型<br/>按 runtime 名注册 tensor"]
+    M --> Z["zero_copy<br/>共享 daemon 权重"]
+    M --> C["copy<br/>克隆为 engine 权重"]
+    Z --> P["已处理模式后处理<br/>恢复运行时对象"]
+    C --> P
+    P --> T["处理剩余 meta tensor"]
+    T -->|zero_copy| E["返回 eval model"]
+    T -->|copy| R["请求 daemon release<br/>释放确认失败只告警"]
+    R --> E
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class D,S,M,T,E neutral
+    class Z,C,P acc1
+    class R acc2
+```
+
+选择和完成要拆开看：
+
+1. `_check_supported()` 先检查支持范围，发生在 fallback 的异常捕获之外。当前 allowlist 是未量化，以及设置 `weight_block_size` 的 block-wise FP8；其他量化即使 `fallback=True` 也直接拒绝。KV cache dtype 只放行 `auto` 或以 `fp8` 开头的配置。
+2. `_fetch_entries()` 向本地 Unix socket 发 `WeightCacheKey`，包含 checkpoint 标识、architecture、TP size/rank、dtype、量化/配置 hash、revision 与 vLLM version。daemon 按字段比较并返回 entries/aliases；engine 再核对 GPU UUID。**checkpoint hash 只读取本地 safetensors 文件名及 header，不读取权重数值字节**，因此不是完整内容校验；找不到本地文件则回退模型路径作为标识。
+3. `_build_model()` 在 meta device 构造同名模块，然后 `_apply_entries()` 注册参数/buffer，允许后处理产生而 meta 模型原本没有的 tensor；别名注册回同一个对象。`zero_copy` 保留共享权重，`copy` 为每个唯一 tensor clone 一份。
+4. 在 `weights_already_processed()` scope 内运行后处理，恢复只靠 tensor 导出带不过来的运行时对象。方法必须声明 `supports_pre_processed_weights`，否则报错。随后将残余 meta tensor 物化；缺缓存参数会告警并分配未初始化 storage，这**不是完整性验证**。
+5. copy 模式在返回前请求 daemon `release`；daemon 清 entries、aliases 和模型引用再回复。请求失败只告警，因此模型返回不保证 daemon 已释放。zero-copy 模式依赖 daemon 保持共享 allocation 存活，不能把释放当作普通清理；类说明明确排除与 sleep weight offloading 同用。
 
 > [!contradiction]
-> 同 commit 的 `docs/design/arch_overview.md:227-257` 说所有 vLLM model 已改为 keyword-only 统一签名，并把旧参数传入描述为应报错；live `initialize_model()` 仍会对旧式 out-of-tree class 发出 `DeprecationWarning`，再按签名猜 `config/cache_config/quant_config/lora_config/scheduler_config` 并继续构造（`vllm/model_executor/model_loader/utils.py:63-93`）。当前行为应按 code 理解为“统一 ABI 是目标且 in-tree 已采用，但兼容桥尚未删除”，不能把文档的严格失败描述当成 live failure boundary。
+> `IpcModelLoader` 类 docstring 仍写后处理被完全跳过，实际 `_build_model()` 明确在已处理模式重跑 `process_weights_after_loading()`。跳过的是已完成的 tensor 变换这一要求，Python 侧状态仍可能需要重建，不能按 docstring 推断整个 hook 不执行。
 
-### 4.2 PP partial construction 与 weight loading 必须一致
+默认 `fallback=True`：daemon 不可用、指纹不匹配或构建失败可以改用清除 IPC 专用 extra config 的 Default loader。copy 模式已经取到状态而构建失败时会先尽力 release，再清 accelerator cache，减少磁盘 fallback 与 daemon 同时占用显存。没有跨进程回滚承诺；独立的 `IpcModelLoader.load_weights()` 甚至只是对已有运行格式模型尽力复制同名同形 tensor，不匹配则 warning/skip，不能等同首次加载路径。
 
-PP 的关键不是“加载完整模型再删层”，而是 constructor 直接生成当前 stage 拥有的 layer 区间与 placeholders。通用 `AutoWeightsLoader` 遇到 `StageMissingLayer` 或 `PPMissingLayer` 会停止该 subtree 的加载（`vllm/model_executor/models/utils.py:345-383`）。所以“未加载”只有在 module graph 本来拥有该 parameter 时才是错误；对别的 PP stage 的 checkpoint tensor，rank-local graph 本身就没有对应 owner。
+此路径的收益是省去重复 IO/转换；zero-copy 还省独立权重 storage，copy 则支付克隆和短时两份显存成本。daemon CLI 明确只支持 TP，拒绝 PP、DP、EP。通信协议为同用户可信本地进程之间的 pickle/Unix socket，自动路径会校验私有目录、socket 所有者和符号链接；它不是远程权重服务协议。可配置 `socket_path/socket_dir`、`mode`、`fallback`，连接与状态超时默认分别为 5 秒和 300 秒。
 
-这条设计以更复杂的 construction/load 协作为代价：stage 选择、prefix 和 skip placeholder 必须对同一个 namespace 达成一致。若模型手写 loader 绕过 placeholder 语义，就可能把“本 stage 不拥有”误判成 missing，或反过来静默丢掉真正属于本 stage 的 tensor。
+真实回归 `test_ipc_cache_cold_start_and_warm_restart` 用 `Qwen/Qwen3.5-0.8B` 比较默认磁盘加载、无 daemon 冷启动回退、关闭 fallback 的暖启动与再次重启，要求输出相同。它是 TP=1 的具体回归，本次未运行，不能外推全部模型、量化和并行组合。
 
-## 5. 权重提交：文件格式只供给 tensor，parameter 决定写到哪里
+## 7. LoRA 如何接到已构造的基础模型
 
-### 5.1 构造、加载与 post-load 有明确次序
+### 7.1 包装真实层，并为 adapter 预留位置
 
-`get_model()` 只按 `LoadConfig` 选择 loader；`BaseModelLoader.load_model()` 在目标 device/dtype scope 中先 `initialize_model()`，再调用具体 loader 的 `load_weights()`，之后才进入 post-load seam 并返回 `eval()` model（`vllm/model_executor/model_loader/__init__.py:119-139`；`vllm/model_executor/model_loader/base_loader.py:42-82`）。量化或其他 kernel-format transform 的内部逻辑归 `21`；本页只需要守住一个边界：它们看到的输入已经完成基础 checkpoint → runtime parameter 提交。
+基础模型加载后，`create_lora_manager()` 检查 `SupportsLoRA`。`supports_lora()` 还诊断“只声明 flag 却缺少属性”以及“属性齐全却未声明支持”，因为 adapter 依赖稳定模型名称和包装器支持，不能给任意 `nn.Module` 加一个布尔值就认为完成。
 
-Default loader 把文件侧实现收敛为 tensor iterator，再调用 model 自己的 `load_weights()`。原因（分析推断）是文件格式知道“有哪些外部 tensors”，模型/层才知道当前 runtime graph 的 fuse、PP 与 TP ownership；把两者混在 loader 会让每个 load format 重复模型语义。live code 的提交点是 `model.load_weights(self.get_all_weights(...))`，随后取得 loaded-name set 做覆盖检查（`vllm/model_executor/model_loader/default_loader.py:414-445`）。
+manager 查找支持的模块、处理 packed mapping、建立共享 Punica wrapper，再遍历真实 `named_modules(remove_duplicate=False)`，跳过 PP missing layer，把匹配层原地替换为保留 base layer 的 LoRA wrapper，并按有限 `max_loras` slots 分配 adapter storage。共享 module 会复用同一 wrapper，避免 alias 再次 reset 已写 adapter；`lm_head` 有自己的处理例外，并接到 logits processor wrapper。
 
-### 5.2 `WeightsMapper` 只改变逻辑 identity，不复制数据
+**分析推断**：先建立基础图再包装，让 TP/PP 参数形状与模型前缀仍由原模型定义，避免每个模型复制 LoRA 分支；代价是包装器必须支持实际选中的 layer subclass。没有 Punica wrapper、某些明确跳过的非门控 MoE gate 等路径仍可 warning/skip，不能把所有 target 情况概括为强制成功。
 
-`WeightsMapper` 可以按 regex、substring、prefix、suffix rename/drop，还可把 constituent 名改成 fused runtime 名并附带 `shard_id`；`apply()` 只是重写 name、把 shard metadata 标到 tensor 上并继续 yield（`vllm/model_executor/models/utils.py:46-147`）。它不计算 TP slice，也不应知道 parameter storage layout。
+### 7.2 同一个 projection 名在基础加载与 LoRA 中用途不同
 
-`AutoWeightsLoader` 随后按点分 name 递归 module tree：child 可接管自己的 `load_weights()`，leaf parameter 可接管自己的 `weight_loader()`；未知 nested parameter 或 module 会明确报错，而不是像 `strict=False` 一样静默吞掉（`vllm/model_executor/models/utils.py:199-213`；`vllm/model_executor/models/utils.py:283-313`；`vllm/model_executor/models/utils.py:345-417`）。因此扩展点是局部的：大多数 module 走通用递归，只有真正拥有特殊 storage 的 layer 覆盖写入规则。
+例如部署指定 `target_modules=["gate_proj"]`，实际只有 `gate_up_proj`。`packed_modules_mapping={"gate_up_proj": ["gate_proj", "up_proj"]}` 让 manager 找到融合父层；反向指定父层也能匹配 adapter 中的子投影。基础权重 mapper 也可供 LoRA 用，但必须先取 rename-only 版本，保留 `gate_proj` 的 constituent 身份，再由 manager pack 成 fused wrapper 所需 slices。
 
-权重 tying 也是 identity 问题。loader 只对 `VocabParallelEmbedding` 别名去重；若 checkpoint 只给出被跳过的 alias、没有 canonical name，它会拒绝留下未初始化共享 storage（`vllm/model_executor/models/utils.py:185-196`；`vllm/model_executor/models/utils.py:239-245`；`vllm/model_executor/models/utils.py:448-469`）。测试固定了“tied 时只加载首个名字”和“缺 canonical 必须失败”两条边界（`tests/models/test_utils.py:118-147`）。
+worker `_load_adapter()` 展开 expected module 集合，读取并验证 PEFT config，把 checkpoint 读入 CPU LoRA 对象，还会应用模型定义的 `lora_skip_prefixes`。`add_adapter()` 先登记，随后 `activate_adapter()` 找空设备 slot、更新 `lora_index_to_id`，对每个 wrapper 调 `set_lora()`；当前 adapter 没有的 layer 会 `reset_lora()`。因此“文件已读入”“已登记”“设备 slot 已激活”不是同一完成点。
 
-### 5.3 并行层的 parameter loader 才是物理 commit
+### 7.3 拒绝与完成边界
 
-`ColumnParallelLinear` constructor 按 TP size 缩小 output partition，并把 `weight_loader` 安装到 parameter；加载全局 tensor 时，loader 沿 output dimension 取 `tp_rank * local_size` 的 slice，shape 相等后才 `copy_`（`vllm/model_executor/layers/linear.py:445-526`；`vllm/model_executor/layers/linear.py:555-580`）。运行时它保留 local output，只有 `gather_output` 要求时才 all-gather（`vllm/model_executor/layers/linear.py:582-600`）。
+不支持 LoRA 的基础模型会被拒绝；checkpoint 出现 expected set 之外的 target 会报错；选中的层到达 wrapper 匹配检查却没有实现时，默认扫描可 warning/skip，而显式 `target_modules` 会报错。这一差异及 `gate_proj → gate_up_proj` 有直接测试。
 
-`RowParallelLinear` 正好沿 input dimension 建 local weight，必要时先切 input，再把各 rank 的局部 GEMM 结果 all-reduce；bias 只在 rank 0 加，避免 TP 下重复（`vllm/model_executor/layers/linear.py:1641-1708`；`vllm/model_executor/layers/linear.py:1710-1726`；`vllm/model_executor/layers/linear.py:1737-1763`）。本页拥有的是“parameter shape、checkpoint slice 与 layer collective 语义必须同构”；collective group 怎样创建与按什么全局顺序执行归 `22`。
+基础 manager 注册容量用尽报 `No free adapter slots`，激活找不到设备空位报 `No free lora slots`；LRU manager 是不同的活跃策略，不能把前者外推成全部 manager 都不淘汰。设备 slot 写入与 mapping 更新也不是自动回滚事务，失败前可能已有局部修改。
 
-Merged/QKV layer 在这条规则上再增加 packed axis。Merged layer 拒绝越界或非连续 tuple shard id，再把 constituent offset/size 换算到 TP-local parameter；QKV layer 只接受 `q/k/v`，并按 GQA head 数分别计算 offset/size（`vllm/model_executor/layers/linear.py:690-735`；`vllm/model_executor/layers/linear.py:799-845`；`vllm/model_executor/layers/linear.py:1059-1083`）。Transformers fuser 的测试证明 mapper 只在实际 fused prefix 上把六个外部名字改成两个 runtime names，并保留 `[0, 1, q, k, v]` shard identities（`tests/models/transformers/fusers/test_linear.py:565-607`）。
+本页到 adapter 已登记并可激活、目标 module/slot 合法存在为止。某一步哪些 token 选择哪个 adapter、slot 重排后 mapping 如何对设备生效，接续 [[15_vllm_model_runner_v1_analysis|Model Runner V1]] 和 [[16_vllm_model_runner_v2_analysis|Model Runner V2]]。
 
-### 5.4 loaded-name gate 能证明什么，不能证明什么
+## 8. 从症状回到源码
 
-对默认非量化路径，loader 将 `model.named_parameters()` 与 `load_weights()` 返回集合比较；任何完全未触达的 runtime parameter 都会报 `Following weights were not initialized`。若 model 不返回集合、显式关闭 tracking，或进入默认排除的 quantized 路径，这个 gate 不成立（`vllm/model_executor/model_loader/default_loader.py:427-469`）。具体 quant 例外由 `21` 解释。
+排查时先确定失败发生在类选择、模型构造、名称转换、参数写入还是后处理：unsupported architecture 看 registry；key 不存在看模型 mapper/PP placeholder；shape 错看参数分片；加载“成功”但融合层数值异常，要检查 constituent 是否真的齐全，不能只看 loaded-name 集合。IPC 则先区分取到缓存响应与构建可执行模型，LoRA 则先区分 target 名匹配与实际 wrapper/slot 激活。
 
-以下边界需要分开判断：
+以下均为本基线实际打开的源码路线，路径相对 `vllm-project/vllm`：
 
-| failure | 默认路径是否能捕获 | 为什么 | 证据 |
-|---|---|---|---|
-| checkpoint 名指向不存在的 module/parameter | 是 | recursive lookup 直接 `ValueError` | `vllm/model_executor/models/utils.py:394-417` |
-| packed shard id 非法 | 是 | Merged/QKV 在写入前验证 enum/range/连续性 | `vllm/model_executor/layers/linear.py:710-735`；`vllm/model_executor/layers/linear.py:1059-1065` |
-| global tensor 无法切成预期 local shape | 是 | local view 与 loaded slice copy 前断言 shape | `vllm/model_executor/layers/linear.py:555-572`；`vllm/model_executor/layers/linear.py:1710-1726` |
-| 一个普通 runtime parameter 完全没出现 | 默认非量化路径是 | loaded-name set 与全部 named parameters 做差 | `vllm/model_executor/model_loader/default_loader.py:434-469` |
-| fused parameter 只到了一部分 constituent shards | **不由通用 name gate 充分证明** | 多个 constituent 会映射成同一 runtime qualname，返回 set 后 shard identity 被折叠 | `vllm/model_executor/models/utils.py:115-147`；`vllm/model_executor/layers/linear.py:952-975` |
+1. **类选择与能力**：`vllm/model_executor/models/registry.py::_ModelRegistry.resolve_model_cls`、`_LazyRegisteredModel.inspect_model_cls`、`_LazyRegisteredModel._get_modelinfo_module_hash`、`_ModelInfo.from_model_cls`；`vllm/model_executor/model_loader/utils.py::_get_model_architecture`。验证：`tests/models/test_registry.py::test_registry_model_property`、`test_lazy_modelinfo_package_attempts_cache_load`、`test_hf_registry_coverage`。
+2. **统一构造与模型消费**：`vllm/model_executor/model_loader/utils.py::initialize_model`；`vllm/model_executor/models/qwen2.py::Qwen2ForCausalLM`、`Qwen2Model`、`Qwen2Attention.forward`、`Qwen2MLP.forward`；`vllm/model_executor/models/llama.py::LlamaForCausalLM`；`vllm/model_executor/models/interfaces.py::SupportsMultiModal`、`SupportsPP`、`SupportsQuant`。设计对照：`docs/design/arch_overview.md` 的 Extensibility/Uniformity 与 `docs/contributing/model/basic.md` 的 Initialization Code；初始化验证入口为 `tests/models/test_initialization.py::can_initialize`。
+3. **选择加载器与最终返回**：`vllm/model_executor/model_loader/__init__.py::get_model_loader`、`get_model`；`vllm/model_executor/model_loader/base_loader.py::BaseModelLoader.load_model`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader._get_weights_iterator`、`get_all_weights`、`load_weights`、`track_weights_loading`；`vllm/model_executor/model_loader/utils.py::process_weights_after_loading`、`device_loading_context`。
+4. **名称、递归和共享参数**：`vllm/model_executor/models/utils.py::WeightsMapper`、`AutoWeightsLoader._load_module`、`AutoWeightsLoader._load_param`、`AutoWeightsLoader._check_skipped_aliases`、`make_layers`。验证：`tests/models/test_utils.py::test_module_skip_tied_weights`、`test_module_skip_tied_weights_without_canonical`、`test_module_load_shared_params_that_are_not_tied_embeddings`；`tests/models/transformers/fusers/test_linear.py::test_weight_mappings_are_scoped_to_fused_prefixes`。
+5. **融合与物理切片**：`vllm/model_executor/layers/linear.py::UnquantizedLinearMethod`、`ColumnParallelLinear`、`MergedColumnParallelLinear.weight_loader_v2`、`QKVParallelLinear.weight_loader_v2`、`QKVParallelLinear._load_fused_module_from_checkpoint`、`RowParallelLinear`；`vllm/model_executor/layers/activation.py::SiluAndMul.forward_native`；`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight`、`_ColumnvLLMParameter.load_merged_column_weight`。前述 fuser 测试验证名字和 shard 标签，不等于本页教学尺寸的 GPU 数值测试。
+6. **IPC 与生命周期**：`vllm/model_executor/model_loader/weight_cache/ipc_loader.py::IpcModelLoader.load_model`、`_build_model`、`_apply_entries`、`_request_state`、`_materialize_remaining_meta_tensors`；`vllm/model_executor/model_loader/weight_cache/daemon.py::export_entries`、`WeightCacheDaemon._handle_get_state`、`WeightCacheDaemon._handle_release`、`_reject_unsupported_parallelism`；`vllm/model_executor/model_loader/weight_cache/protocol.py::WeightCacheKey`、`hash_checkpoint`、`TensorEntry`、`check_ipc_quant_support`。验证：`tests/model_executor/model_loader/test_weight_cache.py::test_ipc_cache_cold_start_and_warm_restart`。
+7. **LoRA 接合**：`vllm/model_executor/models/interfaces.py::SupportsLoRA`、`supports_lora`；`vllm/lora/model_manager.py::LoRAModelManager._create_lora_modules`、`LoRAModelManager.activate_adapter`、`LoRAModelManager._create_merged_loras_inplace`、`create_lora_manager`；`vllm/lora/worker_manager.py::WorkerLoRAManager._load_adapter`、`WorkerLoRAManager.add_adapter`；`vllm/lora/utils.py::is_in_target_modules`。验证：`tests/lora/test_lora_manager.py::test_target_modules_fail_closed_on_unsupported_matched_modules`、`test_target_modules_match_packed_runtime_modules`。
 
-最后一行是对数据流的**分析推断**：只收到 `q_proj` 也足以让 `qkv_proj.weight` 出现在 loaded-name set，通用 tracker 无法据此证明 `k/v` 已写。shape 与 shard-id guard 能证明“到达的写入合法”，不能证明“所有预期 constituent 都到达”。因此 packed model 若存在非标准、可选或条件 shard，必须由 model-specific loader/completeness check 或针对完整 checkpoint 的测试补上；不能把一个 fused parameter name 已出现当成事务完整性的充分条件。
-
-## 6. 代表模型是 ABI 证明，不是 architecture 目录
-
-Llama 与 Qwen2 的价值不在于分别列一遍网络结构，而在于它们证明不同实现能收敛到同一 ABI：两者都用 `VllmConfig + prefix` 构造、都声明 `SupportsLoRA/SupportsPP`、都暴露 packed mapping，backbone 用 `WeightsMapper` 将 QKV 与 gate/up constituent 映射到 fused layer，外层 `AutoWeightsLoader` 再递归让 backbone 接管 mapping（`vllm/model_executor/models/llama.py:344-360`；`vllm/model_executor/models/llama.py:446-543`；`vllm/model_executor/models/qwen2.py:323-331`；`vllm/model_executor/models/qwen2.py:441-504`）。
-
-这也解释了为什么本页不维护“模型 A/B/C 如何实现”的平铺目录。registry 测试对所有 registered architectures 做 import/capability contract 检查，并要求测试 registry 覆盖完整 architecture set；较重的初始化回归则明确选一个覆盖多 workload 的 representative subset，剩余集合另跑（`tests/models/test_registry.py:31-77`；`tests/models/test_registry.py:206-214`；`tests/models/test_initialization.py:27-52`；`tests/models/test_initialization.py:194-207`）。测试策略本身把模型实例当作共同接口的样本，而不是互不相关的产品条目。
-
-一个新模型真正需要证明的是：resolution 选中正确 class；constructor 建出正确 rank-local namespace；每个 checkpoint tensor 通过 mapper/parameter loader 到达唯一合法 storage；完整性 gate 与模型专项测试覆盖默认 gate 看不到的 packed/optional 语义；若声明 LoRA，adapter-visible names 能落回 runtime modules。architecture 名称只是这份证明的入口。
-
-## 7. LoRA attachment：复用 base model 的 module 与 packed-name ABI
-
-### 7.1 为什么 attachment 发生在 base graph 之后
-
-`SupportsLoRA` 不只是布尔 flag；协议还要求 `packed_modules_mapping`、`embedding_modules` 与 manager slot。`supports_lora()` 会对“只设 flag 但缺属性”和“属性齐全但没声明支持”发出诊断（`vllm/model_executor/models/interfaces.py:680-756`）。这意味着 adapter 不是任意 `nn.Module` 的通用补丁，而是 model class 对稳定 module namespace 的能力承诺。
-
-LoRA manager 初始化时先从已构造 base graph 找可支持 modules、处理 packed mapping、创建共享 Punica wrapper，然后遍历真实 `named_modules()`，跳过 PP missing layer，把匹配 layer 原地替换成保存 base layer 的 LoRA wrapper，并给 wrapper 预分配有限 slots（`vllm/lora/model_manager.py:95-152`；`vllm/lora/model_manager.py:407-542`）。**分析推断**：先构造 base graph 再 wrap，胜过在每个 model class 内复制 LoRA 分支，因为 TP/PP layer type、parameter storage 与 prefix 仍由唯一 base implementation 拥有；代价是 wrapper registry 必须覆盖被选择的具体 layer subclass。
-
-### 7.2 packed mapping 是 base weight 与 adapter 的共享语义桥
-
-adapter checkpoint 仍以 `q_proj`、`gate_proj` 等 constituent name 表达，但 runtime 可能只有 `qkv_proj`、`gate_up_proj`。`packed_modules_mapping` 让 deployment target 写 child name 时仍能匹配 fused parent；测试固定了 `gate_proj → gate_up_proj` 的选择行为（`vllm/lora/utils.py:275-315`；`tests/lora/test_lora_manager.py:1088-1104`）。manager 随后把 constituent LoRA weights pack 成 fused wrapper 所需的 slices（`vllm/lora/model_manager.py:645-678`）。
-
-基础 checkpoint 的 `WeightsMapper` 还会被 LoRA 重用，但只取 rename-only 版本：它明确丢弃 stacked mapping 和 `None` drop，因为 LoRA name parsing 必须保留 constituent projection identity；worker loader 取得这个 mapper，验证 PEFT config，再按 expected modules 读取 adapter（`vllm/model_executor/models/utils.py:163-182`；`vllm/lora/worker_manager.py:106-154`）。同一 namespace 因此服务两种不同提交：base tensor 要 stack 到 runtime parameter，adapter tensor 要保留 child identity 后再 pack 到 wrapper slot。wrapper 创建时也按 `max_loras` 预分配有限 slot，而不是为每个请求动态改写 module graph（`vllm/lora/utils.py:107-125`）。
-
-### 7.3 attachment 的失败边界
-
-LoRA 在以下位置 fail closed：base model 不满足 `SupportsLoRA` 时 manager creation 直接拒绝；adapter checkpoint 出现 expected set 之外的 target module 时拒绝；显式 `target_modules` 命中的 runtime layer 没有任何 wrapper implementation 时拒绝；adapter capacity 用尽也拒绝（`vllm/lora/model_manager.py:1263-1287`；`vllm/lora/lora_model.py:212-242`；`vllm/lora/model_manager.py:522-536`；`vllm/lora/model_manager.py:1173-1180`）。测试还区分默认扫描时 unsupported match 可 warning/skip，与用户显式选择该 target 时必须报错，避免“配置说已附着、实际没生效”（`tests/lora/test_lora_manager.py:285-335`）。
-
-attachment 到这里结束：adapter tensors 已装入受 manager 拥有的 slots，并可被 activate（`vllm/lora/worker_manager.py:223-231`）。某一步里哪些 token/request 选择哪个 adapter、mapping 何时对设备可见，是 runner 的 per-step state，归 `15`；本页只保证这些 mapping 引用的 slot 与 module identity 已经合法存在。
-
-## 8. 约束、排查顺序与源码阅读路径
-
-| 症状 | 先问哪个 ABI owner | 最可能的边界 | 首读 locator |
-|---|---|---|---|
-| architecture unsupported 或落到意外 backend | Registry | candidate order、`model_impl`、backend compatibility | `vllm/model_executor/models/registry.py:1274-1378` |
-| 构造时 module 名冲突、PP rank 出现不该有的层 | Constructor | `prefix` 递归或 stage-local graph | `vllm/model_executor/model_loader/utils.py:37-94`；`vllm/model_executor/models/qwen2.py:334-392` |
-| checkpoint key 找不到 owner | Model mapper/tree loader | rename/drop rule 或 rank-local placeholder 不一致 | `vllm/model_executor/models/utils.py:345-417` |
-| 单 rank tensor shape 错、结果各 rank 不同 | Parallel parameter loader | shard dimension、TP rank/size、packed offset | `vllm/model_executor/layers/linear.py:445-580`；`vllm/model_executor/layers/linear.py:1641-1726` |
-| strict tracking 通过但 fused layer 数值异常 | Model-specific completeness | constituent shard 缺失、重复或错误条件 skip | `vllm/model_executor/models/utils.py:115-147`；`vllm/model_executor/model_loader/default_loader.py:447-469` |
-| LoRA target 看似存在却未生效 | LoRA attach | rename-only mapper、packed child mapping、wrapper support/slot | `vllm/lora/worker_manager.py:131-154`；`vllm/lora/model_manager.py:407-542` |
-
-推荐按 identity 变具体的顺序阅读，而不是从某个代表模型头读到尾：
-
-1. class/capability：`vllm/model_executor/models/registry.py:880-1049`、`vllm/model_executor/models/registry.py:1274-1378`；
-2. construction/load transaction：`vllm/model_executor/model_loader/utils.py:37-94`、`vllm/model_executor/model_loader/base_loader.py:42-82`、`vllm/model_executor/model_loader/default_loader.py:414-469`；
-3. generic mapping/commit：`vllm/model_executor/models/utils.py:46-147`、`vllm/model_executor/models/utils.py:199-469`；
-4. parallel leaf：`vllm/model_executor/layers/linear.py:414-600`、`vllm/model_executor/layers/linear.py:690-975`、`vllm/model_executor/layers/linear.py:978-1329`、`vllm/model_executor/layers/linear.py:1606-1763`；
-5. representative proof 与 LoRA seam：`vllm/model_executor/models/qwen2.py:323-504`、`vllm/lora/model_manager.py:71-152`、`vllm/lora/model_manager.py:407-542`。
+本次为固定源码与测试内容复核，未运行 GPU 模型加载、CUDA IPC、LoRA 数值测试或第三方依赖集成；教学尺寸由已读切片规则推导，不作为实测保证。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 把模型/算子层放回从配置到 Engine、Executor 与设备运行时的静态责任图。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接续可执行模型向 attention metadata、KV layout 与 backend capability 的运行时合同。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照本页排除的 compact/stable row、buffer、graph 与 adapter mapping 生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发设计]] — 深入基础权重提交之后的 scale、post-load transform 与 kernel-format ABI。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 解释并行层所消费的 TP/PP/EP rank group 与 collective ordering。
-- [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|vLLM 插件与扩展边界]] — 拥有 out-of-tree model 注册之前的 plugin discovery、进程作用域与初始化生命周期。
+- [[03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 将模型库放回配置、Engine、Executor 与设备执行的整体关系。
+- [[14_vllm_attention_backends_analysis|Attention Backend]] — 接续模型层构造出的 attention 对象如何选择实现并消费 metadata/KV layout。
+- [[15_vllm_model_runner_v1_analysis|Model Runner V1]] — 解释模型返回之后的 batch、buffer 与当步 LoRA mapping。
+- [[16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照持久设备状态如何消费相同的可执行模型接口。
+- [[21_vllm_quantization_analysis|量化派发]] — 深入量化参数、scale、后处理和 kernel 格式，承接本页加载接缝。
+- [[22_vllm_distributed_inference_analysis|分布式推理]] — 解释本页并行层依赖的 TP/PP 分组与通信执行。
+- [[28_vllm_extension_plugin_system_analysis|插件与扩展边界]] — 解释外部 model/loader 注册之前的插件发现与初始化。

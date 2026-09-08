@@ -1,151 +1,265 @@
 ---
-title: "vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合决策"
+title: "vLLM 量化执行：一个低精度数怎样穿过 Pack、Scale、TP 与 Kernel"
 ---
 
-# vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合决策
+# vLLM 量化执行：一个低精度数怎样穿过 Pack、Scale、TP 与 Kernel
 
-> **读者问题**：为什么同样写着 W4A16 或 FP8 的 checkpoint，不能只按位宽选择一个 GEMM；vLLM 又怎样保证 checkpoint 的 pack/scale 语义、TP 后的局部形状、post-load 排列与最终设备 Kernel 始终是同一份合同？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
-> **中心命题**：量化不是加载完成后的 dtype cast，而是一条逐步收紧的 ABI：configure 阶段确定 checkpoint/在线格式与全局能力边界，layer 构造阶段把格式变成 TP-local 参数与 scale 形状，post-load 阶段把加载表示提交为 Kernel 表示，runtime 只在能实现同一数值合同的 Kernel 之间派发。任一阶段若偷偷改变 pack axis、scale 粒度、zero-point、activation dtype 或分片语义，模型可能仍能运行却计算另一套数值；所以兼容谓词、转换和 fallback 必须联合决定。
-> **所有权边界**：本页拥有量化 config → per-layer method → 参数/scale ABI → post-load transform → hardware dispatch/fallback，以及 packed mapping 对量化规则的消费接缝。通用 checkpoint 枚举、名称映射和参数分片提交归 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]]；Kernel 内部算法、tile 和 provider 编程归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]；KV layout 与 attention backend 的完整协商归 `12/14`，本页只保留 scale 名称与量化能力接缝。
-> **最近更新**：2026-08-31。补充一条 AutoGPTQ Linear 从配置识别、参数 ABI、加载与 post-load，到 Kernel 执行的方法级闭环；源码基线不变。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（只读 main 快照，2026-09-07 UTC）。
+> **主题**：低精度整数或浮点编码怎样恢复参与矩阵乘法的数；配置、分片、加载转换与 Kernel 选择怎样保持同一解释。
+> **适用范围**：本页展开量化数值、config → per-layer method → pack/scale 参数 → post-load → dispatch/fallback；通用模型构造与 checkpoint 写入接 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|13]]，Kernel 内部 tile/provider 接 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24]]，KV scale 仅保留名称与能力接缝，完整 layout/attention 协商归 12/14。
+> **最近更新**：2026-09-08。
 
-## 1. 背景：低精度名字不是可执行格式
+## 1. 一个 int32 为什么不能直接当作八个权重
 
-一个量化线性层至少要同时回答六个问题：权重的数值类型是什么、整数怎样 pack、scale 按 tensor/channel/group/block 哪个粒度解释、是否有 zero-point 或 activation-order metadata、TP 后本 rank 的 K/N 是多少、最终 Kernel 要读哪种排列。vLLM 把其中与实现无关的最小描述收进 `MPLinearLayerConfig`：全局/局部 weight shape、weight/activation type、group size、zero-point 与 `g_idx` 都是 Kernel 兼容谓词，而不是调优提示（`vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py:14-35`）。
+设线性层计算 $y_n=\sum_k x_k\widehat W_{kn}+b_n$。W4A16 只告诉我们权重编码占 4 bit、activation 使用 16 bit，并没有告诉我们最低四位属于哪个 $k,n$，编码 8 表示 8 还是 0，或者哪个 scale 属于这个数。我们先用一个可手算的列说明差别，再把它放回 vLLM 的实际加载链。
 
-基类也直接暴露同一生命周期：`create_weights()` 建立加载目标，`apply()` 消费 layer 上的表示；二者是抽象方法，且 `apply()` 只明确要求 create 已先发生。`process_weights_after_loading()` 则是默认 no-op 的可选 hook，具体 method 才用它完成转置、重排或量化（`vllm/model_executor/layers/quantization/base_config.py:20-72`）。这说明量化状态不是某个 CLI 字符串，而是跨模型构造与执行长期存活的 layer ABI。
+教学列的八个已存编码是 $u=(0,1,2,3,4,5,6,7)$，使用 AutoGPTQ 支持的对称 `uint4b8`，固定 bias 为 8，scale 为 $s=0.5$：
 
-| 决策点 | 输入 → 输出 | 本阶段必须固定的状态 | 不满足时的正确行为 |
-|---|---|---|---|
-| Configure | HF quant config / 在线配置 / 用户 override / 平台 → `QuantizationConfig` | 格式身份、activation dtype 范围、全局 capability、ignore 规则 | 配置不一致或平台不支持时尽早拒绝 |
-| Create / load | config + layer prefix + 全局/TP-local shape → 参数容器；checkpoint tensor → 容器 | pack axis、scale/zero shape、logical shard identity、TP ownership | 显式 unquantized layer，或构造失败；不能猜 shape |
-| Post-load | checkpoint/在线中间表示 → Kernel 表示（若 method 需要） | 转置、repack、在线 quant、scale 合并、替换后的参数身份 | 正常 loader 在返回模型前调用；绕过该顺序只会对依赖转换的 method 破坏 Kernel 合同，基类没有通用 `apply()` guard |
-| Runtime dispatch | 已提交参数 + activation → output | Kernel 必须实现完全相同的数值与布局合同 | 换下一个兼容实现；没有兼容实现则硬失败 |
+$$
+\widehat w_k=s(u_k-8)=(-4,-3.5,-3,-2.5,-2,-1.5,-1,-0.5)_k.
+$$
 
-直观替代是“模型先按 BF16 构造并加载，再统一 cast，forward 时按位宽选 Kernel”。以下是**分析推断**：它失败的根因不是缺少某个量化方法，而是把四个提交点压成一个无类型边界——checkpoint pack 与 Kernel pack 可以不同，scale 可能跨 TP shard 求全局极值，融合 QKV 的三个逻辑矩阵也可能有独立 scale。现行接口将这些差异前移并显式化，代价是配置、层、loader seam 与 Kernel 都要维护同一 ABI。
+这里的 8 是**编码偏移**，不是每次 GEMM 传入的可变 zero-point。取 $x=(1,0,0,0,0,0,0,1)$、$b=0$，得到 $y=-4.5$。若只把编码乘 scale，会算出 $3.5$，虽然 shape、dtype 和 GEMM 调用都可能合法。预量化 checkpoint 已给出编码和 scale；这个例子不声称 vLLM 在加载时重跑 GPTQ 的校准/误差优化算法。
 
-## 2. Configure：先证明格式与部署能组成合同
+通用整数参考量化可以写为 $q=\operatorname{clip}(\operatorname{round}(w/s)+z,q_{\min},q_{\max})$，反量化为 $s(q-z)$；对称有偏编码则先量化到有符号范围，再加编码 bias。AWQ 的 `uint4` 可使用随 group/channel 变化的显式 $z$，AutoGPTQ 当前 Linear 配置则只接受对称 4/8 bit，`zero_points=False`。二者不能仅凭“都是 INT4”互换。参考 helper 还区分先减 zero 再乘 scale 与先分别乘 scale 再相减的浮点舍入；数学等价不代表 bitwise 一致。
 
-### 2.1 checkpoint 身份、用户意图与在线格式不是同一个字段
+源码收束：`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQConfig.TYPE_MAP`、`AutoGPTQLinearMethod.create_weights`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::quantize_weights`。后者是 tests/benchmarks 的参考实现，不是 AutoGPTQ 在线校准器。
 
-对预量化 checkpoint，`ModelConfig` 先读 HF `quantization_config.quant_method`，再按有序 override 列表探测能兼容该 checkpoint 的实现；若用户显式 `--quantization` 与解析结果不同，直接报错，而不是强行用用户名字解释另一种字节布局（`vllm/config/model.py:1245-1324`）。例如 GPTQ 的 override 只接受 checkpoint 声明为 `gptq`，且用户选择必须仍在 GPTQ/Marlin/AutoGPTQ 兼容集合中（`vllm/model_executor/layers/quantization/auto_gptq.py:218-238`）。
+### 1.1 Pack 只改变存放位置，不重新量化
 
-在线量化走另一条入口：shorthand 先展开成 linear/MoE 的 weight `QuantKey`，显式 `quantization_config` 再按 layer kind 覆盖；若传统 checkpoint quant 名与在线配置混用，会在解析时拒绝（`vllm/config/quantization.py:114-148`；`vllm/config/quantization.py:158-194`）。加载侧也不伪造 checkpoint quant config：只有预量化格式从 HF config/file 构造 config；在线路径明确从 FP16/BF16 checkpoint 在加载期转换（`vllm/model_executor/model_loader/weight_utils.py:240-287`；`vllm/model_executor/model_loader/weight_utils.py:318-327`）。
+4 bit 的 pack factor 是 $P=32/4=8$。标准 input-packed 格式对固定列 $n$ 存：
 
-这层拆分胜过“所有格式共用一个 `quantization` enum”。同名 checkpoint method 可能需要专用 parser，而在线 shorthand 描述的是目标 weight/activation 方案；把二者混为一谈会让“读取已有 scale”和“现场计算 scale”失去可区分的生命周期。
+$$
+Q_{j,n}=\sum_{i=0}^{7}(u_{8j+i,n}\mathbin{\&}15)\,2^{4i},\qquad
+u_{8j+i,n}=(Q_{j,n}\gg4i)\mathbin{\&}15.
+$$
 
-### 2.2 能力检查是多级谓词，不是 GPU 型号白名单
+上面的列得到 `0x76543210`；十六进制左端是高位，所以读低位时仍从编码 0 开始。32 bit 的容器有符号与否不改变这套位提取；mask 去掉算术右移可能带入的符号位。pack 本身不损失精度，舍入和截断发生在产生 $u$ 时。
 
-配置先经过三道全局门：方法名必须注册；平台的 `supported_quantization` 非空时必须包含该方法；实例化后的 config 还要同时满足设备 capability 与模型 activation dtype（`vllm/config/model.py:1326-1332`；`vllm/platforms/interface.py:962-969`；`vllm/config/vllm.py:751-784`）。ROCm/XPU 因此可以给出显式方法集合，而空集合的平台并不等于“全部 Kernel 都可用”，后面仍有 method/kernel 级检查（`vllm/platforms/rocm.py:513-537`；`vllm/platforms/xpu.py:103-129`）。
+<!-- Figure 1 spec: 真实 K×N 布局。左上 AWQ checkpoint 的 K=8,N/8=1 八行 int32；中央展开 K×N=8×8 编码 u[k,n]=k+n，第一行与第一列分别用 orange/blue 强调；右侧标准 K/8×N=1×8 按列打包列表。箭头从 AWQ row0 的低位顺序 [0,2,4,6,1,3,5,7] 经 reverse [0,4,1,5,2,6,3,7] 到 logical row0，再从 logical column0 向 input-packed word 0x76543210。下部列出 row0 AWQ word 0x75316420 与列0解码后 scale=.5,bias8,y=-4.5。每个词由 generator 计算，形状和轴独立标注；这不是 Marlin tile 图。 -->
+![AWQ 按输出轴打包，经位序恢复得到二维逻辑编码，再按输入轴打包；数值不变](assets/vllm_w2_21_pack_layout.svg)
 
-`QuantizationConfig` 自身声明支持的 activation dtype、最低 capability、配置文件来源和 layer → method 选择；checkpoint-compatible override 只是其中一个可选钩子（`vllm/model_executor/layers/quantization/base_config.py:87-159`；`vllm/model_executor/layers/quantization/base_config.py:179-192`）。因此“配置通过”只证明整个方法在当前部署上有可能成立，不证明每个 TP-local shape 已经找到 Kernel；shape 级证明必须等 layer 构造。
+图中人为给定完整 $8\times8$ 编码矩阵 $u_{k,n}=k+n$，它只是格式教学块，不是声称这个小 shape 可直接启动任一优化 Kernel。AWQ checkpoint 的 `qweight` 为 `[K,N/8]`；当前转换函数先逐 int32 拆八个 nibble，再按 `[0,4,1,5,2,6,3,7]` **索引拆出的数组**，恢复逻辑 N 次序。故逻辑首行 0…7 对应的原始低位序列是 0,2,4,6,1,3,5,7，word 是 `0x75316420`。切勿把 reverse 索引列表直接当成写入低位的值序列。
 
-### 2.3 layer prefix 把模型命名带入量化规则
+恢复 `[K,N]` 后，函数沿 K 重打包成 `[K/8,N]`。`qzeros` 另有轴变化：原 `[G,N/8]` 先恢复位序，再转成 `[N/8,G]`，新 parameter 的 `output_dim=0,input_dim=1,packed_dim=0`；不能照抄 qweight 的维度属性。scale 仍按逻辑 group/output 解释，随后才由选中的 Kernel 转为自身布局。这里“GPTQ-like standard”指标准编码排列，不意味着 AWQ 的可变 zero-point 变成了 GPTQ 固定 bias。
 
-模型构造前，loader seam 把 HF→vLLM rename mapper 与 `packed_modules_mapping` 交给 quant config；采用 `SupportsQuant` 的模型在 `__new__` 中做同一件事（`vllm/model_executor/model_loader/utils.py:37-60`；`vllm/model_executor/model_loader/utils.py:265-286`；`vllm/model_executor/models/interfaces.py:1201-1233`）。以 Llama 为例，runtime 的 `qkv_proj` 和 `gate_up_proj` 分别对应 checkpoint 的三个、两个逻辑投影（`vllm/model_executor/models/llama.py:446-460`）。
+源码收束：`vllm/model_executor/layers/quantization/utils/quant_utils.py::pack_quantized_values_into_int32`、`unpack_quantized_values_into_int32`；`vllm/model_executor/layers/quantization/auto_awq.py::_convert_awq_to_standard_format`、`AutoAWQMarlinLinearMethod.process_weights_after_loading`。
 
-本页只拥有 mapping 被量化规则消费后的不变量：融合层不能让 constituent shards 落入不同精度。skip matcher 先把 fused prefix 展开成逻辑 shard prefixes；只要部分 shard 命中、部分未命中就抛错（`vllm/model_executor/layers/quantization/utils/quant_utils.py:635-678`）。名称怎样递归找到 parameter、TP slice 怎样 copy 属于页面 `13`；但“融合后的一个 Kernel 调用必须看到一致 quant scheme”属于本页。
+## 2. Scale 怎样决定真实的量化误差与 TP 一致性
 
-KV scale 只在这里保留一个窄加载接缝：base config 把 checkpoint 中旧的 fused `kv_scale`、ModelOpt 投影 scale 和若干 Q/K/V 命名统一映射到 attention layer 的 `q_scale/k_scale/v_scale`（`vllm/model_executor/layers/quantization/base_config.py:194-227`）。scale 最终对应哪种 KV dtype/layout、由哪个 attention backend 消费，仍由页面 `12/14` 拥有；量化 config 不应越过这条边界自行选择 attention 实现。
+整数 group scale 的作用是给一组编码共享一个格点间距；FP8 则先用 scale 把数放进浮点编码的动态范围，再舍入到可表示的浮点值，格点间距会随指数变化。不能把 FP8 当成“8 bit 均匀整数”。
 
-## 3. Create / load：先建立正确参数形状，再允许字节进入
+### 2.1 一次真正的 E4M3 数值变换
 
-### 3.1 layer 构造就是 ABI 实例化
+取可精确表示为 BF16 的教学 weight 行 $w=(0.546875,1.09375,2.1875,224)$，使用最大有限值为 448 的 E4M3FN、per-tensor scale：
 
-`LinearBase` 在构造时把 `quant_config + prefix` 解析为一个 `quant_method`；没有 quant config 才使用普通 linear，而已提供 quant config 却无法为 linear 返回 method 会直接失败（`vllm/model_executor/layers/linear.py:242-276`）。具体 linear 随后把全局 input/output、当前 rank 的 partition sizes、parameter dtype 与自己的 weight loader 一起交给 `create_weights()`，forward 只调用已经绑定的方法（`vllm/model_executor/layers/linear.py:327-366`；`vllm/model_executor/layers/linear.py:392-403`）。
+$$
+a=\max_k\lvert w_k\rvert=224,\quad s=a/448=0.5,\quad
+q=\operatorname{FP8}_{\mathrm{E4M3FN}}(\operatorname{clip}(w/s,-448,448)),\quad
+\widehat w=sq.
+$$
 
-以 AutoGPTQ 为承重例而不是方法目录：它先用全局/局部 shape、quant type、activation dtype、group size、zero-point 与 `g_idx` 选择 Kernel，再创建 packed `qweight`、`scales`、`qzeros` 与 activation-order 参数；scale 在 row-parallel 下是复制还是分片也在这里决定（`vllm/model_executor/layers/quantization/auto_gptq.py:326-378`；`vllm/model_executor/layers/quantization/auto_gptq.py:380-445`）。所以 checkpoint tensor 能否被 copy 的前提，是参数容器已经编码了最终逻辑，而不是 loader 看到 tensor 后临时猜 pack axis。
+| 步骤 | 第 0 列 | 第 1 列 | 第 2 列 | 第 3 列 |
+|---|---:|---:|---:|---:|
+| BF16 原值 $w$ | 0.546875 | 1.09375 | 2.1875 | 224 |
+| 缩放后 $w/s$ | 1.09375 | 2.1875 | 4.375 | 448 |
+| E4M3FN 最近可表示值 $q$ | 1.125 | 2.25 | 4.5 | 448 |
+| 编码 byte（十六进制） | 39 | 41 | 49 | 7e |
+| 反量化 $\widehat w$ | 0.5625 | 1.125 | 2.25 | 224 |
 
-通用加载边界只有一跳：default loader 把 tensor stream 交给 `model.load_weights()`；量化页不重复解释文件枚举、名称映射和 TP slice（`vllm/model_executor/model_loader/default_loader.py:414-445`）。本页关心的是 stream 写入量化方法创建的容器之后，容器仍只是“加载表示”，未必是“可执行表示”。
+1 附近的步长是 $1/8$，2 附近变为 $1/4$，4 附近变为 $1/2$；这解释了三次舍入。取 $x=(1,1,1,0)$，高精度参考是 `3.828125`，量化权重参考是 `3.9375`。若 activation 也动态 FP8 量化，本例 0/1 可在相应 scale 下精确恢复，因此仍能隔离观察权重量化误差；实际 GEMM 的累加与输出舍入另外受 Kernel 影响。
 
-### 3.2 预量化与在线量化共享 ABI，但支付不同加载成本
+当前在线 per-tensor 实现先用 `aminmax` 避免构造全尺寸 `abs()`，在 FP32 中计算 scale，调用 `scaled_fp8_quant`，把 weight 转置并替换为新 Parameter，再交给 FP8 Kernel 后处理。`_fp8_max` 故意创建 0-d tensor，使求 scale 保留真正除法而不被 Python 常数改写成乘倒数。上例 scale 恰好为 0.5，两种运算相同；一般中点附近不一定相同。静态 FP8 CUDA Kernel 实际读取 scale 的倒数后相乘，并饱和转换为 E4M3；本例选 0.5 使表内理想除法与该实现一致。E4M3FNUZ 平台的本地 helper 使用 224 而非 448，本表只适用于声明的 FN 格式。
 
-| 路径 | 构造时的参数 | checkpoint 写入 | post-load 的职责 | 成本边界 |
-|---|---|---|---|---|
-| 预量化 | 直接建立 packed weight、scale、zero/metadata | 写入 checkpoint 已有的量化状态 | 标准化 bit order/axis，再做 Kernel repack | 文件更小，但 checkpoint format 必须精确匹配 |
-| 在线量化 | 用 meta 参数描述 FP16/BF16 原始 weight | 按 layer materialize 原始 weight | 计算全局一致 scale、量化并替换参数、再做 Kernel repack | 不需预量化 checkpoint，但加载期有量化计算与瞬时双表示 |
+per-channel 路径更明确用 `weight / scale`，避免静态量化乘倒数在中点另一侧舍入；其 scale 下限为 $1/(F_{\max}\cdot512)$，零 channel 因而不会除以零。临时 FP32 除法按行分块，目标是 $16\cdot1024^2$ 个元素、约 64 MiB；至少保留一整行，所以特别宽的一行可能超过目标。这里不把这个限制误称整个加载的显存上限。per-tensor 的全零输入没有这一 channel clamp，不能把零 channel 保证泛化到所有 scheme。
 
-在线 FP8 method 用 `uses_meta_device=True`，构造时只创建 meta weight 并注册 layerwise processing；真正 weight 在加载到该 layer 时 materialize（`vllm/model_executor/layers/quantization/online/fp8.py:114-155`）。per-tensor 实现随后从 weight 的 amax 计算 scale，必要时跨 TP 做 MAX all-reduce 以复现未分片 scale，生成 FP8 weight 并替换 weight/scale 参数（`vllm/model_executor/layers/quantization/utils/quant_utils.py:35-54`；`vllm/model_executor/layers/quantization/online/fp8.py:158-225`）。
+源码收束：`vllm/model_executor/layers/quantization/online/fp8.py::_fp8_scale`、`_fp8_channel_scale`、`_fp8_quant_per_channel`、`Fp8PerTensorOnlineLinearMethod.process_weights_after_loading`、`Fp8PtpcOnlineLinearMethod.process_weights_after_loading`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::weight_amax`、`get_fp8_min_max`；`csrc/libtorch_stable/quantization/w8a8/fp8/common.cu::vllm::scaled_fp8_quant_kernel_strided_group_shape`、`csrc/quantization/w8a8/fp8/common.cuh::vllm::scaled_fp8_conversion`。
 
-这里 scale 不是附属 metadata，而是分布式数值状态。测试把同一全局 weight 沿 output/input 两个方向切 shard，要求在线量化后的局部 FP8 值与全局结果对应 slice 完全相等，且该共享的 scale 完全一致（`tests/quantization/test_online.py:301-368`）。**分析推断**：若省掉需要的 MAX collective，各 rank 仍会得到 shape 正确的 tensor，却使用不同量化格点；这类错误比 shape mismatch 更危险，因为它未必崩溃。
+### 2.2 分片必须沿 scale 的归约维度判断
 
-## 4. Post-load：把“已写入”提交为“可执行”
+把同一行沿 K 切给两个 TP rank：rank 0 拿前两项，局部 amax 是 1.09375；rank 1 拿后两项，amax 是 224。若两边各算 scale，rank 0 会用 $1.09375/448$，最大值编码成 448；全局量化时这个值应编码成 2.25。shape 没错，量化网格已经换了。
 
-### 4.1 正常 loader 固定顺序，内部转换由 method 拥有
+<!-- Figure 2 spec: 两个 rank 输入各自半行，标出 amax1.09375/224；箭头汇合 MAX 得224，再广播同一scale.5至两个量化框，产出q[1.125,2.25]及[4.5,448]；最后拼接与whole-weight结果相等。aux橙色支线从rank0的局部amax到本地scale1.09375/448，标出错误比较目标qmax448而非2.25。非通信几何/比例时间图。 -->
+```mermaid
+flowchart TB
+  R0["rank 0 · K前半<br/>w = 0.546875, 1.09375<br/>amax = 1.09375"] --> M["TP MAX = 224<br/>共享 scale = 224 / 448 = 0.5"]
+  R1["rank 1 · K后半<br/>w = 2.1875, 224<br/>amax = 224"] --> M
+  M --> Q0["rank 0 FP8<br/>q = 1.125, 2.25"]
+  M --> Q1["rank 1 FP8<br/>q = 4.5, 448"]
+  Q0 --> O["拼接编码与scale<br/>等于未分片量化的对应slice"]
+  Q1 --> O
+  R0 -. 若只用局部amax .-> BAD["scale = 1.09375 / 448<br/>该rank最大值编码448<br/>不再等于全局量化的2.25"]
+  classDef acc1 fill:#eaf2ff,stroke:#2563eb,color:#172033;
+  classDef acc2 fill:#fff4e8,stroke:#d97706,color:#172033;
+  class M,Q0,Q1,O acc1;
+  class BAD acc2;
+```
 
-`BaseModelLoader.load_model()` 的正常顺序是 initialize → 通用 load → 在线 layerwise finalize（若需要）→ 全模型 quant post-load → `eval()`；源码注释明确把最后两步称为把 weight 处理成 Kernel format（`vllm/model_executor/model_loader/base_loader.py:42-82`）。这是 loader 在返回模型前提供的顺序，不是基类在 `apply()` 中执行的统一 guard：无需转换的 method 可以沿用默认 no-op，需要转换的 method 则依赖这条正常加载路径提交 Kernel 表示（`vllm/model_executor/layers/quantization/base_config.py:30-72`）。统一遍历对每个 `QuantizeMethodBase` 在目标设备上下文中调用 post-load；若转换替换了 Parameter，还会重新对齐 layer 的 TP rank/size（`vllm/model_executor/model_loader/utils.py:97-123`）。
+`amax_for_tp_weight_quant` 只在权重沿 amax **归约的维度**分片时做 MAX collective。权重在 online loader 中用 `[N,K]` 表示：per-tensor 同时归约 N/K，因此 row/column parallel 都需要；per-output-channel 只归约 K，因此 row parallel 需要，column parallel 已持有完整 channel，不需 collective；replicated layer 也无需。测试用 MAX 替身固定未分片 amax，要求局部 FP8 值精确等于全局 slice，channel scale 在 N 分片时也取对应 slice。
 
-CPU offload 不改变这个合同：post-load 会暂时把该 module 的 CPU 参数移到 target device，转换后再恢复原设备（`vllm/model_executor/model_loader/utils.py:154-189`）。它解决 GPU-only repack 无法处理 CPU tensor 的正确性问题，却会在加载期暂时占用设备内存；offload 不能被理解成 post-load 零显存成本。
+MoE 不能直接套“所有 TP group 都 MAX”：`amax_for_moe_weight_quant` 对 `moe_tp_size>1` 使用 EP group 的设备组，覆盖被 DP×PCP×TP 展平的专家内分片；启用 EP、每 rank 拥有完整专家时 `moe_tp_size=1`，不做这次归约。per-block 在线 FP8 使用 128×128 weight block 与对应 activation group，局部块的对齐及 Kernel 支持另行检查，不等于每块都执行 per-tensor 全局 MAX。
 
-AWQ 展示了为什么“checkpoint 已经量化”仍需要 post-load：checkpoint 沿 output dimension pack 且 bit order 非标准；method 先转成 GPTQ-like 的 input-packed 标准表示，再交给已选择的 Kernel 做自己的处理（`vllm/model_executor/layers/quantization/auto_awq.py:451-511`）。AutoGPTQ 的 method 则把 post-load 与 apply 都委托给同一个 Kernel 实例，确保产生布局的对象也是消费布局的对象（`vllm/model_executor/layers/quantization/auto_gptq.py:442-464`）。
+源码收束：`vllm/model_executor/layers/quantization/online/fp8.py::_is_tp_sharded`、`Fp8PerBlockOnlineLinearMethod`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::amax_for_tp_weight_quant`、`amax_for_moe_weight_quant`；`tests/quantization/test_online.py::test_online_linear_tp_weight_quant_matches_unsharded`、`test_is_tp_sharded_false_when_scale_is_already_global`、`test_online_moe_tp_weight_quant_matches_ep`。
 
-### 4.2 在线量化为什么按 layer 提交
+## 3. 配置如何决定这一层到底解释哪种数
 
-以下是从 meta/layerwise 设计重建的权衡（**分析推断**）：量化整个 BF16 模型后再释放原权重会把两份全模型表示同时留在峰值；在线 method 因而在 meta graph 上按 layer materialize、load、quantize/repack，再释放中间状态。基类把 `uses_meta_device` 的明确目的写成降低加载峰值（`vllm/model_executor/layers/quantization/base_config.py:23-28`）；回归测试的容量边界也承认单层转换期间 BF16 与 FP8 会短暂同时存活（`tests/quantization/test_fp8.py:236-250`）。这是一种把峰值从“全模型双份”压缩到“局部双份”的时间/内存交换，不是免费转换。
+### 3.1 checkpoint 身份、在线目标与 activation 选择
 
-提交条件必须覆盖 layer 的全部可加载状态，而不只是 weight。reload 测试固定了一个曾经的失败边界：在线量化 layer 的 bias 比 meta weight 晚注册、晚加载时，不得提前 post-process；只有 bias 到达后才允许转换，否则会把尾随 bias 写进已经重排的 layer（`tests/model_executor/model_loader/test_reload.py:683-732`）。因此本阶段的不变量是：**所有参与数值或 Kernel 参数布局的输入都已到达，且 post-load 只把完整加载表示提交一次。**
+预量化路径先从 HF quant config 读取 `quant_method`，按有序 override 探测兼容 parser/实现，之后检查用户名字是否与解析结果一致。GPTQ override 只接受 checkpoint 声明 `gptq`，且用户为未指定或 `gptq/gptq_marlin/auto_gptq/marlin` 兼容集合；不匹配不能强行用另一种字节布局解释。注册表校验、平台非空支持集合、config 最低 capability 与模型 activation dtype 是后续门槛。平台集合为空仅代表这道过滤不限制，不代表每个 Kernel 可用；deprecated 方法还受显式允许开关限制。
 
-## 5. Runtime dispatch / fallback：只能换实现，不能换语义
+在线 shorthand 描述目标 `QuantKey`，例如 `fp8_per_tensor` 展开 linear/MoE 的 weight spec；显式 `quantization_config` 提供的非空 layer-kind spec 覆盖 shorthand。`targets` 是另一种精确/regex/fnmatch layer 选择方式，与 `linear/moe` 字段互斥，未匹配层保持未量化。online method 当前自选 activation 格式，显式 activation override 尚未接通时会拒绝；base checkpoint method 可能消费 activation-only override，不能将两者混同。`mxfp4/mxfp8` 名字有 checkpoint/online 歧义，loader 优先探查 checkpoint metadata，缺失时才解析为在线 shorthand。
 
-### 5.1 dispatch 选择的是“能实现该 ABI 的最优候选”
+> [!contradiction] 新基线纠正
+> 旧稿说预量化名与在线配置混用一律拒绝，当前已不成立。`get_quant_config` 保留 checkpoint config 为主配置，再附加 `online_quantization_config`；逐层解析结果如下：
 
-混合精度 linear 的候选按平台和预期性能排序；CUDA、ROCm、XPU、CPU 各有不同列表（`vllm/model_executor/kernels/linear/__init__.py:478-506`）。选择器依次应用 backend filter、禁用列表、compute capability 与 `can_implement(config)`，第一个全部通过的候选获选；全部失败时汇总原因并抛错（`vllm/model_executor/kernels/linear/__init__.py:780-842`）。scaled-mm 路径采用相同结构，并把平台支持与 shape/config 实现能力分开检查（`vllm/model_executor/kernels/linear/__init__.py:582-668`）。
+| checkpoint 给该层的方法 | online 是否选中该层 | 实际结果 |
+|---|---|---|
+| 已量化 | 否（包括 online ignore） | 保留 checkpoint method；ignore 不会把原量化撤销 |
+| 已量化 | 是 | 报 pre-quantized layer 冲突，不重复量化 |
+| 普通 linear/MoE 或无方法 | 是 | 使用在线 method，加载浮点 checkpoint 后转换 |
+| 普通方法或无方法 | 否 | 保留 base 返回值；Linear 若仍为 None 会构造失败 |
+| embedding / ParallelLMHead 等 overlay 范围外层 | 任意 | 保留 checkpoint method，online overlay 只覆盖 LinearBase/RoutedExperts |
 
-`can_implement` 的粒度证明“同位宽”远远不够。Marlin 同时检查 CUDA、quant type、group size、activation order、TP-local K 是否被 group size 整除，并只对可修复的 tile misalignment 允许 padding（`vllm/model_executor/kernels/linear/mixed_precision/marlin.py:35-84`）；Exllama 还要求 activation 为 FP16、output 能按 pack factor 对齐，并拒绝 row-parallel 下的 activation reordering（`vllm/model_executor/kernels/linear/mixed_precision/exllama.py:18-75`）。这些是正确性谓词；候选顺序才是性能策略。
+例如仅 MoE 预量化的 checkpoint 可以在线量化留下的普通 linear；把全模型 linear 目标施加到已量化 linear 则报错。这是按层组合，不是自动跳过所有冲突。`targets` 不能与 `ignore` 同时匹配同层；fused shards 必须全部恰好匹配一个 target 且得到相同方案，部分命中、多重命中和方案不一致都会失败。
 
-### 5.2 fallback 有四种语义，不能都叫“降级”
+源码收束：`vllm/config/model.py::ModelConfig._verify_quantization`；`vllm/config/vllm.py::VllmConfig._get_quantization_config`；`vllm/platforms/interface.py::Platform.verify_quantization`；`vllm/config/quantization.py::resolve_quantization_config`、`QuantizationConfigArgs._validate_targets_exclusivity`；`vllm/model_executor/model_loader/weight_utils.py::get_quant_config`；`vllm/model_executor/layers/quantization/base_config.py::resolve_quant_method`；`vllm/model_executor/layers/quantization/online/base.py::OnlineQuantizationConfig._get_method_cls`、`_find_matching_targets`、`OnlineQuantizationConfig._resolve_targets_quant_method_metadata`。
 
-| 情况 | 行为 | 是否保持原量化数值合同 | 主要代价 / 证据 |
-|---|---|---|---|
-| 配置明确 ignore 某层 | 返回 unquantized method | 这是 config 声明的混合精度合同，不是事故 fallback | 多占权重内存；在线 config 对 linear/MoE 都显式这样处理（`vllm/model_executor/layers/quantization/online/base.py:157-181`） |
-| 首选优化实现不兼容该 layer | 选择同格式的次级 method/kernel | 必须保持 weight/scale/zero 语义 | AutoAWQ 在 Marlin shape 不兼容时回到未优化 AWQ；MoE 回到 WNA16（`vllm/model_executor/layers/quantization/auto_awq.py:285-357`） |
-| 候选 Kernel 不兼容 | 尝试优先级列表中的下一项 | 保持同一个 `MPLinearLayerConfig` | 可能降低吞吐；ROCm 测试固定 RDNA3 → Hybrid → Triton 的选择次序（`tests/kernels/quantization/test_w4a16_kernel_selection.py:24-71`） |
-| 所有 Kernel 都不兼容 | 构造阶段硬失败 | 不允许悄悄换 scale、dtype 或 pack | 选择器报告逐候选失败原因（`vllm/model_executor/kernels/linear/__init__.py:813-842`） |
+### 3.2 名称映射之后，融合投影必须能用同一方案执行
 
-还有一种 correctness-first 的执行 fallback：启用 batch-invariant 模式时，在线 per-tensor FP8 若不是已知可保持该合同的 Cutlass 路径，会把 FP8 weight 按 scale 还原到 BF16 再做普通 linear（`vllm/model_executor/layers/quantization/online/fp8.py:227-254`）。它保留的是确定性/数值执行合同，代价是失去低精度 GEMM 的带宽与 Tensor Core 收益；这里只记录派发接缝，batch invariance 的完整定义仍由训练可靠性页面拥有。
+模型构造前，loader 把 HF→vLLM rename mapper 与 `packed_modules_mapping` 传给 config；`SupportsQuant.__new__` 也建立这个接缝。Llama 的 `qkv_proj` 对应 q/k/v 三个逻辑投影，`gate_up_proj` 对应 gate/up 两个。旧 checkpoint 可以分别命名它们，但一次融合 Kernel 不能只有 q 使用量化而 k/v 使用另一个不兼容方案。
 
-> [!note] 分析推断
-> 安全 fallback 的判据不是“结果看起来合理”，而是候选消费与当前 layer 完全相同的 pack、scale、zero-point、activation 与 TP-local shape。若 fallback 需要重新解释其中任一项，它就不是 runtime fallback，而是一条必须在 post-load 之前显式建模的新 ABI。
+skip matcher 会展开 fused prefix 检查 constituent shards；部分 skip 直接报错。当前还先检查 checkpoint 是否直接列了 fused 名字，如 `self_attn.qkv_proj`，若直接匹配就整体 skip，避免明明配置了 fused 名却因展开而漏过。online targets 的一致性是同一原则的另一实现，并非所有 config 都共享一个 matcher。
 
-### 5.3 一条 AutoGPTQ Linear 从配置到执行的真实调用链
+KV scale 保留窄边界：base mapper 把旧 `.kv_scale` 映到 `.attn.k_scale`，ModelOpt 的 k/v projection scale、fused QKV 与常规 q/k/v scale/zero-point 名也映到 attention 参数。旧 fused 名只直接映 k，不能说这一行同时创造独立 k/v scale；backend 的最终解释接 14。通用名称遍历、packed shard copy 和 TP slice 接 13。
 
-前面的四阶段不是概念分类，而是同一个 layer object 的生命周期。AutoGPTQ Linear 能把边界展示得最完整：
+源码收束：`vllm/model_executor/model_loader/utils.py::configure_quant_config`；`vllm/model_executor/models/interfaces.py::SupportsQuant._maybe_apply_model_mapping`；`vllm/model_executor/models/llama.py::LlamaForCausalLM.packed_modules_mapping`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::is_layer_skipped`；`vllm/model_executor/layers/quantization/base_config.py::QuantizationConfig.get_cache_scale_mapper`。
 
-1. `ModelConfig._verify_quantization()` 先从 checkpoint config 读取 `quant_method`，按有序 override 识别 AutoGPTQ，再校验用户参数、注册表与平台支持（`vllm/config/model.py:1245-1332`）。这里失败意味着格式身份尚未成立，后续不能靠某个 Kernel 猜测修复。
-2. 模型构造到某个 `LinearBase` 时，`quant_config.get_quant_method(layer, prefix)` 把全局配置解析成该 layer 的 `AutoGPTQLinearMethod`；不被量化规则覆盖的层可返回另一明确 method，但 linear 不能留下“以后再决定”的空洞状态（`vllm/model_executor/layers/linear.py:242-276`；`vllm/model_executor/layers/quantization/auto_gptq.py:240-270`）。`prefix` 之所以参与，是因为同一模型内不同 layer 可能有不同 ignore/override 结果。
-3. layer 构造立刻调用 `create_weights()`。method 先用 full/local shape、weight/activation type、group size、zero-point 与 activation-order 形成 `MPLinearLayerConfig`，再让 `choose_mp_linear_kernel()` 过滤平台、禁用项、compute capability 与 `can_implement()`；没有兼容候选就当场失败（`vllm/model_executor/layers/quantization/auto_gptq.py:326-355`；`vllm/model_executor/kernels/linear/__init__.py:780-842`）。选择必须发生在分配前，因为候选共同消费同一逻辑格式，却可能要求确定的 local shape 与 pack 合同。
-4. 同一个 `create_weights()` 再按 TP 分片语义注册 `qweight`、`g_idx`、`scales`、`qzeros`，把 pack factor、input/output dimension 和 loader 写进 Parameter，并以这些参数名实例化选定 Kernel（`vllm/model_executor/layers/quantization/auto_gptq.py:360-453`）。checkpoint 字节随后由 loader 写入这些**已经定形**的容器，而不是先加载匿名 tensor 再让 runtime 猜布局；通用 loader 的顺序是 initialize → load weights → post-load（`vllm/model_executor/model_loader/base_loader.py:42-82`）。
-5. 全部权重到达后，`process_weights_after_loading()` 遍历 module，把该 layer 交还给 quant method；AutoGPTQ 再委托已选 Kernel 做 repack/设备表示转换（`vllm/model_executor/model_loader/utils.py:97-123`；`vllm/model_executor/layers/quantization/auto_gptq.py:455-456`）。这是 checkpoint 表示变成 executable 表示的提交点，不能与 weight copy 并发穿插。
-6. 推理时 `Linear.forward()` 只处理 bias/返回约定，然后调用 `quant_method.apply()`；AutoGPTQ method 不再选择格式或 Kernel，而是直接执行 `kernel.apply_weights(layer, x, bias)`（`vllm/model_executor/layers/linear.py:392-403`；`vllm/model_executor/layers/quantization/auto_gptq.py:458-464`）。首个 token 因而只消费已经提交的 ABI，不能重新解释 pack、scale 或 TP-local shape。
+## 4. 一个 AutoGPTQ layer 从字节容器变成可执行参数
 
-因此这条链只有两个合法结果：构造/post-load 阶段形成一个完整、可执行的 layer ABI，或在进入请求执行前清楚失败。把 Kernel 选择推迟到首个 token 看似灵活，实际上会让参数形状、repack 和显存峰值进入 latency 热路径，也无法保证已经写入的 checkpoint 字节适合临时选中的实现。
+`LinearBase` 在构造时解析并绑定 `quant_method`；具体 Linear 立即用全局 shape、TP-local shape、dtype、output partition sizes 与自己的 loader 调 `create_weights()`。推理 `forward` 只处理 bias/返回约定后调用绑定 method；`skip_bias_add` 会把 bias 留给调用方。既有 quant config 却无法返回 Linear method 会失败，不会留待首 token 猜格式。
 
-## 6. 正确性、性能与失败边界必须一起验收
+### 4.1 先选逻辑格式和兼容 Kernel，再分配参数
 
-| 压力 | 正确性不变量 | 为它支付的成本 | 失败边界 |
-|---|---|---|---|
-| fused QKV / gate-up | constituent shards 的 quant/ignore scheme 一致 | config 必须消费模型 mapping | 部分 shard 命中直接报错（`vllm/model_executor/layers/quantization/utils/quant_utils.py:639-668`） |
-| TP scale | 需要全局统计的 scale 与未分片量化等价 | 某些 scheme 增加 MAX collective | 测试要求 FP8 值和 scale 精确相等（`tests/quantization/test_online.py:339-368`） |
-| checkpoint pack ≠ Kernel pack | 对需要转换的 method，正常 loader 返回前提交 Kernel 表示 | 加载时 repack、padding、临时 buffer | AWQ 明确先转标准格式再交给 Kernel；基类不提供统一 guard（`vllm/model_executor/model_loader/base_loader.py:75-82`；`vllm/model_executor/layers/quantization/auto_awq.py:503-519`；`vllm/model_executor/layers/quantization/base_config.py:30-72`） |
-| post-load 替换 Parameter | 新参数继承 layer 的 TP rank/size | 多一次 metadata reconciliation | loader 在转换后显式重写 TP state（`vllm/model_executor/layers/linear.py:291-304`；`vllm/model_executor/model_loader/utils.py:113-120`） |
-| 在线量化峰值 | 同一 layer 的原权重全部到达后再量化 | 单层 BF16+低精度短时共存、加载计算 | late bias 回归测试阻止提前提交（`tests/model_executor/model_loader/test_reload.py:718-732`） |
-| Kernel specialization | capability 与 shape 谓词全部成立 | 更多 provider、测试与 fallback 维护 | 没有兼容候选就硬失败，而不是静默换格式（`vllm/model_executor/kernels/linear/__init__.py:780-842`） |
+AutoGPTQ 用 `MPLinearLayerConfig` 保存 full/local `[K,N]`、weight/activation type、group size、zero-point 与 `g_idx`；构造候选前还有 quant type/group 的支持校验。以无 activation-order、4 bit、group size 128、全局 `[1024,512]`、row TP=2 的实际形状例子为例，每 rank 的 `[K_r,N_r]=[512,512]`：
 
-推荐按 ABI 边界诊断，而不是按方法名排查：
+| 参数 | 加载形状 | 语义 |
+|---|---|---|
+| `qweight` | `[64,512]` int32 | $512/8$ 个 input-packed word，`input_dim=0,output_dim=1,packed_dim=0` |
+| `scales` | `[4,512]` activation dtype | 本 rank 四组 K，每个 output channel 一份 scale |
+| `qzeros` | `[4,64]` int32 | 加载容器存在；当前对称 GPTQ Kernel 配置不把它当可变 zero-point |
+| `g_idx` | `[512]` int32 | 容器先建立；`desc_act=False` 时具体 Kernel 可替换为空 metadata |
 
-1. **Configure**：核对 checkpoint `quant_method`、用户 override、在线 config 与最终 config class；先关闭身份冲突。
-2. **Create/load**：检查目标 layer 的实际 `quant_method`、packed constituent 一致性、TP-local weight/scale/zero shape；“文件读到了”不代表参数 ABI 正确。
-3. **Post-load**：确认在线量化或 repack 已完成、替换参数的 TP metadata 已恢复、无 meta/中间表示进入执行。
-4. **Dispatch**：记录实际 Kernel 与被拒候选原因；分开验证 correctness fallback 和性能 fallback。
-5. **数值与性能**：对固定输入比较高精度基线或未分片基线，再分别测 prefill/decode；不要用“模型能生成文本”替代 scale/pack 正确性。
+启用 `desc_act` 后，weight 的 K 顺序与 group 对应不能只用局部整除还原；scale 会复制完整 global group 表，即本例 `[8,512]`，`g_idx` 指明每个输入属于哪组。group size=-1 表示每 output channel 覆盖完整 K，row parallel 也需复制该 scale；一般无 act-order 的 groupwise row partition 才沿 group 维分片。`desc_act=True` 且 group=-1 没有重排分组收益，config 会规范化为 False。这里 scale 的复制不同于 §2 现场计算 amax 的 MAX collective：预量化 scale 已由 checkpoint 给出。
 
-本页刻意不提供“方法支持列表”：注册表本身已经包含 checkpoint methods、在线 shorthand 与 deprecated methods，且它们会随平台和 provider 变化（`vllm/model_executor/layers/quantization/__init__.py:12-52`；`vllm/model_executor/layers/quantization/__init__.py:108-180`）。稳定的知识不是名字数量，而是每个新增格式都必须穿过同一组 ABI 提交点和兼容谓词。
+方法在分配前让 `choose_mp_linear_kernel` 筛选兼容候选，然后创建上述 Parameter 与选定 Kernel 实例；Parameter 的 input/output/packed 维度、pack factor 与 loader 使 checkpoint copy 有明确目标。流式文件枚举与名字分片归 13，本页不把“copy 成功”当成已经可执行。
+
+源码收束：`vllm/model_executor/layers/linear.py::LinearBase.__init__`、`ReplicatedLinear.__init__`、`ReplicatedLinear.forward`；`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQLinearMethod.create_weights`、`AutoGPTQConfig.__init__`；`vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py::MPLinearLayerConfig`；`vllm/model_executor/layers/quantization/utils/marlin_utils.py::marlin_repeat_scales_on_all_ranks`。
+
+### 4.2 Post-load 做哪几种真实变换
+
+正常 loader 顺序是 initialize → `model.load_weights` → 在线 layerwise finalize（若有）→ 全模型 post-load → eval 返回。AutoGPTQ 的 post-load 与 apply 都委托给创建时选定的同一个 Kernel；生产设备布局的对象也消费该布局。
+
+若选择 Marlin，过程不是把 qweight 再 cast 一遍：它先处理 activation 格式所需变换，建立或复用 workspace；有 `g_idx` 时排序 group index 并存 permutation，无该需求时创建空 metadata；标准 packed weight 按需要 padding 后交给 `gptq_marlin_repack`，scale 经过 padding 与 permutation，显式 zero-point 也转换成 Kernel 布局，bias 可能一并排列。正常 group scale 的 permutation 由 `i+8*j` 的 8×8 顺序生成；channelwise/8 bit activation 使用另一组 32 项排列。此处只解释数据为何一起变换，完整 warp/tile 布局交 24。
+
+例如固定偏移 INT4 的 Exllama 后处理需要显式构造 GPTQv1 zero tensor：存的是 bias−1=7，因为该 Kernel 的 v1 解释在推理时再加 1；直接写 8 会再错一格。Exllama 还将 `g_idx` 转成 permutation、shuffle packed weight，并将 scale 转成 activation dtype。它与 Marlin 可表示同一逻辑权重，但 executable bytes 并不相同。
+
+全模型 post-load 在目标设备上下文运行：CPU offload 参数临时移到设备，处理后恢复原有 CPU 参数及被替换的 UVA offload 表示；新加参数不是一概移回 CPU。若 Parameter 被替换，还要用 layer 的 `tp_rank/tp_size` 再校正 metadata，特别是 `disable_tp` 的 replicated layer，不能留着全局 rank 供下次 reload 错切片。该转换需要加载期设备空间，offload 不等于零显存 repack。
+
+`QuantizeMethodBase.process_weights_after_loading` 默认 no-op，`apply` 只约定 create 已发生，没有统一“已 post-load”运行时 guard。新基线的 `weights_already_processed` 也**仍遍历并调用 hook**：方法必须声明 `supports_pre_processed_weights`，在此模式下自行跳过 tensor transform、完成所需运行状态；未声明直接报错。不是全局跳过初始化，更不是 checkpoint 参数完整性证明。
+
+源码收束：`vllm/model_executor/model_loader/base_loader.py::BaseModelLoader.load_model`；`vllm/model_executor/model_loader/utils.py::process_weights_after_loading`、`device_loading_context`；`vllm/model_executor/layers/linear.py::LinearBase.update_param_tp_status`；`vllm/model_executor/layers/quantization/base_config.py::QuantizeMethodBase`；`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQLinearMethod.process_weights_after_loading`、`AutoGPTQLinearMethod.apply`；`vllm/model_executor/kernels/linear/mixed_precision/marlin.py::MarlinLinearKernel.process_weights_after_loading`、`MarlinLinearKernel.apply_weights`；`vllm/model_executor/kernels/linear/mixed_precision/exllama.py::ExllamaLinearKernel.process_weights_after_loading`。
+
+## 5. 在线量化为何要等晚到的 bias
+
+在线 linear 的 `uses_meta_device=True`，create 阶段用 meta weight 描述 `[N_r,K_r]`，并包装 layer 参数的 loader。加载不是“先全模型 BF16，再全模型 FP8”：同层输入到齐后才 materialize → 回放 buffered loads → quantize/repack → 替换参数；reload 还将处理结果 copy 回原 Kernel storage，保持 CUDA Graph 引用。减少的是全模型双表示峰值，代价是局部 BF16 与低精度短时共存、转换计算及 scale collective。
+
+承重回归例子是 weight `[4,2]` 共 8 元素、bias `[4]` 共 4 元素。在线 method 注册 weight 时初始化包装器，但普通 Linear 随后才注册 bias。每次 load 必须刷新该 layer 的总元素数并包装晚注册参数：weight 到达后进度是 8/12，不能按旧 8/8 提前处理；bias 全部写入后才达到 12/12。否则新 bias 会覆盖已按 Kernel 顺序排列的 bias，前向仍能运行却计算错误。
+
+<!-- Figure 3 spec: 创建meta weight8并初始化wrapper，然后late bias4把总数刷新12。weight载入形成buffer8/12，负支线指出按旧8/8会提前permute；bias载入到12/12才materialize/回放原loader/量化repack并设置already-called。正常全模型post-load再到hook而method防重复。独立finalize支线注明padding/未加载/重载旧tensor恢复不是完整性证明；不画成比例时序。 -->
+```mermaid
+flowchart TB
+  C["create meta weight：8元素<br/>随后注册 bias：4元素"] --> W["weight到达<br/>刷新总数12 · buffer 8/12"]
+  W --> B["bias到达 · buffer 12/12"]
+  B --> P["materialize → 回放原loader<br/>quantize / repack<br/>校正TP metadata"]
+  P --> K["Kernel表示可执行<br/>reload时copy回原storage"]
+  K --> H["全模型post-load仍调用hook<br/>online already-called防重复转换"]
+  W -. 若误用旧总数8 .-> BAD["8/8提前处理<br/>晚到bias覆盖已排列参数"]
+  F["最终 finalize<br/>padding延迟层 / reload无新权重"] -.-> E["处理延迟层或恢复旧Kernel tensors<br/>不能据此证明所有checkpoint输入齐全"]
+  classDef acc1 fill:#eaf2ff,stroke:#2563eb,color:#172033;
+  classDef acc2 fill:#fff4e8,stroke:#d97706,color:#172033;
+  class B,P,K acc1;
+  class BAD,E acc2;
+```
+
+这个按元素计数的触发器仍有边界。源码承认重复小 metadata、padding 和加载顺序的限制；finalize 会处理部分元素未加载的 padding 层，首次未收到权重的层也可进入处理，reload 未收到新权重时可恢复旧 Kernel tensors。因此“8/12 必须等 bias”是具体修复，不应提升成通用“所有必需状态已验证齐全且 hook 全局恰调用一次”。online method 用 already-called flag 防重复数值转换，reload 会先清标志；全模型遍历还会调用 hook。
+
+多个 layer 的 checkpoint tensor 交错到达，也可能让多个 buffered layer 同时存活，源码对此提示额外内存；峰值并非永远严格一层。`DefaultModelLoader.track_weights_loading` 默认只对具备 loaded-name tracking 的非量化模型开启，且其 `has_postprocess_quant` 判断连继承 no-op hook 的普通 linear 参数都可能豁免。它不能证明每个量化字节、bias 和 scale 都真的写到；数值/shape/load 测试仍是不同证据。
+
+源码收束：`vllm/model_executor/layers/quantization/online/fp8.py::OnlineLinearBase.create_weights`；`vllm/model_executor/model_loader/reload/layerwise.py::make_online_process_loader`、`_layerwise_process`、`finalize_layerwise_processing`；`tests/model_executor/model_loader/test_reload.py::test_online_processing_waits_for_late_registered_bias`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader.track_weights_loading`。
+
+## 6. Dispatch 与 fallback 到底允许换什么
+
+### 6.1 能力过滤决定正确性，候选顺序决定优先级
+
+选择器在构造/准备阶段按平台候选表运行，应用 `--linear-backend` 过滤、禁用列表、compute capability 和 `can_implement(config)`，首个兼容者获选；所有候选失败则收集原因报错。scaled-mm 同样区分平台支持与 config/shape 支持，forced candidate 不兼容时可记录原因再回候选列表。所谓 runtime dispatch 是执行时使用已选实现，不是每个 token 重新猜 checkpoint 格式。
+
+以下两个具体谓词说明 GPU 名字不足以判定：Marlin 的 group 128、全局 K=384、local K=192 会失败，因为一组跨了 TP 分界，padding 不能修复原 group 语义；没有 act-order 的单纯 tile 不对齐则可以在 prepare 时补零。若有 act-order，K 绑定全局 group 排列，仍走严格 shape 检查，不允许这类 tile padding。Exllama 则要求 FP16 activation、N 能被 pack factor 整除、正 group size 整除全局 K，并拒绝 input 被 TP 分片时的 act reorder；BF16 layer 即使 shape 对齐也会被拒绝。
+
+<!-- Figure 4 spec: 输入同一逻辑config；按平台优先级依次过backend/disabled/capability，再过numerical+shape谓词，列出Marlin 192%128不为0不可pad与Exllama BF16拒绝；失败回下一个候选，成功创建参数/postload生成该kernel布局/apply；穷尽硬失败。旁路标明PTPC需要dynamic per-token activation，W8A16 Marlin不是合法替代。 -->
+```mermaid
+flowchart TB
+  I["固定逻辑格式<br/>weight type / scale / zero / g_idx / local K,N"] --> C["按平台顺序取候选<br/>backend过滤 · disabled · capability"]
+  C --> V{"该候选能实现？"}
+  V -. Marlin分组不整除或Exllama遇到BF16 .-> N["记录失败原因 → 下一候选"]
+  N --> C
+  V -->|通过| P["按该Kernel准备参数<br/>repack weight + scale + bias"]
+  P --> A["apply消费已准备的表示"]
+  N -. 候选耗尽 .-> E["报错并列出原因"]
+  T["FP8 PTPC要求per-token activation量化"] -.-> R["拒绝W8A16 Marlin替代<br/>否则数值方案已被更换"]
+  classDef acc1 fill:#eaf2ff,stroke:#2563eb,color:#172033;
+  classDef acc2 fill:#fff4e8,stroke:#d97706,color:#172033;
+  class I,P,A acc1;
+  class E,R acc2;
+```
+
+混合精度 CUDA 表包含 Cutlass/Machete/AllSpark/Marlin 等有序候选，但不能从 `AutoGPTQLinearMethod` 的名称保证最终一定 Marlin。ROCm 测试固定特定 uint4b8/uint4、group 与架构条件下 RDNA3 → Hybrid → Triton 的选择；XPU/CPU 另有自己的表。AutoAWQ 的“Marlin method”在 CPU/XPU 也可作为标准格式适配器，让 MP selector 选择本地 Kernel，类名同样不是硬件执行证明。
+
+源码收束：`vllm/model_executor/kernels/linear/__init__.py::choose_mp_linear_kernel`、`choose_scaled_mm_linear_kernel`、`is_supported_and_can_implement_kernel`；`vllm/model_executor/kernels/linear/mixed_precision/marlin.py::MarlinLinearKernel.can_implement`；`vllm/model_executor/kernels/linear/mixed_precision/exllama.py::ExllamaLinearKernel.can_implement`；`tests/kernels/quantization/test_w4a16_kernel_selection.py::test_choose_mp_linear_kernel_uint4b8`、`test_choose_mp_linear_kernel_uint4_asymmetric`。
+
+### 6.2 四类退路，以及一次明确放弃低精度 GEMM
+
+| 触发 | 实际处理 | 保持的内容与成本 |
+|---|---|---|
+| config 明确 ignore 某层 | 返回普通 linear/MoE；若仅 online ignore 且 checkpoint 已量化则保留 checkpoint method | 配置声明的混合精度范围；普通权重占更多内存 |
+| 首选 method 不支持 layer | AutoAWQ 回未优化 AWQ，MoE 可回 WNA16 | 仍解释相同 checkpoint 数值；在准备阶段选择相应布局，不把一个 Kernel 的 repack 结果塞给另一个 |
+| 某 Kernel 谓词失败 | 尝试同逻辑 config 的后续候选 | 保持 pack/scale/zero/activation 语义，性能和浮点累加顺序未必相同 |
+| 候选耗尽 | 进入请求前硬失败 | 不静默换 dtype、scale 粒度或 zero-point |
+
+batch-invariant 模式还有有意的执行退路：在线 per-tensor FP8 若是 Cutlass 直接走其受支持路径；否则把已量化 FP8 weight 按 scale 还原到 BF16 再 ordinary linear，per-channel 路径也有对应 dequant 分支。它保留的是**已量化权重**及确定性执行目标，不恢复原 BF16 checkpoint 的精度；每次 apply 的 dequant/临时高精度权重也消耗时间和内存，并失去低精度 GEMM 收益。不能用该例推出所有 fallback 都保持低精度 activation 的完全相同算法。
+
+相反，在线 PTPC 明确要求 per-token activation FP8；构造时若选到 W8A16 的 `MarlinFP8ScaledMMLinearKernel` 会拒绝，因为只量化 weight 会悄悄改变方案。PTPC 的 batch-invariant dequant 是另一条源码明示的执行策略，不能拿它为一般 Kernel 选择放松数值要求。
+
+源码收束：`vllm/model_executor/layers/quantization/auto_awq.py::AutoAWQConfig.get_quant_method`；`vllm/model_executor/layers/quantization/online/base.py::OnlineQuantizationConfig.get_quant_method`；`vllm/model_executor/layers/quantization/online/fp8.py::Fp8PerTensorOnlineLinearMethod.apply`、`Fp8PtpcOnlineLinearMethod.create_weights`、`Fp8PtpcOnlineLinearMethod.apply`。
+
+## 7. 用什么证据判断“数值没换、成本值得”
+
+§1 的 8×8 例子有 64 个 INT4 编码，仅编码占 32 byte，对比 BF16 的 128 byte；但实际常驻还包含 scale、zero/g_idx、workspace、padding，不能把模型内存直接声称减至四分之一。较小 group 能让局部格点更合适，却增加约 $KN/g$ 个 scale；对某种具体 Kernel 的吞吐收益还取决于 shape、activation 量化、解码带宽和 prefill GEMM 计算量。在线 FP8 将 weight 存储从每元素 2 byte 降为 1 byte，但加载期支付前述量化/归约/临时双表示，batch-invariant dequant 又会改变执行成本。
+
+复核应沿可观察变化进行，而不只检查“模型能生成文本”：
+
+1. **格式与层选择**：记录最终 config/method、online target 冲突与 fused shard 规则；注册表、在线 shorthand 和 deprecated 集合是不同入口，不维护脱离基线的名字支持表。
+2. **加载 shape 与 scale**：核对 global/local K,N、pack axis、group/zero/g_idx；TP 数值与未分片基线比较，分开检查 scale 一致和编码一致。
+3. **转换后的表示**：比较标准 pack 与目标 repack 的对应值，确认 bias、Parameter TP metadata 与 reload storage；hook 被调用不等于数据完整性已证明。
+4. **执行与性能**：记录真正选中 Kernel 和拒绝原因；先与量化参考值比较，再与高精度值比较量化误差，分别测 prefill/decode 与加载峰值，区分误差、确定性和速度。
+
+源码 tests 给出的证据也各有边界：Marlin repack 测试将独立参考 permutation 与 GPU repack 比较，覆盖 act-order/bit width/形状；在线 TP tests 比较 FP8 编码与 scale 的精确 slice；late-bias test 只证明处理时已经见到 bias；online composition tests 检查未量化层替换与已量化层冲突。这些源码断言已阅读，本页只在 CPU 用独立数值生成器验证教学例子并检查图文一致，未运行设备 Kernel、模型加载/生成或性能 benchmark。
+
+源码路线：`tests/kernels/quantization/test_marlin_gemm.py::test_gptq_marlin_repack`、`test_awq_marlin_repack`；`tests/quantization/test_online.py::test_online_prequantized_compatibility`、`test_online_target_rejects_prequantized_layer`、`test_online_ignore_keeps_checkpoint_quantization_linear`；其余数值、TP 与加载断言就近列于上文。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 拥有通用 checkpoint tensor、名称映射、packed shard identity 与 TP 参数写入；本页从量化参数容器接手。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 展开 provider、Kernel 内部优化与收益模型；本页只拥有量化兼容谓词和派发结果。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 解释 TP/EP rank 与 collective 所有权；本页只证明 scale/pack 在这些分片下仍等价。
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — KV dtype、scale 与 attention backend 的完整能力协商在此展开。
-- [[02_engineering/07_training_reliability/20_batch_invariance_guide|Batch Invariance]] — 定义量化派发为何有时必须放弃最快 Kernel 来守住批次不变性。
+- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 接模型构造、checkpoint 枚举、名称映射和 TP 参数写入；本页从低精度参数解释接手，不把 loader 的 loaded-name 检查泛化为完整性证明。
+- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 接 provider、tile、Kernel 内部优化；本页解释重排必须保持的数值与选择条件。
+- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 接 TP/EP rank 与 collective；本页解释 scale 为什么只在归约维度被切开时要求共同统计。
+- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接 KV dtype、scale 与 attention backend 的能力协商，量化 config 的名称归一化不替它选择 backend。
+- [[02_engineering/07_training_reliability/20_batch_invariance_guide|Batch Invariance]] — 接确定性执行目标与验证，本页给出为此保留已量化权重、放弃低精度 GEMM 的具体分支。

@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="790" viewBox="0 0 1020 790"><title>MRV1：空洞压紧与全部请求字段同行</title><desc>删除 X 后 B 从 row 2 移到 row 1，再与 A 交换，最终 B row 0、A row 1。图中块号是表内容，不表示复制 KV 缓存。</desc><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#2A313B;font-size:20px}.neutral{fill:#fff;stroke:#C7CCD3}.ghost{fill:#F7F6F3;stroke:#DDD9D2}.acc1{fill:#EAF1FD;stroke:#2563EB}.acc2{fill:#FCF1E6;stroke:#C3651F}.arrow.main{stroke:#2563EB;stroke-width:2.5;fill:none}.cap{font-size:19px;fill:#6B7280}.heading{font-size:24px;font-weight:600}</style><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#2563EB"/></marker></defs><rect width="1020" height="790" fill="white"/>
+<text x="30" y="36" class="heading">紧凑 row 是整组状态的位置；只改请求 id 会错配</text>
+<text x="30" y="80" class="heading">① 原 row [A, X, B]：移除 X，留下内部空洞</text>
+<rect x="30" y="93" width="65" height="36" class="ghost"/>
+<text x="40" y="118" class="">row</text>
+<rect x="95" y="93" width="85" height="36" class="ghost"/>
+<text x="105" y="118" class="">请求</text>
+<rect x="180" y="93" width="220" height="36" class="ghost"/>
+<text x="190" y="118" class="">token 有效前缀</text>
+<rect x="400" y="93" width="130" height="36" class="ghost"/>
+<text x="410" y="118" class="">computed</text>
+<rect x="530" y="93" width="90" height="36" class="ghost"/>
+<text x="540" y="118" class="">温度</text>
+<rect x="620" y="93" width="90" height="36" class="ghost"/>
+<text x="630" y="118" class="">LoRA</text>
+<rect x="710" y="93" width="250" height="36" class="ghost"/>
+<text x="720" y="118" class="">block table</text>
+<rect x="30" y="129" width="65" height="37" class="neutral"/>
+<text x="40" y="155" class="">0</text>
+<rect x="95" y="129" width="85" height="37" class="neutral"/>
+<text x="105" y="155" class="">A</text>
+<rect x="180" y="129" width="220" height="37" class="neutral"/>
+<text x="190" y="155" class="">A0…A19</text>
+<rect x="400" y="129" width="130" height="37" class="neutral"/>
+<text x="410" y="155" class="">18</text>
+<rect x="530" y="129" width="90" height="37" class="neutral"/>
+<text x="540" y="155" class="">0</text>
+<rect x="620" y="129" width="90" height="37" class="neutral"/>
+<text x="630" y="155" class="">0</text>
+<rect x="710" y="129" width="250" height="37" class="neutral"/>
+<text x="720" y="155" class="">[12, 13]</text>
+<rect x="30" y="166" width="65" height="37" class="acc2"/>
+<text x="40" y="192" class="">1</text>
+<rect x="95" y="166" width="85" height="37" class="acc2"/>
+<text x="105" y="192" class="">—</text>
+<rect x="180" y="166" width="220" height="37" class="acc2"/>
+<text x="190" y="192" class="">空洞</text>
+<rect x="400" y="166" width="130" height="37" class="acc2"/>
+<text x="410" y="192" class="">—</text>
+<rect x="530" y="166" width="90" height="37" class="acc2"/>
+<text x="540" y="192" class="">—</text>
+<rect x="620" y="166" width="90" height="37" class="acc2"/>
+<text x="630" y="192" class="">—</text>
+<rect x="710" y="166" width="250" height="37" class="acc2"/>
+<text x="720" y="192" class="">—</text>
+<rect x="30" y="203" width="65" height="37" class="neutral"/>
+<text x="40" y="229" class="">2</text>
+<rect x="95" y="203" width="85" height="37" class="neutral"/>
+<text x="105" y="229" class="">B</text>
+<rect x="180" y="203" width="220" height="37" class="neutral"/>
+<text x="190" y="229" class="">B0…B5</text>
+<rect x="400" y="203" width="130" height="37" class="neutral"/>
+<text x="410" y="229" class="">5</text>
+<rect x="530" y="203" width="90" height="37" class="neutral"/>
+<text x="540" y="229" class="">0.6</text>
+<rect x="620" y="203" width="90" height="37" class="neutral"/>
+<text x="630" y="229" class="">7</text>
+<rect x="710" y="203" width="250" height="37" class="neutral"/>
+<text x="720" y="229" class="">[28]</text>
+<path d="M45 249V276" class="arrow main" marker-end="url(#arrow)"/>
+<text x="68" y="270" class="">condense：尾部 B 从 2 → 1；有效 token 前缀与伴随字段一起移</text>
+<text x="30" y="310" class="heading">② 压紧完成：[A, B]，row 2 不再活跃</text>
+<rect x="30" y="323" width="65" height="36" class="ghost"/>
+<text x="40" y="348" class="">row</text>
+<rect x="95" y="323" width="85" height="36" class="ghost"/>
+<text x="105" y="348" class="">请求</text>
+<rect x="180" y="323" width="220" height="36" class="ghost"/>
+<text x="190" y="348" class="">token 有效前缀</text>
+<rect x="400" y="323" width="130" height="36" class="ghost"/>
+<text x="410" y="348" class="">computed</text>
+<rect x="530" y="323" width="90" height="36" class="ghost"/>
+<text x="540" y="348" class="">温度</text>
+<rect x="620" y="323" width="90" height="36" class="ghost"/>
+<text x="630" y="348" class="">LoRA</text>
+<rect x="710" y="323" width="250" height="36" class="ghost"/>
+<text x="720" y="348" class="">block table</text>
+<rect x="30" y="359" width="65" height="37" class="neutral"/>
+<text x="40" y="385" class="">0</text>
+<rect x="95" y="359" width="85" height="37" class="neutral"/>
+<text x="105" y="385" class="">A</text>
+<rect x="180" y="359" width="220" height="37" class="neutral"/>
+<text x="190" y="385" class="">A0…A19</text>
+<rect x="400" y="359" width="130" height="37" class="neutral"/>
+<text x="410" y="385" class="">18</text>
+<rect x="530" y="359" width="90" height="37" class="neutral"/>
+<text x="540" y="385" class="">0</text>
+<rect x="620" y="359" width="90" height="37" class="neutral"/>
+<text x="630" y="385" class="">0</text>
+<rect x="710" y="359" width="250" height="37" class="neutral"/>
+<text x="720" y="385" class="">[12, 13]</text>
+<rect x="30" y="396" width="65" height="37" class="acc1"/>
+<text x="40" y="422" class="">1</text>
+<rect x="95" y="396" width="85" height="37" class="acc1"/>
+<text x="105" y="422" class="">B</text>
+<rect x="180" y="396" width="220" height="37" class="acc1"/>
+<text x="190" y="422" class="">B0…B5</text>
+<rect x="400" y="396" width="130" height="37" class="acc1"/>
+<text x="410" y="422" class="">5</text>
+<rect x="530" y="396" width="90" height="37" class="acc1"/>
+<text x="540" y="422" class="">0.6</text>
+<rect x="620" y="396" width="90" height="37" class="acc1"/>
+<text x="630" y="422" class="">7</text>
+<rect x="710" y="396" width="250" height="37" class="acc1"/>
+<text x="720" y="422" class="">[28]</text>
+<rect x="30" y="433" width="65" height="37" class="ghost"/>
+<text x="40" y="459" class="">2</text>
+<rect x="95" y="433" width="85" height="37" class="ghost"/>
+<text x="105" y="459" class="">—</text>
+<rect x="180" y="433" width="220" height="37" class="ghost"/>
+<text x="190" y="459" class="">非活跃容量</text>
+<rect x="400" y="433" width="130" height="37" class="ghost"/>
+<text x="410" y="459" class="">—</text>
+<rect x="530" y="433" width="90" height="37" class="ghost"/>
+<text x="540" y="459" class="">—</text>
+<rect x="620" y="433" width="90" height="37" class="ghost"/>
+<text x="630" y="459" class="">—</text>
+<rect x="710" y="433" width="250" height="37" class="ghost"/>
+<text x="720" y="459" class="">—</text>
+<path d="M45 479V506" class="arrow main" marker-end="url(#arrow)"/>
+<text x="68" y="500" class="">reorder：B 是 decode，A 是 long_extend；swap_states(0, 1)</text>
+<text x="30" y="540" class="heading">③ 执行顺序：[B, A]，全部列继续对应同一个请求</text>
+<rect x="30" y="553" width="65" height="36" class="ghost"/>
+<text x="40" y="578" class="">row</text>
+<rect x="95" y="553" width="85" height="36" class="ghost"/>
+<text x="105" y="578" class="">请求</text>
+<rect x="180" y="553" width="220" height="36" class="ghost"/>
+<text x="190" y="578" class="">token 有效前缀</text>
+<rect x="400" y="553" width="130" height="36" class="ghost"/>
+<text x="410" y="578" class="">computed</text>
+<rect x="530" y="553" width="90" height="36" class="ghost"/>
+<text x="540" y="578" class="">温度</text>
+<rect x="620" y="553" width="90" height="36" class="ghost"/>
+<text x="630" y="578" class="">LoRA</text>
+<rect x="710" y="553" width="250" height="36" class="ghost"/>
+<text x="720" y="578" class="">block table</text>
+<rect x="30" y="589" width="65" height="37" class="acc1"/>
+<text x="40" y="615" class="">0</text>
+<rect x="95" y="589" width="85" height="37" class="acc1"/>
+<text x="105" y="615" class="">B</text>
+<rect x="180" y="589" width="220" height="37" class="acc1"/>
+<text x="190" y="615" class="">B0…B5</text>
+<rect x="400" y="589" width="130" height="37" class="acc1"/>
+<text x="410" y="615" class="">5</text>
+<rect x="530" y="589" width="90" height="37" class="acc1"/>
+<text x="540" y="615" class="">0.6</text>
+<rect x="620" y="589" width="90" height="37" class="acc1"/>
+<text x="630" y="615" class="">7</text>
+<rect x="710" y="589" width="250" height="37" class="acc1"/>
+<text x="720" y="615" class="">[28]</text>
+<rect x="30" y="626" width="65" height="37" class="neutral"/>
+<text x="40" y="652" class="">1</text>
+<rect x="95" y="626" width="85" height="37" class="neutral"/>
+<text x="105" y="652" class="">A</text>
+<rect x="180" y="626" width="220" height="37" class="neutral"/>
+<text x="190" y="652" class="">A0…A19</text>
+<rect x="400" y="626" width="130" height="37" class="neutral"/>
+<text x="410" y="652" class="">18</text>
+<rect x="530" y="626" width="90" height="37" class="neutral"/>
+<text x="540" y="652" class="">0</text>
+<rect x="620" y="626" width="90" height="37" class="neutral"/>
+<text x="630" y="652" class="">0</text>
+<rect x="710" y="626" width="250" height="37" class="neutral"/>
+<text x="720" y="652" class="">[12, 13]</text>
+<rect x="30" y="663" width="65" height="37" class="ghost"/>
+<text x="40" y="689" class="">2</text>
+<rect x="95" y="663" width="85" height="37" class="ghost"/>
+<text x="105" y="689" class="">—</text>
+<rect x="180" y="663" width="220" height="37" class="ghost"/>
+<text x="190" y="689" class="">非活跃容量</text>
+<rect x="400" y="663" width="130" height="37" class="ghost"/>
+<text x="410" y="689" class="">—</text>
+<rect x="530" y="663" width="90" height="37" class="ghost"/>
+<text x="540" y="689" class="">—</text>
+<rect x="620" y="663" width="90" height="37" class="ghost"/>
+<text x="630" y="689" class="">—</text>
+<rect x="710" y="663" width="250" height="37" class="ghost"/>
+<text x="720" y="689" class="">—</text>
+<text x="30" y="740" class="cap">图中仅展开部分字段；generator、mask、prompt embeds、processor 状态也须按同一移动更新。</text>
+<text x="30" y="771" class="cap">这里移动 block table 的行，不搬运这些块中的 KV 字节。</text>
+</svg>

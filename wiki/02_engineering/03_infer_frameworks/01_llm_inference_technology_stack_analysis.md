@@ -4,9 +4,12 @@ title: "大模型推理技术栈全景 —— 从模型文件到在线服务"
 
 # 大模型推理技术栈全景 —— 从模型文件到在线服务
 
-> **观察时间**：2026-08-18
-> **vLLM 源码基准**：`vllm-project/vllm@f4b161d7fca438bfe29509984759be1943a5aa88`（`v0.27.2rc0-189-gf4b161d7fc`）
-> **结论**：现代 LLM 推理不是“选一个框架”这么简单，而是一条跨越模型格式、调度、KV 内存、编译、内核、通信、服务与可观测性的流水线。vLLM 的价值在于把其中大多数层整合成一个可扩展的通用引擎。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（只读 `main` 快照，2026-09-07 UTC）。
+> **主题**：从模型文件到在线服务的推理技术栈分层、框架定位与学习入口。
+> **适用范围**：跨框架比较仍保留 2026-08-18 的观察结果；本次仅核验 vLLM 代码落点、依赖与导航，不更新其他框架的比较事实。
+> **最近更新**：2026-09-08。
+
+现代 LLM 推理不是“选一个框架”这么简单，而是一条跨越模型格式、调度、KV 内存、编译、内核、通信、服务与可观测性的流水线。vLLM 的价值在于把其中大多数层整合成一个可扩展的通用引擎。
 
 ---
 
@@ -72,14 +75,16 @@ flowchart TD
 
 vLLM 不是一个单纯的 PagedAttention kernel。当前源码把一条完整服务路径都纳入仓库：
 
-1. **前端**：`LLM` 提供离线批推理，`vllm serve` 提供 OpenAI-compatible HTTP 服务；`docs/design/arch_overview.md:14-79`。
-2. **引擎控制面**：InputProcessor、OutputProcessor 与 EngineCoreClient 处理请求语义、流式输出和 EngineCore 通信；`vllm/v1/engine/llm_engine.py:90-111`、`vllm/v1/engine/async_llm.py:72-156`。
-3. **调度与 KV**：Scheduler 用 token budget 统一描述 prefill/decode，KVCacheManager 与 BlockPool 负责分页块、前缀命中和回收；`vllm/v1/core/sched/scheduler.py:476-639`、`vllm/v1/core/kv_cache_manager.py:232-530`。
-4. **执行**：Executor 将本轮 `SchedulerOutput` 广播到 worker；worker 负责模型、并行通信和 GPU 运行；`vllm/v1/executor/abstract.py:50-139,211-229`、`vllm/v1/worker/gpu_worker.py:1044-1139`。
-5. **编译与内核**：生产默认 `-O2`，启用更多编译区间、融合与 `FULL_AND_PIECEWISE` CUDA Graph；`docs/design/optimization_levels.md:5-13,64-81`。
-6. **外部数据平面**：KV connector 依赖覆盖 LMCache、NIXL 与 Mooncake transfer engine；`requirements/kv_connectors.txt:1-8`。
+1. **前端**：`LLM.generate()` 提供离线批推理，`vllm serve` 的普通 Python HTTP 路径启动 OpenAI-compatible 服务；入口分别见 `vllm/entrypoints/llm.py::LLM.generate`、`vllm/entrypoints/cli/serve.py::ServeSubcommand.cmd`，总体关系见仓库 `docs/design/arch_overview.md`。
+2. **引擎控制面**：Renderer、InputProcessor、OutputProcessor 与 EngineCoreClient 衔接输入转换、流式输出和 EngineCore 通信；离线与异步入口分别装配同步 client 和异步多进程 client，不应画成同一种进程拓扑。见 `vllm/v1/engine/llm_engine.py::LLMEngine.__init__`、`vllm/v1/engine/async_llm.py::AsyncLLM.__init__`。
+3. **调度与 KV**：Scheduler 用 token budget 统一描述 prefill/decode，KVCacheManager 与 BlockPool 负责分页块、前缀命中和回收；见 `vllm/v1/core/sched/scheduler.py::Scheduler.schedule`、`vllm/v1/core/kv_cache_manager.py::KVCacheManager.get_computed_blocks`、`KVCacheManager.allocate_slots` 与 `vllm/v1/core/block_pool.py::BlockPool.free_blocks`。
+4. **执行**：Executor 经所选执行后端把 `SchedulerOutput` 交给 worker；GPU Worker 协调 PP 中间张量与 Model Runner 前向，采样另有调用入口，执行完成不能一概等同于最终输出已返回。见 `vllm/v1/executor/abstract.py::Executor.execute_model`、`Executor.sample_tokens` 与 `vllm/v1/worker/gpu_worker.py::Worker.execute_model`、`Worker.sample_tokens`。
+5. **编译与内核**：顶层默认 `-O2`，为生产性能提供更多编译/融合默认项与 `FULL_AND_PIECEWISE` CUDA Graph；显式配置优先，具体平台和模型仍会限制可用路径，不能保证每批都执行 full graph。见 `vllm/config/vllm.py::VllmConfig.optimization_level`、`OPTIMIZATION_LEVEL_02`、`VllmConfig._apply_optimization_level_defaults` 与仓库 `docs/design/optimization_levels.md`。
+6. **外部数据平面**：KV connector 工厂注册 LMCache、NIXL 与 Mooncake 实现，按配置延迟导入；对应依赖列于 `requirements/kv_connectors.txt`，并非所有安装方式都会默认装齐或启用。见 `vllm/distributed/kv_transfer/kv_connector/factory.py::KVConnectorFactory.register_connector`。
 
-当前 CUDA 软件栈还明确依赖 PyTorch 2.13、Transformers 5.5.3+、Tokenizers、Safetensors、FastAPI、PyZMQ、msgspec、FlashInfer，以及 TVM FFI、TileLang、cuDNN frontend、CUTLASS DSL 等可选/平台组件；证据见 `requirements/common.txt:10-34,55-58` 与 `requirements/cuda.txt:7-35`。这说明 vLLM 更像一个**推理操作系统加集成发行版**：调度和内存策略在上层，具体算子会按平台、模型、量化方式和可用依赖派发。
+该基线的 CUDA requirements 固定 `torch==2.13.0`，公共依赖要求 `transformers>=5.10.4`、`tokenizers>=0.21.1`、`safetensors>=0.6.2`，并包含 FastAPI、PyZMQ 与 msgspec；CUDA 文件还列出 `flashinfer-python==0.6.18`、TVM FFI、TileLang、cuDNN frontend 与 CUTLASS DSL 等组件。这里描述的是仓库 `requirements/common.txt`、`requirements/cuda.txt` 的依赖声明，不是所有平台通用的安装清单：`setup.py::get_requirements` 按平台选文件，发布 wheel 时去掉非 PyPI 的 `flashinfer-cubin` pin，并按 CUDA 主版本调整 CUTLASS DSL 等依赖。
+
+这支持一个**分析类比**：vLLM 更像“推理操作系统加集成发行版”——调度和内存策略在上层，具体算子按平台、模型、量化方式和可用依赖派发；依赖出现在清单里并不证明某个请求实际选用了它。
 
 ## 四、推理性能应该怎样拆解
 
@@ -99,11 +104,11 @@ vLLM 不是一个单纯的 PagedAttention kernel。当前源码把一条完整�
 
 ## 五、建议学习路径
 
-1. 先读 [[vllm/index|vLLM 推理引擎知识地图]]，把离线与在线拓扑分开。
+1. 先读 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，把离线与在线拓扑分开。
 2. 再读 [[vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]，跟一次 `schedule → execute → sample → update`。
-3. 用 [[vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]] 启服务并建立 benchmark 基线。
+3. 用 [[vllm/01_vllm_feature_optimizations_guide|vLLM 使用指南]] 跑通离线推理与流式服务；建立 benchmark 基线和做单变量实验时转 [[vllm/05_vllm_performance_tuning_guide|性能调优指南]]，启动失败、报错或输出异常时转 [[vllm/06_vllm_debugging_troubleshooting_guide|调试与故障排查]]。
 4. 按瓶颈进入 scheduler、KV、attention、quantization、speculative decoding、distributed 和 compilation 专题。
-5. 对共享前缀、分离式推理或特定硬件场景，再横向对照 [[sglang/index|SGLang]] 与 [[mooncake_analysis|Mooncake 分离式推理]]。
+5. 比较编译实现时转 [[02_engineering/03_infer_frameworks/sglang/index|SGLang 编译 Pass]]；理解分离式推理的数据平面时转 [[mooncake_analysis|Mooncake 分离式推理]]。
 
 ## 主要外部来源
 
@@ -116,9 +121,10 @@ vLLM 不是一个单纯的 PagedAttention kernel。当前源码把一条完整�
 
 ## Related Pages
 
-- [[vllm/index|vLLM 推理引擎知识地图]]
-- [[vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]
-- [[vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]]
-- [[sglang/index|SGLang 推理框架]]
-- [[speculative_decoding/index|投机推理专题]]
-- [[mooncake_analysis|Mooncake 分离式推理]]
+- [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] — 从本页的技术栈分层进入 vLLM 架构与机制专题；请求生命周期也可沿上文学习路径进入引擎页。
+- [[vllm/01_vllm_feature_optimizations_guide|vLLM 使用指南]] — 首次安装、离线调用和在线流式服务的操作入口。
+- [[vllm/05_vllm_performance_tuning_guide|vLLM 性能调优指南]] — 将本页的性能维度转成固定负载、基线测量和单变量实验。
+- [[vllm/06_vllm_debugging_troubleshooting_guide|vLLM 调试与故障排查]] — 按最后完成的阶段定位安装、输入、显存、编译和进程通信故障。
+- [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] — 对照现有的 SGLang 编译 Pass 与 torch.compile 适配分析，比较其编译路径与 vLLM 的接续关系。
+- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] — 展开用提案与验证减少串行生成轮数的算法和系统代价。
+- [[mooncake_analysis|Mooncake 分离式推理]] — 接续 KV 数据平面和分离式推理的系统设计。

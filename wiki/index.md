@@ -4,7 +4,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-09-04
+> 最后更新: 2026-09-08
 
 ---
 
@@ -32,7 +32,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
 
 ### 02 工程实现
 
@@ -47,8 +47,8 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 24 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 33 | 活跃 |
-| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 25 | 活跃 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index|推理框架目录]] | 34 | 活跃 |
+| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM知识地图]] | 26 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 49 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 17 | 活跃 |
 | └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
@@ -57,7 +57,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 同上，**2026-09-04 全表机械复算**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
+> 同上，**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
 
 ### courses 课程入口
 
@@ -95,8 +95,6 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | Triton kernel 入门→专家 | [[triton_10_programming_model_guide]], [[triton_12_matmul_guide]], [[triton_13_autotune_guide]], [[triton_30_optimization_profiling_guide]], [[triton_31_knowledge_guide]] |
 | GPU/NPU 执行模型与 GEMM | [[10_cuda_execution_model_guide]], [[20_cuda_gemm_kernel_analysis]], [[22_ascend_kernel_execution_model_analysis]] |
 | 非 GEMM Kernel 优化 | [[21_cuda_nonmatmul_kernels_analysis]], [[01_gpu_kernel_guide]], [[triton_01_gpu_essentials_guide]] |
-| vLLM 推理引擎 | [[vllm/index]], [[10_vllm_engine_architecture_analysis]], [[11_vllm_scheduler_analysis]], [[12_vllm_kv_cache_management_analysis]], [[01_vllm_feature_optimizations_guide]] |
-| vLLM 图编译/算子融合 | [[24_vllm_fused_ops_and_kernels_analysis]], [[25_vllm_ir_and_fusion_passes_analysis]], [[23_vllm_compilation_cudagraph_analysis]] |
 | PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[20_rl_training_inference_precision_analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
