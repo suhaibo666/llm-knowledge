@@ -1,10 +1,15 @@
 ---
-title: "Muon 优化器：原理解读与 Megatron-LM 实现分析"
+title: "Muon 优化器：正交化原理与分片冲突"
 ---
 
-# Muon 优化器：原理解读与 Megatron-LM 实现分析
+# Muon 优化器：正交化原理与分片冲突
 
-本文档基于 Muon 优化器论文及 NVIDIA Megatron-LM 的最新代码实现（Merge Request 4106），对 Muon 优化器的核心原理、分布式挑战及其在 Megatron 中的具体工程落地进行深度解析。
+> **主题**：Muon 把梯度当作矩阵、用 Newton–Schulz 迭代正交化更新方向；本页只讲这套数学，以及它与「按元素切分优化器状态」（ZeRO 系）为什么在原理上冲突、论文给出的修法是什么。
+> **来源**：Muon Is Scalable for LLM Training（arXiv:2502.16982）与 Jordan et al. 的原始 Muon 表述。本页不分析代码，因此不钉源码基线。
+> **适用范围**：算法与分片冲突原理。各训练框架的工程落地、各家模型的 Muon 配方（per-head / per-expert / Muon Split / MuonClip 等）都不在本页，路由见 §3。
+> **最近更新**：2026-09-08。§3 收缩为工程落地转指，本页回到纯算法职责。
+
+---
 
 ## 1. Muon 优化器核心原理
 
@@ -51,90 +56,68 @@ Muon 使用 **Newton-Schulz (NS) 迭代** 来逼近矩阵的奇异值分解 (SVD
 
 ---
 
-## 3. Megatron-LM 实现分析
+## 3. 工程落地：本页不拥有的部分
 
-在实际的 Megatron-LM 代码中，并没有采用论文中复杂的 "ZeRO-1 + DP Gather" 方案，而是采用了一种更工程化、更高效的 **Layer-wise Partitioning (类 ZeRO-3)** 策略。
+Muon 的分布式实现变化很快（Megatron 的实现已经整体外移到独立的 `emerging-optimizers` 包），
+把它写在这张理论页上必然过时。**本页只保留算法与冲突原理，落地一律转指 owner 页。**
 
-### 3.1 核心类架构
+> [!deprecated]
+> 本页旧版在这一节写过一份 Megatron 实现分析（基于 Merge Request 4106，页头未钉基线）。
+> 它的若干结论已被当前基线证伪——例如把实现归给 `megatron/core/optimizer/muon.py`
+> （该文件现在只是 28 行兼容 shim）、以及描述为「显式禁用 `DistributedOptimizer`」
+> （实际是 `ChainedOptimizer` 把 LayerWise 与 `DistributedOptimizer` 串联，两者并存）。
+> 该节已删除，以 [[26_megatron_optimizer_step_internals_deepdive]] 为准。
 
-*   **`TensorParallelMuon`**: 继承自 `OrthogonalizedOptimizer`。
-    *   **TP 感知**: 内置 `newton_schulz_tp` 函数，能够在 Tensor Parallel 组内进行通信。这意味着它处理的是逻辑上完整的矩阵，而不是 TP 切片。
-*   **`LayerWiseDistributedOptimizer`**: 一种特殊的分布式优化器封装。
-    *   **替代 ZeRO-1**: 显式禁用了 Megatron 原生的 `DistributedOptimizer`。
+### 3.1 框架侧实现
 
-### 3.2 显存优化策略：Layer-wise Sharding
+| 关心什么 | 去哪一页 | 该页拥有的内容 |
+|---|---|---|
+| Megatron-LM 怎样接 Muon | [[26_megatron_optimizer_step_internals_deepdive]] §4.4 | 触发组合（`--optimizer muon` + `--use-distributed-optimizer`，**没有** `--layer-wise-distributed-optimizer` 这个 flag）、`is_managed_by_layer_wise_optimizer` 路由、`ChainedOptimizer` 串联、QKV 切分形状、`qk_clip`、硬约束与失败边界 |
+| 为什么 range 切法容不下 Muon | [[16_megatron_distributed_optimizer_analysis]] §2.5 | 两条 LayerWise whole-parameter 数据面；$k>1$ 会让 Muon 梯度跨 DP 域欠规约的原因 |
+| TorchTitan / Kimi 的 DistMuon | [[26_torchtitan_flex_shard_dist_muon_analysis]] | 存储所有权与优化器计算所有权分离、per-expert layout、all-to-all 计划与双槽运行时 |
+| Ascend / MindSpeed 的反向移植 | [[13_mindspeed_ascend_affinity_analysis]] | `--muon-num-ns-steps` / `--muon-scale-mode` / `--muon-tp-mode` 等旋钮，NS 迭代落到 Cube 核 |
+| Adam vs Muon 的显存与系统性影响 | [[32_distributed_optimizer_deepdive]] §5–6 | 各 ZeRO stage 的 bytes/param、非 element-wise 优化器对 overlap 与分片体系的冲击 |
 
-Megatron 选择的方案类似于 **ZeRO-3**，但是以“层”为粒度，而不是以“Tensor 切片”为粒度。
+### 3.2 正交化粒度：per-head / per-expert 与更细的拆分
 
-#### 工作流程：
-1.  **参数分配 (Assign)**:
-    *   将模型的所有层（Layer 1, Layer 2, ...）分配给不同的 DP Rank。
-    *   例如：Rank 0 独占 Layer 1 的 Master Weights；Rank 1 独占 Layer 2 的 Master Weights。
-    *   **优势**: 对于 Rank 0 来说，Layer 1 的参数在 DP 维度是**完整**的。
+原始 Muon 把**整个参数矩阵**当作 NS 的操作单元。这对无语义子结构的 FFN 是对的，
+对注意力投影与 MoE 专家则不是——这一支扩展由下面两页拥有，本页不复述：
 
-2.  **梯度聚合 (All-Reduce)**:
-    *   使用标准的 DDP 流程，所有 Rank 都会计算并同步梯度。Rank 0 内存中也有 Layer 2 的梯度，虽然它不负责更新 Layer 2。
+| 关心什么 | 去哪一页 |
+|---|---|
+| 粒度应与语义独立单元对齐的设计原则、per-head / per-expert / 整矩阵三分法，以及 FSDP、TP+FSDP 下的分头 NS 流水线（含 $W_o$ 与 FFN $W_{\mathrm{down}}$ 的关键区别） | [[22_muon_sharded_hsdp_analysis]] §08–§10 |
+| 融合权重（qkv、SwiGLU fc1）**直接正交化是错的**：迭代会混合不相关子块，且缩放因子用了拼接后的形状；以及 Canzona 的 $\alpha$-均衡分区与跨 TP 融合 All-to-All | [[21_qwen3_8_flash_next_optimization_deepdive]] §2.3–§2.4 |
 
-3.  **独立更新 (Optimizer Step)**:
-    *   **Rank 0**: 对 Layer 1 运行 Muon。由于参数完整，它可以直接进行矩阵运算，**无需额外的 DP Gather 通信**。
-    *   **Rank 1**: 对 Layer 2 运行 Muon。
+> **框架现状（2026-09-08 在 `NVIDIA/Megatron-LM@85902ef5` 上核过）**：Megatron 基线**不提供 per-head 粒度**。
+> `muon_split_qkv` 默认开，但切出的是 Q / K / V 三个**完整投影矩阵**，group 与 head 都不是独立的正交化单元；
+> 它修掉的是缩放因子用错形状，没修掉跨 head 混合奇异方向。per-expert 则无需开关——专家本就是逐个的 2D 参数。
+> 证据与边界见 [[26_megatron_optimizer_step_internals_deepdive]] §4.4。
 
-4.  **参数同步 (All-Gather)**:
-    *   更新完成后，Rank 0 将新的 Layer 1 广播给所有人；Rank 1 将新的 Layer 2 广播给所有人。
-    *   最终所有 Rank 状态一致。
+### 3.3 模型侧配方
 
-### 3.3 图示：Megatron Muon 流程
+| 模型 | 变体 | owner 页 |
+|---|---|---|
+| Kimi K2 | MuonClip（Muon + QK-Clip） | [[11_kimi_k2_analysis]] |
+| Kimi K3 | Per-Head Muon + 保留 K2 weight-clipping + QB | [[25_kimi_k3_stability_analysis]] |
+| GLM-5 | Muon Split（配合它，attention logits 全程稳定、无需 clipping） | [[20_glm5_architecture_deepdive]]；分布式实现见 [[22_glm5_training_infra_deepdive]] |
+| DeepSeek-V4 | Hybrid Newton–Schulz；**不用** QK-Clip（Q/KV RMSNorm 已足够） | [[27_deepseek_v4_implementation_deepdive]] |
+| Qwen3.5 Flash-Next | Muon + Gated Residual；路由器与低秩投影走 AdamW | [[21_qwen3_8_flash_next_optimization_deepdive]] |
+| LongCat-2.0 | 异构 ASIC 上把 Muon 跑到 1.6T 规模 | [[longcat_2_analysis]] |
 
-```mermaid
-sequenceDiagram
-    participant R0 as Rank 0 (Owner: Layer A)
-    participant R1 as Rank 1 (Owner: Layer B)
-
-    Note over R0, R1: 1. Backward Pass (Standard DDP)
-    R0->>R1: All-Reduce Gradients
-    R1->>R0: All-Reduce Gradients
-
-    Note over R0, R1: 2. Muon Optimizer Step
-
-    rect rgb(230, 240, 255)
-        Note right of R0: Local Update Layer A
-        R0->>R0: Newton-Schulz (Layer A)
-        R0->>R0: Update Weights A
-    end
-
-    rect rgb(240, 255, 230)
-        Note right of R1: Local Update Layer B
-        R1->>R1: Newton-Schulz (Layer B)
-        R1->>R1: Update Weights B
-    end
-
-    Note over R0, R1: 3. Sync Weights
-
-    R0->>R1: Broadcast Layer A
-    R1->>R0: Broadcast Layer B
-
-    Note over R0, R1: 4. Next Forward Pass
-```
-
-### 3.4 混合精度与混合优化器
-
-*   **ChainedOptimizer**: Muon 仅用于 2D 线性层（Linear Layers）。其他参数（如 Layernorm, Embedding）依然使用 AdamW。Megatron 使用 `ChainedOptimizer` 将两者串联。
-*   **TP 处理**: Muon 在 TP 组内通过 `newton_schulz_tp` 进行必要的通信（All-Reduce/All-Gather），确保切分后的矩阵能正确进行正交化。
+---
 
 ## 4. 总结
 
-1.  **Muon 原理**: 通过矩阵正交化（Newton-Schulz）约束更新量，适合大规模 Transformer 训练。
-2.  **分布式难点**: Muon 需要完整矩阵信息，与 ZeRO-1 的切分机制冲突。
-3.  **Megatron 方案**:
-    *   **放弃 ZeRO-1**: 显式禁用标准 `DistributedOptimizer`。
-    *   **采用 Layer-wise Partitioning**: 将不同层的参数完整分配给不同 Rank。
-    *   **优势**: 规避了复杂的 "Gather-Compute-Discard" 流程，利用层级完整性直接计算，同时保留了类似 ZeRO 的显存节省能力。
+1. **算法**：Muon 用 Newton–Schulz 迭代把动量矩阵正交化，约束更新的谱范数，使每步更新在谱范数球面上做梯度下降。
+2. **分片冲突的根源**：NS 是整体矩阵运算，$NS(G) \neq Concat(NS(g_1), NS(g_2), \dots)$，所以按元素切分参数的 ZeRO-1 无法直接承载 Muon——这是所有分布式 Muon 方案共同要解的一件事。
+3. **两类解法**：论文路线是**临时 gather 出完整矩阵、算完丢弃**（通信换正确性）；工程路线是**让每个矩阵整体落在某个 shard 内**（Megatron 的 layer-wise 分布式优化器），从而无需额外 gather。
+4. **一个正交的扩展方向**：正交化粒度不必是整个矩阵。按 head / 按 expert 拆分既更贴合架构语义，又顺带把 NS 的 $\min^2\times\max$ 成本大幅压低——见 §3.2。
 
 ## Related Pages
 
-- [[01_theory/index]]
-- [[10_llm_initiliaze_analysis]]
-- [[16_megatron_distributed_optimizer_analysis]]
-- [[../../02_engineering/02_train_frameworks/32_distributed_optimizer_deepdive|32_distributed_optimizer_deepdive]] — Adam vs Muon 分布式内存/通信影响的跨框架对比
-- [[25_mhc_analysis]]
-- [[../../02_engineering/02_train_frameworks/22_muon_sharded_hsdp_analysis]] — 分片 Muon 与双网格 HSDP 工程实现分析
+- [[26_megatron_optimizer_step_internals_deepdive]] — Muon 在 Megatron-LM 里的完整集成（触发、路由、约束），本页 §3.1 的主要 owner。
+- [[22_muon_sharded_hsdp_analysis]] — 分片 Muon、双网格 HSDP 与 per-head / per-expert 正交化粒度，本页 §3.2 的主要 owner。
+- [[32_distributed_optimizer_deepdive]] — Adam 与 Muon 在各 ZeRO stage 下的显存与通信对照。
+- [[25_kimi_k3_stability_analysis]] — Per-Head Muon 的模型侧证据与稳定性论证。
+- [[21_qwen3_8_flash_next_optimization_deepdive]] — 融合权重必须按语义算子边界拆分的论证，以及 NS 步数选择的稳定性理由。
+- [[01_theory/02_pretraining/index|LLM 训练技术]] — 本页所属目录。

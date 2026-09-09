@@ -12,6 +12,8 @@ Technical Analysis Report · Distributed Optimizer
 
 **参考来源**cursor.com/cn/blog/composer-2-5 · Megatron-LM 代码 **涉及系统**Kimi K2 · FSDP · HSDP · MoE · Muon · TP
 
+> **本页性质**：这是一篇基于公开博客披露 + Muon 数学基础的**方案分析与设计推演**，不是钉基线的源码分析——文中的 Megatron-LM 引用是形状与切分方式的对照，未钉 commit。Megatron 侧钉基线的事实以 [[26_megatron_optimizer_step_internals_deepdive]] 为准。
+
 **目录**
 
 -   Muon 算法核心原理
@@ -305,3 +307,12 @@ FFN W_down:    RowParallelLinear(4·embed_dim → embed_dim)
 | FFN W_up | 列并行 | d_ff/TP 神经元，无语义子结构 |
 
 分片 Muon 与双网格 HSDP 技术分析报告 参考来源：cursor.com/cn/blog/composer-2-5 · Muon 原始论文 · Megatron-LM 代码 · PyTorch FSDP 文档
+
+## Related Pages
+
+- [[11_muon_analysis]] — Muon 的正交化原理与分片冲突；本页是它 §3.2「正交化粒度」的 owner。
+- [[26_megatron_optimizer_step_internals_deepdive]] — Megatron-LM 侧钉基线的 Muon 集成事实（LayerWise 路由、约束边界）。
+- [[26_torchtitan_flex_shard_dist_muon_analysis]] — 同一问题在 TorchTitan 的落地：存储所有权与优化器计算所有权分离。
+- [[32_distributed_optimizer_deepdive]] — Adam 与 Muon 在各 ZeRO stage 下的显存与通信对照。
+- [[25_kimi_k3_stability_analysis]] — Per-Head Muon 在 Kimi K3 上的模型侧证据。
+- [[21_qwen3_8_flash_next_optimization_deepdive]] — 融合权重必须按语义算子边界拆分的独立论证。

@@ -296,7 +296,7 @@ def hybrid_newton_schulz(X):
     return M
 ```
 
-**要点**：① `HybridNewtonSchulz` 是**真实的多项式迭代正交化**（旧版把 Muon 写成带 bias-correction 的 Adam，完全错误）；② 沿用 Liu et al. (2025) 的 Nesterov + update-RMS 重标定以复用 AdamW 学习率，但**改用 hybrid（两段系数）NS 迭代**；③ **不使用 QK-Clip**——因为 CSA/HCA 已直接对 Q/KV 做 RMSNorm，足以防 logit 爆炸（§2.4, p14）。AdamW 超参（§4.2.2）：$\beta_1=0.9,\beta_2=0.95,\varepsilon=10^{-20},\text{wd}=0.1$。更多分布式实现见 [[11_muon_analysis]]。
+**要点**：① `HybridNewtonSchulz` 是**真实的多项式迭代正交化**（旧版把 Muon 写成带 bias-correction 的 Adam，完全错误）；② 沿用 Liu et al. (2025) 的 Nesterov + update-RMS 重标定以复用 AdamW 学习率，但**改用 hybrid（两段系数）NS 迭代**；③ **不使用 QK-Clip**——因为 CSA/HCA 已直接对 Q/KV 做 RMSNorm，足以防 logit 爆炸（§2.4, p14）。AdamW 超参（§4.2.2）：$\beta_1=0.9,\beta_2=0.95,\varepsilon=10^{-20},\text{wd}=0.1$。Muon 与分片体系冲突的原理见 [[11_muon_analysis]]，各框架的分布式实现由该页 §3 转指。
 
 ---
 
@@ -361,6 +361,6 @@ k2 = block // m_prime                   # 该 block 产出的 HCA 压缩 entry �
 - [[24_deepseek_v4_fp4_qat_analysis]] —— FP4/MXFP4 量化感知训练（§5.2.1，后训练技术）
 - [[30_deepseek_v4_audit_analysis]] —— 本页旧伪代码的逐项审计与订正依据
 - [[25_mhc_analysis]] —— 流形约束超连接的完整数学与稳定性分析（§5 的展开）
-- [[11_muon_analysis]] —— Muon 原理与分布式实现（§6 的展开）
+- [[11_muon_analysis]] —— Muon 的正交化原理与分片冲突（§6 混合 NS 的算法基座）
 - [[20_deepseek_moe_analysis]] —— DeepSeekMoE 路由与负载均衡（§7 的展开）
 - [[12_deepseek_v3_analysis]] —— 前代架构（MLA、FP8 训练、DualPipe），V4 的对照基线

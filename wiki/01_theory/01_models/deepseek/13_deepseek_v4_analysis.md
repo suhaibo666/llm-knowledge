@@ -227,7 +227,7 @@ V4 对大部分模块采用 [[11_muon_analysis|Muon 优化器]]：
 - 混合 Newton-Schulz：前 8 步使用快速收敛系数 + 后 2 步使用稳定化系数
 - 无需 QK-Clip，因为 CSA/HCA 直接对 query 和 KV entry 应用 RMSNorm
 
-详见 [[11_muon_analysis]] 了解分布式训练策略（ZeRO 混合分配、MoE 参数展平、BF16 梯度同步）。
+正交化原理与它同 ZeRO 分片的冲突见 [[11_muon_analysis]]；V4 自己的混合 NS 实现细节见 [[27_deepseek_v4_implementation_deepdive]] §6。
 
 ---
 
@@ -399,7 +399,7 @@ V4-Flash-Base 尽管激活参数更小（13B vs 37B），仍在大多数基准�
 - [[12_deepseek_v3_analysis]] — 前代模型，MLA、FP8 训练、DualPipe
 - [[11_deepseek_v2_analysis]] — MLA 起源、DeepSeekMoE 引入
 - [[25_mhc_analysis]] — 流形约束超连接深度解析
-- [[11_muon_analysis]] — Muon 优化器原理与分布式实现
+- [[11_muon_analysis]] — Muon 优化器的正交化原理与分片冲突
 - [[14_deepseek_r1_analysis]] — GRPO 与推理流水线
 - [[20_deepseek_moe_analysis]] — MoE 路由与负载均衡
 - [[28_deepseek_v4_architecture_analysis]] — V4 架构结构图（补充参考）
