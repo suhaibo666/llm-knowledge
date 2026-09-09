@@ -54,7 +54,7 @@ title: "Megatron-LM 知识地图"
 | 36 | [[36_megatron_fsdp_analysis]] | Megatron-FSDP 把分片切在 FSDP unit 的扁平桶上：四步分组与 DP-LCM 网格、四类缓冲与「四档 = 三个布尔量」、hook 状态机与 AG / RS 两条流水线、持久池与 HSDP / HFSDP、接入层；并用同一算例复演基线内并存的 v2 数据面（`DBuffer` / placement 变换）。 |
 | 37 | [[37_megatron_trtllm_export_analysis]] | checkpoint 到逐 rank TRT-LLM 权重/config 与 engine build。 |
 | 38 | [[38_megatron_logits_distillation_analysis]] | 离线 top-K 缓存协议、writer 接线边界与 sparse KL。 |
-| 39 | [[39_megatron_moe_training_optimization_analysis]] | 按四种所有权组织的 MoE 工程选型地图。 |
+| 39 | [[39_megatron_moe_training_optimization_analysis]] | MoE 负载建模、并行策略与调优顺序；结合 NVIDIA 2026 技术报告核对收益条件。 |
 | 40 | [[40_megatron_feature_tree_analysis]] | A–Q 功能树、600 个源文件与页面覆盖对账。 |
 | 41 | [[41_megatron_config_surface_analysis]] | dataclass 到 CLI/YAML 的配置生成、校验与 owner 追踪。 |
 

@@ -71,6 +71,20 @@ All source ingestions and significant wiki updates are logged here.
 - 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 索引]] 的架构阅读入口，取消对系统设计原则的先读要求，注明仅本页完成新基线迁移，其余 23 篇仍在旧基线。未删除或改写 01/02，未更新全域 radar 基线。
 - 独立复核覆盖源码主线、旧稿内容保留和图示可读性；四幅 Mermaid 已渲染并目视检查。链接、公式、Markdown 和资源检查通过；页面构建检查通过。调度数字是条件明确的教学例子，未运行 GPU 推理、部署或性能测试。
 
+## 2026-09-08：Megatron 39 恢复调优选型定位，结合 NVIDIA MoE 报告重审负载分析
+
+- 根据用户对页面定位的明确修正，[[39_megatron_moe_training_optimization_analysis]] 恢复原九节与四种所有权的组织方式及概览图，移除上一轮以容量机制为中心的长调用树、专用 SVG 和配套生成/算例测试。标题调整为「负载建模与并行策略选型」，同步域索引；保留已核实的源码纠错与唯一 owner 字段 `moe_expert_rank_capacity_factor`，不改变基线和字段归属。
+- 结合 NVIDIA《Scalable Training of Mixture-of-Experts Models with Megatron Core》2026-03-10 v2：补充有效序列长度与专家接收两本账、同 token 数下平方长度和的 4 倍算例、dense/expert 两套并行分解，以及固定本地输入时扩大 EP 未必减少专家激活的推导。形成持久状态、保存激活、小 GEMM/提交、跨域通信、长上下文五类条件化诊断；明确推导前提，区分报告实测、源码约束与分析判断。
+- 亲看报告 PDF 表 17（p.74）与表 20/B.2（p.87），确认 H100 同一吞吐项 PP=8/4 与重算列表存在差异，正文保留冲突而不拼装 recipe；纠正将每卡 4 experts 等同于消除置换的推论。注明报告是 dev 分支/v0.16 时点快照，未给固定提交；均衡路由实验、局部 CUDA Graph scope 和不同平台 overlap 配置不能泛化成真实路由或单因素加速结论。原文仍通过既有 raw 元数据索引引用，未把 PDF 放回仓库。
+- 独立复核 PASS：抽查 FLOP 计数、两套进程组生成及报告正文/附录三处承重来源；按用户批准的调优总览定位审阅，未套用特性模板。链接、公式、Markdown、资产和 coverage 门禁通过；页面构建与 30 处公式浏览器检查通过。未复现 GPU 吞吐或运行分布式 GPU 测试。
+
+## 2026-09-08：Megatron 39 重构为容量、状态与执行窗口的组合分析
+
+- [[39_megatron_moe_training_optimization_analysis]] 保留 MoE 工程选型总览与四种所有权的职责，按概览、容量原理、前反向和训练步、组合边界、诊断、源码路线与配置契约重新组织。补齐本页唯一 owner 字段 `moe_expert_rank_capacity_factor`：同一批 512 条路由，对照逐 expert dropping 的 384 条保留结果与两种 rank backend 的 256/512 行预算；区分有效路由、按 expert 对齐量和总接收容量。
+- 冻结源码纠正旧稿两点：whole-MoE graph 的六项要求仅适用于排除 drop-and-pad 等提前返回分支后的路径；独立 GroupedTensor 不替代这道检查里的 op-fuser。补齐 HybridEP eager 溢出重跑、已捕获 TE whole-MoE 训练图 fail-fast、NCCL EP hard-trap 接口契约的差异，明确 optimizer 只在 runner 返回后才执行，外部内核行为不冒充仓内实证。
+- 旧稿的路由、参数/激活/窗口所有权、变长计数纠错、DDP bucket 约束、GroupedTensor 约束和演进证据均保留或纠正；全部旧链接与唯一配置 owner 保留，行号引用改为稳定符号路线。新增一张脚本生成 SVG 与读取实际正文的算例测试，同步域索引。基线保持 `85902ef599ea4eb06ada7567a479c524b605767a`，未移动源码检出或变更字段归属。
+- 独立审阅 PASS：beat2、hop-walk、delete-code、algorithm-replay 全通过，抽查 HybridEP 预算、NCCL EP bootstrap、whole-MoE guard 三处锚点 3/3；图中外部依赖与 MCore 恢复逻辑的边界经反馈修正并复看。质量门禁（links/math/markdown/assets/coverage）、4 个算例测试、页面构建与 15 处公式的浏览器渲染检查通过；未运行 GPU 分布式测试。
+
 ## 2026-09-08：核实 Megatron 基线不支持 per-head N-S，QKV 切分是按投影
 
 承接同日上一条登记的待核项，在基线 `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`
