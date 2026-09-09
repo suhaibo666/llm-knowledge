@@ -1,0 +1,283 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 956" width="1272" height="956" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .bar2{fill:#9CC2F3;stroke:#2563EB;stroke-width:.8}
+  .bar3{fill:#5E97E4;stroke:#2563EB;stroke-width:.8}
+  .bar4{fill:#E7EAEE;stroke:#AEB6C2;stroke-width:.8}
+  .train{fill:#DDE3EA;stroke:#5B6470;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+  .sep2{fill:none;stroke:#C3651F;stroke-width:1.4;stroke-dasharray:3 3}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　RL 序列打包：变长 rollout 怎样进 THD 箱、箱怎样分到 rank、微批数为什么会变、优势为什么不能广播</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：10 条序列长度 {7,3,9,2,5,6,1,8,4,12}（共 57 token），bin_size = seq_length = 16，DP=2，max_sequences_per_bin=50（CLI 默认），micro_batch_size=1</text>
+<text class="su" x="28" y="66" text-anchor="start">samples_ratio_per_step=1（global_batch_size = prompts × group_size）；每个数字由复刻自冻结基线 sequence_packing_utils.py 与 rl_utils.py 规则的脚本算出</text>
+<text class="pt" x="28" y="106" text-anchor="start">A　prepare_trajectories 之后：每条序列各自 pad 到 seq_length，训练矩阵是 10 × 16</text>
+<rect class="r1" x="28" y="114" width="42" height="16" rx="2"/>
+<rect class="ghost" x="70" y="114" width="54" height="16" rx="2"/>
+<text class="sm" x="31" y="126" text-anchor="start">s0=7</text>
+<rect class="r1" x="146" y="114" width="18" height="16" rx="2"/>
+<rect class="ghost" x="164" y="114" width="78" height="16" rx="2"/>
+<text class="sm" x="149" y="126" text-anchor="start">s1=3</text>
+<rect class="r1" x="264" y="114" width="54" height="16" rx="2"/>
+<rect class="ghost" x="318" y="114" width="42" height="16" rx="2"/>
+<text class="sm" x="267" y="126" text-anchor="start">s2=9</text>
+<rect class="r1" x="382" y="114" width="12" height="16" rx="2"/>
+<rect class="ghost" x="394" y="114" width="84" height="16" rx="2"/>
+<text class="sm" x="385" y="126" text-anchor="start">s3=2</text>
+<rect class="r1" x="500" y="114" width="30" height="16" rx="2"/>
+<rect class="ghost" x="530" y="114" width="66" height="16" rx="2"/>
+<text class="sm" x="503" y="126" text-anchor="start">s4=5</text>
+<rect class="r1" x="618" y="114" width="36" height="16" rx="2"/>
+<rect class="ghost" x="654" y="114" width="60" height="16" rx="2"/>
+<text class="sm" x="621" y="126" text-anchor="start">s5=6</text>
+<rect class="r1" x="736" y="114" width="6" height="16" rx="2"/>
+<rect class="ghost" x="742" y="114" width="90" height="16" rx="2"/>
+<text class="sm" x="739" y="126" text-anchor="start">s6=1</text>
+<rect class="r1" x="854" y="114" width="48" height="16" rx="2"/>
+<rect class="ghost" x="902" y="114" width="48" height="16" rx="2"/>
+<text class="sm" x="857" y="126" text-anchor="start">s7=8</text>
+<rect class="r1" x="972" y="114" width="24" height="16" rx="2"/>
+<rect class="ghost" x="996" y="114" width="72" height="16" rx="2"/>
+<text class="sm" x="975" y="126" text-anchor="start">s8=4</text>
+<rect class="r1" x="1090" y="114" width="72" height="16" rx="2"/>
+<rect class="ghost" x="1162" y="114" width="24" height="16" rx="2"/>
+<text class="sm" x="1093" y="126" text-anchor="start">s9=12</text>
+<text class="cap" x="28" y="148" text-anchor="start">每条独占一行：10 × 16 = 160 格里 57 格是真 token，pad 103 格（35.6% 有效）；条形按 1/2 比例缩画，灰 = pad</text>
+<text class="pt" x="28" y="172" text-anchor="start">B　SequencePacker.pack_sequences：按长度降序，放不下就开新箱（next-fit）→ 5 个箱</text>
+<text class="rank" x="66" y="217" text-anchor="end">bin 0</text>
+<rect class="r1" x="72" y="202" width="264" height="22" rx="2"/>
+<text class="sm" x="204" y="217" text-anchor="middle">s9·12</text>
+<rect class="ghost" x="336" y="202" width="88" height="22" rx="2"/>
+<text class="sm" x="380" y="217" text-anchor="middle">pad 4</text>
+<text class="rank" x="66" y="243" text-anchor="end">bin 1</text>
+<rect class="r1" x="72" y="228" width="198" height="22" rx="2"/>
+<text class="sm" x="171" y="243" text-anchor="middle">s2·9</text>
+<rect class="ghost" x="270" y="228" width="154" height="22" rx="2"/>
+<text class="sm" x="347" y="243" text-anchor="middle">pad 7</text>
+<text class="rank" x="66" y="269" text-anchor="end">bin 2</text>
+<rect class="r1" x="72" y="254" width="176" height="22" rx="2"/>
+<text class="sm" x="160" y="269" text-anchor="middle">s7·8</text>
+<rect class="r1" x="248" y="254" width="154" height="22" rx="2"/>
+<text class="sm" x="325" y="269" text-anchor="middle">s0·7</text>
+<rect class="ghost" x="402" y="254" width="22" height="22" rx="2"/>
+<text class="sm" x="413" y="269" text-anchor="middle">1</text>
+<text class="rank" x="66" y="295" text-anchor="end">bin 3</text>
+<rect class="r1" x="72" y="280" width="132" height="22" rx="2"/>
+<text class="sm" x="138" y="295" text-anchor="middle">s5·6</text>
+<rect class="r1" x="204" y="280" width="110" height="22" rx="2"/>
+<text class="sm" x="259" y="295" text-anchor="middle">s4·5</text>
+<rect class="r1" x="314" y="280" width="88" height="22" rx="2"/>
+<text class="sm" x="358" y="295" text-anchor="middle">s8·4</text>
+<rect class="ghost" x="402" y="280" width="22" height="22" rx="2"/>
+<text class="sm" x="413" y="295" text-anchor="middle">1</text>
+<text class="rank" x="66" y="321" text-anchor="end">bin 4</text>
+<rect class="r1" x="72" y="306" width="66" height="22" rx="2"/>
+<text class="sm" x="105" y="321" text-anchor="middle">s1·3</text>
+<rect class="r1" x="138" y="306" width="44" height="22" rx="2"/>
+<text class="sm" x="160" y="321" text-anchor="middle">s3·2</text>
+<rect class="r1" x="182" y="306" width="22" height="22" rx="2"/>
+<text class="sm" x="193" y="321" text-anchor="middle">s6</text>
+<rect class="ghost" x="204" y="306" width="220" height="22" rx="2"/>
+<text class="sm" x="314" y="321" text-anchor="middle">pad 10</text>
+<text class="costtx" x="468" y="194" text-anchor="start">对照：docstring 所说的 first-fit（分析重建）</text>
+<text class="rank" x="498" y="217" text-anchor="end">bin 0</text>
+<rect class="bar" x="504" y="202" width="264" height="22" rx="2"/>
+<text class="sm" x="636" y="217" text-anchor="middle">s9·12</text>
+<rect class="bar" x="768" y="202" width="88" height="22" rx="2"/>
+<text class="sm" x="812" y="217" text-anchor="middle">s8·4</text>
+<text class="rank" x="498" y="243" text-anchor="end">bin 1</text>
+<rect class="bar" x="504" y="228" width="198" height="22" rx="2"/>
+<text class="sm" x="603" y="243" text-anchor="middle">s2·9</text>
+<rect class="bar" x="702" y="228" width="154" height="22" rx="2"/>
+<text class="sm" x="779" y="243" text-anchor="middle">s0·7</text>
+<text class="rank" x="498" y="269" text-anchor="end">bin 2</text>
+<rect class="bar" x="504" y="254" width="176" height="22" rx="2"/>
+<text class="sm" x="592" y="269" text-anchor="middle">s7·8</text>
+<rect class="bar" x="680" y="254" width="132" height="22" rx="2"/>
+<text class="sm" x="746" y="269" text-anchor="middle">s5·6</text>
+<rect class="bar" x="812" y="254" width="44" height="22" rx="2"/>
+<text class="sm" x="834" y="269" text-anchor="middle">s3·2</text>
+<text class="rank" x="498" y="295" text-anchor="end">bin 3</text>
+<rect class="bar" x="504" y="280" width="110" height="22" rx="2"/>
+<text class="sm" x="559" y="295" text-anchor="middle">s4·5</text>
+<rect class="bar" x="614" y="280" width="66" height="22" rx="2"/>
+<text class="sm" x="647" y="295" text-anchor="middle">s1·3</text>
+<rect class="bar" x="680" y="280" width="22" height="22" rx="2"/>
+<text class="sm" x="691" y="295" text-anchor="middle">s6</text>
+<rect class="ghost" x="702" y="280" width="154" height="22" rx="2"/>
+<text class="sm" x="779" y="295" text-anchor="middle">pad 7</text>
+<text class="cap" x="504" y="320" text-anchor="start">4 个箱，89.1% 有效；代码没有回头看旧箱，所以 s2 之后的 s7 不会填进 bin 0</text>
+<text class="cap" x="28" y="346" text-anchor="start">装填顺序 = sorted(lengths, reverse=True) = [s9,s2,s7,s0,s5,s4,s8,s1,s3,s6]；bin 2 的 seq_starts = [0,8,15]（末位是终点）；不算空箱的朴素效率 57 / (5 × 16) = 71.3%</text>
+<text class="pt" x="28" y="372" text-anchor="start">C　distribute_packed_bins → update_microbatch_calculator：5 个箱分到 2 个 rank，补空箱到 max_bins_per_rank = 3</text>
+<rect class="panel" x="24" y="384" width="1224" height="120" rx="8"/>
+<text class="rank" x="28" y="401" text-anchor="start">分发算法</text>
+<text class="rank" x="163" y="401" text-anchor="start">rank0 的箱</text>
+<text class="rank" x="378" y="401" text-anchor="start">rank1 的箱</text>
+<text class="rank" x="593" y="401" text-anchor="start">每 rank 效率（log_packing_efficiency 口径）</text>
+<text class="rank" x="1068" y="401" text-anchor="start">bins_bs → 微批数</text>
+<path class="edge" d="M 28 407 L 1240 407"/>
+<text class="sm" x="28" y="424" text-anchor="start">fifo（默认）</text>
+<text class="sm" x="163" y="424" text-anchor="start">[0,1,2]</text>
+<text class="costtx" x="378" y="424" text-anchor="start">[3,4] + 1 空箱</text>
+<text class="sm" x="593" y="424" text-anchor="start">75.0% / 43.8%（36 / 21 token ÷ 48）</text>
+<text class="dim" x="1068" y="424" text-anchor="start">6 → 3</text>
+<text class="sm" x="28" y="446" text-anchor="start">round-robin</text>
+<text class="sm" x="163" y="446" text-anchor="start">[0,2,4]</text>
+<text class="costtx" x="378" y="446" text-anchor="start">[1,3] + 1 空箱</text>
+<text class="sm" x="593" y="446" text-anchor="start">68.8% / 50.0%（33 / 24 token ÷ 48）</text>
+<text class="dim" x="1068" y="446" text-anchor="start">6 → 3</text>
+<text class="sm" x="28" y="468" text-anchor="start">unpacked（对照）</text>
+<text class="sm" x="163" y="468" text-anchor="start">5 条序列 / rank，各自一行</text>
+<text class="sm" x="593" y="468" text-anchor="start">get_packing_efficiency 口径（含空箱、全 DP）：57 / (3 × 16 × 2) = 59.4%</text>
+<text class="costtx" x="1068" y="468" text-anchor="start">10 → 5</text>
+<text class="sm" x="28" y="490" text-anchor="start">第二算例（更长的一批）</text>
+<text class="sm" x="163" y="490" text-anchor="start">{15,14,13,12,11,10,9,9,8,8} → 9 个箱 → 每 rank 5</text>
+<text class="costtx" x="593" y="490" text-anchor="start">微批数 3 → 5 → 回到短的一批又是 3：training.py「只增不减」断言为此让路</text>
+<text class="dim" x="1068" y="490" text-anchor="start">10 → 5</text>
+<text class="cap" x="28" y="524" text-anchor="start">微批数 = bins_bs ÷ (micro_batch_size × DP)，bins_bs = ceil(ratio × 本 rank 箱数) × DP；unpacked 用 ceil(ratio × 序列数) 除同一分母；空箱 loss_mask 全 0，只为让各 rank 迭代次数一致</text>
+<text class="pt" x="28" y="550" text-anchor="start">D　calculate_grpo_loss 在 packed 布局下：bin 2 装了 s7（8）与 s0（7），优势按 seq_starts / seq_lengths 逐条铺开</text>
+<text class="rank" x="150" y="575" text-anchor="end">token 位置</text>
+<rect class="r0" x="158" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="169.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="182" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="193.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="206" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="217.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="230" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="241.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="254" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="265.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="278" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="289.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="302" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="313.5" y="575" text-anchor="middle">s7</text>
+<rect class="r0" x="326" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="337.5" y="575" text-anchor="middle">s7</text>
+<rect class="r1" x="350" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="361.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="374" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="385.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="398" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="409.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="422" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="433.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="446" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="457.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="470" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="481.5" y="575" text-anchor="middle">s0</text>
+<rect class="r1" x="494" y="560" width="23" height="22" rx="2"/>
+<text class="sm" x="505.5" y="575" text-anchor="middle">s0</text>
+<text class="rank" x="150" y="603" text-anchor="end">packed 优势</text>
+<rect class="bar1" x="158" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="169.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="182" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="193.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="206" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="217.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="230" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="241.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="254" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="265.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="278" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="289.5" y="603" text-anchor="middle">A7</text>
+<rect class="bar1" x="302" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="313.5" y="603" text-anchor="middle">A7</text>
+<rect class="ghost" x="326" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="337.5" y="603" text-anchor="middle">0</text>
+<rect class="bar2" x="350" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="361.5" y="603" text-anchor="middle">A0</text>
+<rect class="bar2" x="374" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="385.5" y="603" text-anchor="middle">A0</text>
+<rect class="bar2" x="398" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="409.5" y="603" text-anchor="middle">A0</text>
+<rect class="bar2" x="422" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="433.5" y="603" text-anchor="middle">A0</text>
+<rect class="bar2" x="446" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="457.5" y="603" text-anchor="middle">A0</text>
+<rect class="bar2" x="470" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="481.5" y="603" text-anchor="middle">A0</text>
+<rect class="ghost" x="494" y="588" width="23" height="22" rx="2"/>
+<text class="sm" x="505.5" y="603" text-anchor="middle">0</text>
+<text class="rank" x="150" y="631" text-anchor="end">广播（被否）</text>
+<rect class="bar1" x="158" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="169.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="182" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="193.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="206" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="217.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="230" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="241.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="254" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="265.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="278" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="289.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="302" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="313.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar1" x="326" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="337.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="350" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="361.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="374" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="385.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="398" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="409.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="422" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="433.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="446" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="457.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="470" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="481.5" y="631" text-anchor="middle">A7</text>
+<rect class="bar" x="494" y="616" width="23" height="22" rx="2"/>
+<text class="sm" x="505.5" y="631" text-anchor="middle">A7</text>
+<text class="sm" x="528" y="575" text-anchor="start">logprob 位置 0..14（比 token 少 1）</text>
+<text class="dim" x="528" y="603" text-anchor="start">end = min(start + len − 1, bin_size)</text>
+<text class="costtx" x="528" y="631" text-anchor="start">advantages.view(-1, 1) 会把 A7 串给 s0</text>
+<text class="cap" x="28" y="658" text-anchor="start">packed 时 advantages 形状是 [该箱序列数]，unpacked 时是 [batch]；位置 7（s7 末 token 预测 s0 首 token）与 14 留 0，本来就被 loss_mask 掩掉；pack_inference_logprobs 用同一规则对齐 IS 权重</text>
+<rect class="neutral" x="28" y="676" width="1216" height="133" rx="8"/>
+<text class="tx" x="40" y="697" text-anchor="start">本图复刻的规则（sequence_packing_utils.py · rl_utils.py）</text>
+<path class="edge" d="M 40 705 L 1232 705"/>
+<text class="sm" x="40" y="723" text-anchor="start">pack_sequences：get_actual_sequence_lengths 按 pad 反推真实长度 → 按长度降序 → 当前箱装得下且未到 max_sequences_per_bin 就放，否则开新箱（从不回头看旧箱）</text>
+<text class="sm" x="40" y="739" text-anchor="start">每箱 pad 到 bin_size = seq_length；position_ids 逐条从 0 起；loss_mask = 1 再乘 generation_mask；PackedSeqParams 的 cu_seqlens 补到 max_sequences_per_bin + 2 项以固定形状</text>
+<text class="sm" x="40" y="755" text-anchor="start">distribute_packed_bins：fifo 连续切（多出的箱给前面的 rank）/ round-robin 跨步取；不足 max_bins_per_rank 的 rank 补 pad 箱（loss_mask 全 0）</text>
+<text class="sm" x="40" y="771" text-anchor="start">update_microbatch_calculator：reconfigure_num_microbatches_calculator(global_batch_size = bins_bs)，训练主循环因此看到微批数可增可减</text>
+<text class="sm" x="40" y="787" text-anchor="start">calculate_grpo_loss packed 分支：优势按 seq_starts 定位、len − 1 截尾逐条铺开；unpacked 分支走 advantages.view(-1, 1) 广播；pack_inference_logprobs 用同一定位规则对齐 IS 权重</text>
+<rect class="neutral" x="28" y="819" width="1216" height="117" rx="8"/>
+<text class="tx" x="40" y="840" text-anchor="start">简化与对照</text>
+<path class="edge" d="M 40 848 L 1232 848"/>
+<text class="costtx" x="40" y="866" text-anchor="start">first-fit 对照是分析重建：源码 docstring 写 "greedy first-fit"，代码从不回看旧箱（next-fit）；本算例 next-fit 5 箱 vs first-fit-decreasing 4 箱</text>
+<text class="sm" x="40" y="882" text-anchor="start">不画 pack_all_trajectories 里先 all_gather 把各 rank 的 trajs 拼成全局再打包的那一步，也不画 generation_mask 与 loss_mask 的相乘、old / ref logprob 的 [num_bins, bin_size − 1] 张量</text>
+<text class="sm" x="40" y="898" text-anchor="start">效率两种口径：get_packing_efficiency（全 DP 真 token ÷ 含空箱的总容量）59.4%；log_packing_efficiency（本 rank 真 token ÷ 本 rank 含空箱容量）见面板 C</text>
+<text class="sm" x="40" y="914" text-anchor="start">第二算例只用来证明微批数可增可减，长度是随意选的</text>
+</svg>

@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 786" width="1272" height="786" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .r2{fill:#C2CBDA;stroke:#AEB6C2;stroke-width:1}
+  .r3{fill:#ACB8CB;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2 · 存的是跨 TP 的全局 top-K，算的是 TP 感知的稀疏 KL</text>
+<text class="su" x="28" y="52" text-anchor="start">算例 B：V = 16，TP = 2（每 shard 8 个词），K = 4，一个 token；教师 / 学生 logits 脚本写死，其余数字由复刻的 _process_single_microbatch、pack_indices、topk_kl_div 算出</text>
+<rect class="panel" x="28" y="68" width="1216" height="262" rx="10"/>
+<text class="pt" x="40" y="90" text-anchor="start">A · producer（教师）：局部 top-K → 跨 TP 的 logsumexp → gather 到 tp0 取全局 top-K → 17 位打包</text>
+<text class="sm" x="40" y="108" text-anchor="start">局部 top-K 在 fp32 logit 上选；global_lse = max_lse + log Σ exp(lse_r − max_lse)（MAX 再 SUM 两次 all_reduce）；logprob = logit − global_lse，只算 top-K 位置</text>
+<text class="rank" x="40" y="150" text-anchor="start">教师 logits</text>
+<text class="dim" x="360" y="128" text-anchor="middle">tp0 shard [0, 8)</text>
+<text class="dim" x="808" y="128" text-anchor="middle">tp1 shard [8, 16)</text>
+<rect class="neutral" x="138" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="164" y="145" text-anchor="middle">0</text>
+<text class="tx" x="164" y="162" text-anchor="middle">0.2</text>
+<rect class="acc1" x="194" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="220" y="145" text-anchor="middle">1</text>
+<text class="tx" x="220" y="162" text-anchor="middle">4.0</text>
+<rect class="neutral" x="250" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="276" y="145" text-anchor="middle">2</text>
+<text class="tx" x="276" y="162" text-anchor="middle">0.5</text>
+<rect class="acc1" x="306" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="332" y="145" text-anchor="middle">3</text>
+<text class="tx" x="332" y="162" text-anchor="middle">3.0</text>
+<rect class="neutral" x="362" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="388" y="145" text-anchor="middle">4</text>
+<text class="tx" x="388" y="162" text-anchor="middle">0.1</text>
+<rect class="neutral" x="418" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="444" y="145" text-anchor="middle">5</text>
+<text class="tx" x="444" y="162" text-anchor="middle">1.0</text>
+<rect class="neutral" x="474" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="500" y="145" text-anchor="middle">6</text>
+<text class="tx" x="500" y="162" text-anchor="middle">0.3</text>
+<rect class="neutral" x="530" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="556" y="145" text-anchor="middle">7</text>
+<text class="tx" x="556" y="162" text-anchor="middle">0.8</text>
+<rect class="neutral" x="586" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="612" y="145" text-anchor="middle">8</text>
+<text class="tx" x="612" y="162" text-anchor="middle">0.4</text>
+<rect class="acc1" x="642" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="668" y="145" text-anchor="middle">9</text>
+<text class="tx" x="668" y="162" text-anchor="middle">3.5</text>
+<rect class="neutral" x="698" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="724" y="145" text-anchor="middle">10</text>
+<text class="tx" x="724" y="162" text-anchor="middle">0.6</text>
+<rect class="neutral" x="754" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="780" y="145" text-anchor="middle">11</text>
+<text class="tx" x="780" y="162" text-anchor="middle">0.9</text>
+<rect class="neutral" x="810" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="836" y="145" text-anchor="middle">12</text>
+<text class="tx" x="836" y="162" text-anchor="middle">0.2</text>
+<rect class="neutral" x="866" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="892" y="145" text-anchor="middle">13</text>
+<text class="tx" x="892" y="162" text-anchor="middle">1.2</text>
+<rect class="acc1" x="922" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="948" y="145" text-anchor="middle">14</text>
+<text class="tx" x="948" y="162" text-anchor="middle">2.5</text>
+<rect class="neutral" x="978" y="134" width="52" height="34" rx="4"/>
+<text class="sm" x="1004" y="145" text-anchor="middle">15</text>
+<text class="tx" x="1004" y="162" text-anchor="middle">0.7</text>
+<path class="sep" d="M 584 130 L 584 172"/>
+<text class="rank" x="40" y="208" text-anchor="start">局部 top-4</text>
+<rect class="neutral" x="138" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="164" y="201" text-anchor="middle">idx 1</text>
+<text class="tx" x="164" y="218" text-anchor="middle">-0.960</text>
+<rect class="neutral" x="194" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="220" y="201" text-anchor="middle">idx 3</text>
+<text class="tx" x="220" y="218" text-anchor="middle">-1.960</text>
+<rect class="neutral" x="250" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="276" y="201" text-anchor="middle">idx 5</text>
+<text class="tx" x="276" y="218" text-anchor="middle">-3.960</text>
+<rect class="neutral" x="306" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="332" y="201" text-anchor="middle">idx 7</text>
+<text class="tx" x="332" y="218" text-anchor="middle">-4.160</text>
+<text class="sm" x="368" y="202" text-anchor="start">lse0 = 4.4421</text>
+<text class="sm" x="368" y="218" text-anchor="start">idx = local + 0·8</text>
+<rect class="neutral" x="586" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="612" y="201" text-anchor="middle">idx 9</text>
+<text class="tx" x="612" y="218" text-anchor="middle">-1.460</text>
+<rect class="neutral" x="642" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="668" y="201" text-anchor="middle">idx 14</text>
+<text class="tx" x="668" y="218" text-anchor="middle">-2.460</text>
+<rect class="neutral" x="698" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="724" y="201" text-anchor="middle">idx 13</text>
+<text class="tx" x="724" y="218" text-anchor="middle">-3.760</text>
+<rect class="neutral" x="754" y="190" width="52" height="34" rx="4"/>
+<text class="sm" x="780" y="201" text-anchor="middle">idx 11</text>
+<text class="tx" x="780" y="218" text-anchor="middle">-4.060</text>
+<text class="sm" x="816" y="202" text-anchor="start">lse1 = 4.0540</text>
+<text class="sm" x="816" y="218" text-anchor="start">idx = local + 1·8</text>
+<text class="sm" x="1038" y="202" text-anchor="start">max_lse = 4.4421</text>
+<text class="dim" x="1038" y="218" text-anchor="start">global_lse = 4.9599</text>
+<text class="rank" x="40" y="264" text-anchor="start">全局 top-4 → tp0</text>
+<rect class="acc1" x="138" y="246" width="52" height="34" rx="4"/>
+<text class="sm" x="164" y="257" text-anchor="middle">idx 1</text>
+<text class="tx" x="164" y="274" text-anchor="middle">-0.960</text>
+<rect class="acc1" x="194" y="246" width="52" height="34" rx="4"/>
+<text class="sm" x="220" y="257" text-anchor="middle">idx 9</text>
+<text class="tx" x="220" y="274" text-anchor="middle">-1.460</text>
+<rect class="acc1" x="250" y="246" width="52" height="34" rx="4"/>
+<text class="sm" x="276" y="257" text-anchor="middle">idx 3</text>
+<text class="tx" x="276" y="274" text-anchor="middle">-1.960</text>
+<rect class="acc1" x="306" y="246" width="52" height="34" rx="4"/>
+<text class="sm" x="332" y="257" text-anchor="middle">idx 14</text>
+<text class="tx" x="332" y="274" text-anchor="middle">-2.460</text>
+<text class="sm" x="368" y="258" text-anchor="start">gather 到 tp0 后按 fp32 logit 排序；Σ p_T(top-K) = 0.8415</text>
+<text class="sm" x="368" y="274" text-anchor="start">top-P = 0.7、min_k = 1 时 keep ⇔ cumprobs − probs &lt; p → 保留 3 项</text>
+<text class="dim" x="728" y="258" text-anchor="start">indices_low (uint16)</text>
+<rect class="neutral" x="858" y="246" width="44" height="22" rx="4"/>
+<text class="tx" x="880" y="261" text-anchor="middle">1</text>
+<rect class="neutral" x="906" y="246" width="44" height="22" rx="4"/>
+<text class="tx" x="928" y="261" text-anchor="middle">9</text>
+<rect class="neutral" x="954" y="246" width="44" height="22" rx="4"/>
+<text class="tx" x="976" y="261" text-anchor="middle">3</text>
+<rect class="neutral" x="1002" y="246" width="44" height="22" rx="4"/>
+<text class="tx" x="1024" y="261" text-anchor="middle">14</text>
+<text class="dim" x="728" y="294" text-anchor="start">bit_17 (bool)</text>
+<rect class="ghost" x="858" y="282" width="44" height="22" rx="4"/>
+<text class="tx" x="880" y="297" text-anchor="middle">0</text>
+<rect class="ghost" x="906" y="282" width="44" height="22" rx="4"/>
+<text class="tx" x="928" y="297" text-anchor="middle">0</text>
+<rect class="ghost" x="954" y="282" width="44" height="22" rx="4"/>
+<text class="tx" x="976" y="297" text-anchor="middle">0</text>
+<rect class="ghost" x="1002" y="282" width="44" height="22" rx="4"/>
+<text class="tx" x="1024" y="297" text-anchor="middle">0</text>
+<text class="sm" x="1058" y="262" text-anchor="start">idx 100,000 → low 34,464，bit17 1</text>
+<text class="costtx" x="1058" y="298" text-anchor="start">2 + 1 = 3 B/index，对 int32 省 25%</text>
+<text class="sm" x="40" y="318" text-anchor="start">values 转 save_dtype（默认 fp16）后连同两条带经 torch.save 进 _pending_writes[iteration]；V ≤ 2^17 由 assert 守住</text>
+<rect class="panel" x="28" y="346" width="1216" height="302" rx="10"/>
+<text class="pt" x="40" y="368" text-anchor="start">B · consumer（学生）：核内跨 TP 归一化 + 本 shard 的稀疏贡献，wrapper 做 TP 求和与 α 加权</text>
+<text class="sm" x="40" y="386" text-anchor="start">两次 all_reduce：logits_max 取 MAX（detach，只为数值稳定）、sum_exp 取 SUM（dist_nn，可微）；ghost 残差的 Σ p_S(hit) 再 SUM 一次</text>
+<text class="rank" x="40" y="428" text-anchor="start">tp0</text>
+<text class="sm" x="40" y="444" text-anchor="start">学生 logits</text>
+<rect class="neutral" x="118" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="138" y="419" text-anchor="middle">0</text>
+<text class="tx" x="138" y="436" text-anchor="middle">0.5</text>
+<rect class="acc1" x="162" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="182" y="419" text-anchor="middle">1</text>
+<text class="tx" x="182" y="436" text-anchor="middle">3.0</text>
+<rect class="neutral" x="206" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="226" y="419" text-anchor="middle">2</text>
+<text class="tx" x="226" y="436" text-anchor="middle">0.2</text>
+<rect class="acc1" x="250" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="270" y="419" text-anchor="middle">3</text>
+<text class="tx" x="270" y="436" text-anchor="middle">2.0</text>
+<rect class="neutral" x="294" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="314" y="419" text-anchor="middle">4</text>
+<text class="tx" x="314" y="436" text-anchor="middle">0.4</text>
+<rect class="neutral" x="338" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="358" y="419" text-anchor="middle">5</text>
+<text class="tx" x="358" y="436" text-anchor="middle">1.5</text>
+<rect class="neutral" x="382" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="402" y="419" text-anchor="middle">6</text>
+<text class="tx" x="402" y="436" text-anchor="middle">0.1</text>
+<rect class="neutral" x="426" y="408" width="40" height="34" rx="4"/>
+<text class="sm" x="446" y="419" text-anchor="middle">7</text>
+<text class="tx" x="446" y="436" text-anchor="middle">0.3</text>
+<text class="sm" x="482" y="420" text-anchor="start">local max = 3.00 → TP MAX = 3.80</text>
+<text class="sm" x="482" y="436" text-anchor="start">local Σexp = 0.8674 → TP SUM = 2.3506</text>
+<text class="sm" x="482" y="452" text-anchor="start">log p_S = logit − max − log SUM</text>
+<text class="sm" x="732" y="420" text-anchor="start">offset = 8·0 = 0；命中 idx [1, 3]</text>
+<text class="sm" x="732" y="436" text-anchor="start">gather 命中的 log p_S：-1.655, -2.655</text>
+<text class="sm" x="732" y="452" text-anchor="start">未命中 → clamp 后 gather，再被 mask 置 0</text>
+<text class="sm" x="982" y="420" text-anchor="start">Σ p_S(hit) = 0.2615 → TP SUM 0.7128</text>
+<text class="sm" x="982" y="436" text-anchor="start">ghost 项 = -0.0942（只 tp0 计入）</text>
+<text class="dim" x="982" y="452" text-anchor="start">贡献_0 = 0.2697</text>
+<text class="rank" x="40" y="512" text-anchor="start">tp1</text>
+<text class="sm" x="40" y="528" text-anchor="start">学生 logits</text>
+<rect class="neutral" x="118" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="138" y="503" text-anchor="middle">8</text>
+<text class="tx" x="138" y="520" text-anchor="middle">0.9</text>
+<rect class="acc1" x="162" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="182" y="503" text-anchor="middle">9</text>
+<text class="tx" x="182" y="520" text-anchor="middle">3.8</text>
+<rect class="neutral" x="206" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="226" y="503" text-anchor="middle">10</text>
+<text class="tx" x="226" y="520" text-anchor="middle">0.2</text>
+<rect class="neutral" x="250" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="270" y="503" text-anchor="middle">11</text>
+<text class="tx" x="270" y="520" text-anchor="middle">0.6</text>
+<rect class="neutral" x="294" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="314" y="503" text-anchor="middle">12</text>
+<text class="tx" x="314" y="520" text-anchor="middle">1.1</text>
+<rect class="neutral" x="338" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="358" y="503" text-anchor="middle">13</text>
+<text class="tx" x="358" y="520" text-anchor="middle">0.3</text>
+<rect class="acc1" x="382" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="402" y="503" text-anchor="middle">14</text>
+<text class="tx" x="402" y="520" text-anchor="middle">1.0</text>
+<rect class="neutral" x="426" y="492" width="40" height="34" rx="4"/>
+<text class="sm" x="446" y="503" text-anchor="middle">15</text>
+<text class="tx" x="446" y="520" text-anchor="middle">2.2</text>
+<text class="sm" x="482" y="504" text-anchor="start">local max = 3.80 → TP MAX = 3.80</text>
+<text class="sm" x="482" y="520" text-anchor="start">local Σexp = 1.4832 → TP SUM = 2.3506</text>
+<text class="sm" x="482" y="536" text-anchor="start">log p_S = logit − max − log SUM</text>
+<text class="sm" x="732" y="504" text-anchor="start">offset = 8·1 = 8；命中 idx [9, 14]</text>
+<text class="sm" x="732" y="520" text-anchor="start">gather 命中的 log p_S：-0.855, -3.655</text>
+<text class="sm" x="732" y="536" text-anchor="start">未命中 → clamp 后 gather，再被 mask 置 0</text>
+<text class="sm" x="982" y="504" text-anchor="start">Σ p_S(hit) = 0.4513 → TP SUM 0.7128</text>
+<text class="sm" x="982" y="520" text-anchor="start">ghost 项 = 0（mask 末位 = tp_rank == 0）</text>
+<text class="dim" x="982" y="536" text-anchor="start">贡献_1 = -0.0385</text>
+<rect class="acc1" x="40" y="582" width="400" height="52" rx="6"/>
+<text class="tx" x="52" y="602" text-anchor="start">wrapper：dist.all_reduce(SUM, TP)</text>
+<text class="dim" x="52" y="622" text-anchor="start">KL = 0.2697 + (-0.0385) = 0.2312</text>
+<rect class="neutral" x="456" y="582" width="360" height="52" rx="6"/>
+<text class="tx" x="468" y="602" text-anchor="start">loss = (1 − α)·LM + α·KD；CLI 默认 α = 1.0</text>
+<text class="sm" x="468" y="622" text-anchor="start">教师残差 = log(1 − Σ p_T) = -1.8420，学生残差 = -1.2475</text>
+<rect class="acc2" x="832" y="582" width="400" height="52" rx="6"/>
+<text class="tx" x="844" y="602" text-anchor="start">对照：完整词表 KL = 0.2729，无 ghost 的稀疏和 = 0.3254</text>
+<text class="costtx" x="844" y="622" text-anchor="start">ghost 保住尾部总质量 0.1585，丢掉尾部形状：差 0.0417</text>
+<rect class="panel" x="28" y="664" width="1216" height="110" rx="10"/>
+<text class="pt" x="40" y="686" text-anchor="start">C · 字节账（每 token 原始 payload，不计 tar / zstd）：V = 131,072（2^17 上限），K = 64，值 2 B</text>
+<rect class="ghost" x="40" y="698" width="300" height="64" rx="8"/>
+<text class="tx" x="52" y="719" text-anchor="start">被否掉：稠密 logits</text>
+<path class="edge" d="M 52 727 L 328 727"/>
+<text class="sm" x="52" y="745" text-anchor="start">V × 2 B = 262,144 B / token</text>
+<rect class="ghost" x="352" y="698" width="320" height="64" rx="8"/>
+<text class="tx" x="364" y="719" text-anchor="start">被否掉：top-K + int32 索引</text>
+<path class="edge" d="M 364 727 L 660 727"/>
+<text class="sm" x="364" y="745" text-anchor="start">K × (2 + 4) = 384 B / token</text>
+<rect class="acc1" x="684" y="698" width="548" height="64" rx="8"/>
+<text class="tx" x="696" y="719" text-anchor="start">现行：top-K + uint16 低位 + bool 第 17 位</text>
+<path class="edge" d="M 696 727 L 1220 727"/>
+<text class="dim" x="696" y="745" text-anchor="start">K × (2 + 2 + 1) = 320 B / token；对稠密 819.2×，对 int32 合计省 16.7%</text>
+</svg>

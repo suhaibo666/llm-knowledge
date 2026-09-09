@@ -1,0 +1,736 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 1479" width="1272" height="1479" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .bar2{fill:#9CC2F3;stroke:#2563EB;stroke-width:.8}
+  .bar3{fill:#5E97E4;stroke:#2563EB;stroke-width:.8}
+  .bar4{fill:#E7EAEE;stroke:#AEB6C2;stroke-width:.8}
+  .train{fill:#DDE3EA;stroke:#5B6470;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+  .sep2{fill:none;stroke:#C3651F;stroke-width:1.4;stroke-dasharray:3 3}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　rollout 流水线与提交闸门：同一个 rl_generation_lag 在 B / G / R 三种提交粒度下各买到什么</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：grpo_prompts_per_step=2，grpo_group_size=2，4 个 trainer batch = 16 条 rollout，推理时长 [3,5,2,4,6,1,3,2,4,4,2,5,3,2,6,1]，装配 a=1，训练 T=6（示意单位）</text>
+<text class="su" x="28" y="66" text-anchor="start">浅蓝带 = 推理相（引擎跑，事件循环只由 rank 0 驱动），灰带 = 训练相（引擎 suspend，policy version +1）；gate 条 = 每个 slot 被哪个提交单元占着（灰 = 最后一批等不到下一次 anext）</text>
+<text class="su" x="28" y="80" text-anchor="start">每行一条 rollout：灰 = 提交后排队，tick 颜色 = 该 token 在训练时的 staleness（浅蓝 0、中蓝 1、橙 ≥ 2），白 = 装配；蓝点 = 闸门归还（画在提交单元第一行）</text>
+<text class="su" x="28" y="94" text-anchor="start">橙虚线 = rank 0 取满 n 组的时刻：之后才 suspend 引擎、broadcast_object_list 到全 rank —— slot 归还与全 rank 可见是两个不同的完成边界</text>
+<text class="pt" x="28" y="126" text-anchor="start">① lag=0 / B（非 streaming 同步基线）：capacity 1 × batch slot，归还于 consumed，infer workers 4</text>
+<text class="costtx" x="28" y="142" text-anchor="start">makespan 50 · trainer 等待 26 · 引擎空闲 4 · 峰值在途 4 · 闸门峰值 1/1 · staleness 最旧 ≤ 0、最新 ≤ 0</text>
+<rect class="bar1" x="102" y="152" width="137.04" height="8" rx="1"/>
+<text class="dim" x="104" y="172" text-anchor="start">v0</text>
+<rect class="bar1" x="376.08" y="152" width="159.88" height="8" rx="1"/>
+<text class="dim" x="378.08" y="172" text-anchor="start">v1</text>
+<rect class="bar1" x="673" y="152" width="137.04" height="8" rx="1"/>
+<text class="dim" x="675" y="172" text-anchor="start">v2</text>
+<rect class="bar1" x="947.08" y="152" width="159.88" height="8" rx="1"/>
+<text class="dim" x="949.08" y="172" text-anchor="start">v3</text>
+<rect class="train" x="239.04" y="152" width="137.04" height="8" rx="1"/>
+<rect class="train" x="535.96" y="152" width="137.04" height="8" rx="1"/>
+<rect class="train" x="810.04" y="152" width="137.04" height="8" rx="1"/>
+<rect class="train" x="1106.96" y="152" width="137.04" height="8" rx="1"/>
+<text class="rank" x="94" y="160" text-anchor="end">相</text>
+<text class="rank" x="94" y="187.5" text-anchor="end">gate ×1</text>
+<path class="gl" d="M 102 183.5 L 1244 183.5"/>
+<rect class="acc1" x="102" y="179" width="137.04" height="9" rx="1"/>
+<text class="dim" x="105" y="187" text-anchor="start">B0</text>
+<rect class="acc1" x="376.08" y="179" width="159.88" height="9" rx="1"/>
+<text class="dim" x="379.08" y="187" text-anchor="start">B1</text>
+<rect class="acc1" x="673" y="179" width="137.04" height="9" rx="1"/>
+<text class="dim" x="676" y="187" text-anchor="start">B2</text>
+<rect class="acc1" x="947.08" y="179" width="159.88" height="9" rx="1"/>
+<text class="dim" x="950.08" y="187" text-anchor="start">B3</text>
+<path class="gl" d="M 102 198.5 L 1244 198.5"/>
+<rect class="bar1" x="102" y="196" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="196" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="196" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="196" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="198.5" r="2.4"/>
+<path class="gl" d="M 102 205.5 L 1244 205.5"/>
+<rect class="bar1" x="102" y="203" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="203" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="203" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="203" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="193.36" y="203" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="203" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 212.5 L 1244 212.5"/>
+<rect class="bar1" x="102" y="210" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="210" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="210" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 219.5 L 1244 219.5"/>
+<rect class="bar1" x="102" y="217" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="217" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="217" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="217" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="217" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 226.5 L 1244 226.5"/>
+<rect class="bar1" x="376.08" y="224" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="398.92" y="224" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="421.76" y="224" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="444.6" y="224" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="467.44" y="224" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="490.28" y="224" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="513.12" y="224" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="535.96" cy="226.5" r="2.4"/>
+<path class="gl" d="M 102 233.5 L 1244 233.5"/>
+<rect class="bar1" x="376.08" y="231" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="513.12" y="231" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 240.5 L 1244 240.5"/>
+<rect class="bar1" x="376.08" y="238" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="398.92" y="238" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="421.76" y="238" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="444.6" y="238" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 247.5 L 1244 247.5"/>
+<rect class="bar1" x="376.08" y="245" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="398.92" y="245" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="444.6" y="245" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 254.5 L 1244 254.5"/>
+<rect class="bar1" x="673" y="252" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="695.84" y="252" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="718.68" y="252" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="741.52" y="252" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="764.36" y="252" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="810.04" cy="254.5" r="2.4"/>
+<path class="gl" d="M 102 261.5 L 1244 261.5"/>
+<rect class="bar1" x="673" y="259" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="695.84" y="259" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="718.68" y="259" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="741.52" y="259" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="764.36" y="259" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 268.5 L 1244 268.5"/>
+<rect class="bar1" x="673" y="266" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="695.84" y="266" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="787.2" y="266" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 275.5 L 1244 275.5"/>
+<rect class="bar1" x="673" y="273" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="695.84" y="273" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="718.68" y="273" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="741.52" y="273" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="764.36" y="273" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="787.2" y="273" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 282.5 L 1244 282.5"/>
+<rect class="bar1" x="947.08" y="280" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="969.92" y="280" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="992.76" y="280" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="1015.6" y="280" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="1106.96" cy="282.5" r="2.4"/>
+<path class="gl" d="M 102 289.5 L 1244 289.5"/>
+<rect class="bar1" x="947.08" y="287" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="969.92" y="287" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="1015.6" y="287" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 296.5 L 1244 296.5"/>
+<rect class="bar1" x="947.08" y="294" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="969.92" y="294" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="992.76" y="294" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="1015.6" y="294" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="1038.44" y="294" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="1061.28" y="294" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="1084.12" y="294" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 303.5 L 1244 303.5"/>
+<rect class="bar1" x="947.08" y="301" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="1084.12" y="301" width="22.84" height="5" rx="1"/>
+<text class="sm" x="94" y="206" text-anchor="end">b0 g0</text>
+<text class="sm" x="94" y="220" text-anchor="end">b0 g1</text>
+<text class="sm" x="94" y="234" text-anchor="end">b1 g2</text>
+<text class="sm" x="94" y="248" text-anchor="end">b1 g3</text>
+<text class="sm" x="94" y="262" text-anchor="end">b2 g4</text>
+<text class="sm" x="94" y="276" text-anchor="end">b2 g5</text>
+<text class="sm" x="94" y="290" text-anchor="end">b3 g6</text>
+<text class="sm" x="94" y="304" text-anchor="end">b3 g7</text>
+<text class="rank" x="94" y="323" text-anchor="end">trainer</text>
+<rect class="train" x="239.04" y="312" width="137.04" height="14" rx="2"/>
+<text class="sm" x="307.56" y="322" text-anchor="middle">train b0</text>
+<path class="sep2" d="M 239.04 309 L 239.04 327"/>
+<rect class="train" x="535.96" y="312" width="137.04" height="14" rx="2"/>
+<text class="sm" x="604.48" y="322" text-anchor="middle">train b1</text>
+<path class="sep2" d="M 535.96 309 L 535.96 327"/>
+<rect class="train" x="810.04" y="312" width="137.04" height="14" rx="2"/>
+<text class="sm" x="878.56" y="322" text-anchor="middle">train b2</text>
+<path class="sep2" d="M 810.04 309 L 810.04 327"/>
+<rect class="train" x="1106.96" y="312" width="137.04" height="14" rx="2"/>
+<text class="sm" x="1175.48" y="322" text-anchor="middle">train b3</text>
+<path class="sep2" d="M 1106.96 309 L 1106.96 327"/>
+<path class="sep" d="M 102 331 L 102 334"/>
+<text class="sm" x="102" y="344" text-anchor="middle">0</text>
+<path class="sep" d="M 216.2 331 L 216.2 334"/>
+<text class="sm" x="216.2" y="344" text-anchor="middle">5</text>
+<path class="sep" d="M 330.4 331 L 330.4 334"/>
+<text class="sm" x="330.4" y="344" text-anchor="middle">10</text>
+<path class="sep" d="M 444.6 331 L 444.6 334"/>
+<text class="sm" x="444.6" y="344" text-anchor="middle">15</text>
+<path class="sep" d="M 558.8 331 L 558.8 334"/>
+<text class="sm" x="558.8" y="344" text-anchor="middle">20</text>
+<path class="sep" d="M 673 331 L 673 334"/>
+<text class="sm" x="673" y="344" text-anchor="middle">25</text>
+<path class="sep" d="M 787.2 331 L 787.2 334"/>
+<text class="sm" x="787.2" y="344" text-anchor="middle">30</text>
+<path class="sep" d="M 901.4 331 L 901.4 334"/>
+<text class="sm" x="901.4" y="344" text-anchor="middle">35</text>
+<path class="sep" d="M 1015.6 331 L 1015.6 334"/>
+<text class="sm" x="1015.6" y="344" text-anchor="middle">40</text>
+<path class="sep" d="M 1129.8 331 L 1129.8 334"/>
+<text class="sm" x="1129.8" y="344" text-anchor="middle">45</text>
+<path class="sep" d="M 1244 331 L 1244 334"/>
+<text class="sm" x="1244" y="344" text-anchor="middle">50</text>
+<text class="pt" x="28" y="359" text-anchor="start">② lag=1 / B：capacity 2 × batch slot，归还于 consumed，infer workers 8</text>
+<text class="costtx" x="28" y="375" text-anchor="start">makespan 38 · trainer 等待 14 · 引擎空闲 1 · 峰值在途 8 · 闸门峰值 2/2 · staleness 最旧 ≤ 1、最新 ≤ 1</text>
+<rect class="bar1" x="102" y="385" width="137.04" height="8" rx="1"/>
+<text class="dim" x="104" y="405" text-anchor="start">v0</text>
+<rect class="bar1" x="376.08" y="385" width="22.84" height="8" rx="1"/>
+<text class="dim" x="378.08" y="405" text-anchor="start">v1</text>
+<rect class="bar1" x="535.96" y="385" width="114.2" height="8" rx="1"/>
+<text class="dim" x="537.96" y="405" text-anchor="start">v2</text>
+<rect class="bar1" x="787.2" y="385" width="45.68" height="8" rx="1"/>
+<text class="dim" x="789.2" y="405" text-anchor="start">v3</text>
+<rect class="train" x="239.04" y="385" width="137.04" height="8" rx="1"/>
+<rect class="train" x="398.92" y="385" width="137.04" height="8" rx="1"/>
+<rect class="train" x="650.16" y="385" width="137.04" height="8" rx="1"/>
+<rect class="train" x="832.88" y="385" width="137.04" height="8" rx="1"/>
+<text class="rank" x="94" y="393" text-anchor="end">相</text>
+<text class="rank" x="94" y="426" text-anchor="end">gate ×2</text>
+<path class="gl" d="M 102 416.5 L 1244 416.5"/>
+<path class="gl" d="M 102 427.5 L 1244 427.5"/>
+<rect class="acc1" x="102" y="412" width="274.08" height="9" rx="1"/>
+<text class="dim" x="105" y="420" text-anchor="start">B0</text>
+<rect class="acc1" x="102" y="423" width="433.96" height="9" rx="1"/>
+<text class="dim" x="105" y="431" text-anchor="start">B1</text>
+<rect class="acc1" x="376.08" y="412" width="411.12" height="9" rx="1"/>
+<text class="dim" x="379.08" y="420" text-anchor="start">B2</text>
+<rect class="ghost" x="535.96" y="423" width="433.96" height="9" rx="1"/>
+<text class="dim" x="538.96" y="431" text-anchor="start">B3</text>
+<path class="gl" d="M 102 442.5 L 1244 442.5"/>
+<rect class="bar1" x="102" y="440" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="440" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="440" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="440" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="376.08" cy="442.5" r="2.4"/>
+<path class="gl" d="M 102 449.5 L 1244 449.5"/>
+<rect class="bar1" x="102" y="447" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="447" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="447" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="447" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="193.36" y="447" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="447" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 456.5 L 1244 456.5"/>
+<rect class="bar1" x="102" y="454" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="454" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="454" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 463.5 L 1244 463.5"/>
+<rect class="bar1" x="102" y="461" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="461" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="461" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="461" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="461" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 470.5 L 1244 470.5"/>
+<rect class="bar2" x="102" y="468" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="468" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="468" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="170.51999999999998" y="468" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="193.36" y="468" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="216.2" y="468" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="468" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="535.96" cy="470.5" r="2.4"/>
+<path class="gl" d="M 102 477.5 L 1244 477.5"/>
+<rect class="bar2" x="102" y="475" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="475" width="159.88" height="5" rx="1"/>
+<path class="gl" d="M 102 484.5 L 1244 484.5"/>
+<rect class="bar2" x="102" y="482" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="482" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="482" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="482" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 491.5 L 1244 491.5"/>
+<rect class="bar2" x="102" y="489" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="489" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="489" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 498.5 L 1244 498.5"/>
+<rect class="bar2" x="376.08" y="496" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="496" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="558.8" y="496" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="581.64" y="496" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="496" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="787.2" cy="498.5" r="2.4"/>
+<path class="gl" d="M 102 505.5 L 1244 505.5"/>
+<rect class="bar2" x="376.08" y="503" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="503" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="558.8" y="503" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="581.64" y="503" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="503" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 512.5 L 1244 512.5"/>
+<rect class="bar2" x="376.08" y="510" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="510" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="627.32" y="510" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 519.5 L 1244 519.5"/>
+<rect class="bar2" x="376.08" y="517" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="517" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="558.8" y="517" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="581.64" y="517" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="604.48" y="517" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="627.32" y="517" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 526.5 L 1244 526.5"/>
+<rect class="bar2" x="535.96" y="524" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="524" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="581.64" y="524" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="524" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 533.5 L 1244 533.5"/>
+<rect class="bar2" x="535.96" y="531" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="531" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="531" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 540.5 L 1244 540.5"/>
+<rect class="bar2" x="535.96" y="538" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="538" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="581.64" y="538" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="604.48" y="538" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="627.32" y="538" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="787.2" y="538" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="810.04" y="538" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 547.5 L 1244 547.5"/>
+<rect class="bar2" x="535.96" y="545" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="810.04" y="545" width="22.84" height="5" rx="1"/>
+<text class="sm" x="94" y="450" text-anchor="end">b0 g0</text>
+<text class="sm" x="94" y="464" text-anchor="end">b0 g1</text>
+<text class="sm" x="94" y="478" text-anchor="end">b1 g2</text>
+<text class="sm" x="94" y="492" text-anchor="end">b1 g3</text>
+<text class="sm" x="94" y="506" text-anchor="end">b2 g4</text>
+<text class="sm" x="94" y="520" text-anchor="end">b2 g5</text>
+<text class="sm" x="94" y="534" text-anchor="end">b3 g6</text>
+<text class="sm" x="94" y="548" text-anchor="end">b3 g7</text>
+<text class="rank" x="94" y="567" text-anchor="end">trainer</text>
+<rect class="train" x="239.04" y="556" width="137.04" height="14" rx="2"/>
+<text class="sm" x="307.56" y="566" text-anchor="middle">train b0</text>
+<path class="sep2" d="M 239.04 553 L 239.04 571"/>
+<rect class="train" x="398.92" y="556" width="137.04" height="14" rx="2"/>
+<text class="sm" x="467.44" y="566" text-anchor="middle">train b1</text>
+<path class="sep2" d="M 398.92 553 L 398.92 571"/>
+<rect class="train" x="650.16" y="556" width="137.04" height="14" rx="2"/>
+<text class="sm" x="718.68" y="566" text-anchor="middle">train b2</text>
+<path class="sep2" d="M 650.16 553 L 650.16 571"/>
+<rect class="train" x="832.88" y="556" width="137.04" height="14" rx="2"/>
+<text class="sm" x="901.4" y="566" text-anchor="middle">train b3</text>
+<path class="sep2" d="M 832.88 553 L 832.88 571"/>
+<path class="sep" d="M 102 575 L 102 578"/>
+<text class="sm" x="102" y="588" text-anchor="middle">0</text>
+<path class="sep" d="M 216.2 575 L 216.2 578"/>
+<text class="sm" x="216.2" y="588" text-anchor="middle">5</text>
+<path class="sep" d="M 330.4 575 L 330.4 578"/>
+<text class="sm" x="330.4" y="588" text-anchor="middle">10</text>
+<path class="sep" d="M 444.6 575 L 444.6 578"/>
+<text class="sm" x="444.6" y="588" text-anchor="middle">15</text>
+<path class="sep" d="M 558.8 575 L 558.8 578"/>
+<text class="sm" x="558.8" y="588" text-anchor="middle">20</text>
+<path class="sep" d="M 673 575 L 673 578"/>
+<text class="sm" x="673" y="588" text-anchor="middle">25</text>
+<path class="sep" d="M 787.2 575 L 787.2 578"/>
+<text class="sm" x="787.2" y="588" text-anchor="middle">30</text>
+<path class="sep" d="M 901.4 575 L 901.4 578"/>
+<text class="sm" x="901.4" y="588" text-anchor="middle">35</text>
+<path class="sep" d="M 1015.6 575 L 1015.6 578"/>
+<text class="sm" x="1015.6" y="588" text-anchor="middle">40</text>
+<path class="sep" d="M 1129.8 575 L 1129.8 578"/>
+<text class="sm" x="1129.8" y="588" text-anchor="middle">45</text>
+<path class="sep" d="M 1244 575 L 1244 578"/>
+<text class="sm" x="1244" y="588" text-anchor="middle">50</text>
+<text class="pt" x="28" y="603" text-anchor="start">③ lag=1 / G：capacity 4 × group slot，归还于 assembled，infer workers 8</text>
+<text class="costtx" x="28" y="619" text-anchor="start">makespan 38 · trainer 等待 14 · 引擎空闲 1 · 峰值在途 8 · 闸门峰值 4/4 · staleness 最旧 ≤ 2、最新 ≤ 1</text>
+<rect class="bar1" x="102" y="629" width="137.04" height="8" rx="1"/>
+<text class="dim" x="104" y="649" text-anchor="start">v0</text>
+<rect class="bar1" x="376.08" y="629" width="22.84" height="8" rx="1"/>
+<text class="dim" x="378.08" y="649" text-anchor="start">v1</text>
+<rect class="bar1" x="535.96" y="629" width="91.36" height="8" rx="1"/>
+<text class="dim" x="537.96" y="649" text-anchor="start">v2</text>
+<rect class="bar1" x="764.36" y="629" width="68.52" height="8" rx="1"/>
+<text class="dim" x="766.36" y="649" text-anchor="start">v3</text>
+<rect class="train" x="239.04" y="629" width="137.04" height="8" rx="1"/>
+<rect class="train" x="398.92" y="629" width="137.04" height="8" rx="1"/>
+<rect class="train" x="627.32" y="629" width="137.04" height="8" rx="1"/>
+<rect class="train" x="832.88" y="629" width="137.04" height="8" rx="1"/>
+<text class="rank" x="94" y="637" text-anchor="end">相</text>
+<text class="rank" x="94" y="670" text-anchor="end">gate ×4</text>
+<path class="gl" d="M 102 660.5 L 1244 660.5"/>
+<path class="gl" d="M 102 671.5 L 1244 671.5"/>
+<path class="gl" d="M 102 682.5 L 1244 682.5"/>
+<path class="gl" d="M 102 693.5 L 1244 693.5"/>
+<rect class="acc1" x="102" y="689" width="91.36" height="9" rx="1"/>
+<text class="dim" x="105" y="697" text-anchor="start">G3</text>
+<rect class="acc1" x="102" y="667" width="114.2" height="9" rx="1"/>
+<text class="dim" x="105" y="675" text-anchor="start">G1</text>
+<rect class="acc1" x="102" y="656" width="137.04" height="9" rx="1"/>
+<text class="dim" x="105" y="664" text-anchor="start">G0</text>
+<rect class="acc1" x="102" y="678" width="296.92" height="9" rx="1"/>
+<text class="dim" x="105" y="686" text-anchor="start">G2</text>
+<rect class="acc1" x="193.36" y="689" width="388.28" height="9" rx="1"/>
+<text class="dim" x="196.36" y="697" text-anchor="start">G4</text>
+<rect class="acc1" x="376.08" y="656" width="228.4" height="9" rx="1"/>
+<text class="dim" x="379.08" y="664" text-anchor="start">G6</text>
+<rect class="acc1" x="216.2" y="667" width="411.12" height="9" rx="1"/>
+<text class="dim" x="219.2" y="675" text-anchor="start">G5</text>
+<rect class="acc1" x="535.96" y="678" width="296.92" height="9" rx="1"/>
+<text class="dim" x="538.96" y="686" text-anchor="start">G7</text>
+<path class="gl" d="M 102 708.5 L 1244 708.5"/>
+<rect class="bar1" x="102" y="706" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="706" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="706" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="706" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="708.5" r="2.4"/>
+<path class="gl" d="M 102 715.5 L 1244 715.5"/>
+<rect class="bar1" x="102" y="713" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="713" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="713" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="713" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="193.36" y="713" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="713" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 722.5 L 1244 722.5"/>
+<rect class="bar1" x="102" y="720" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="720" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="720" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="216.2" cy="722.5" r="2.4"/>
+<path class="gl" d="M 102 729.5 L 1244 729.5"/>
+<rect class="bar1" x="102" y="727" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="727" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="727" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="727" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="727" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 736.5 L 1244 736.5"/>
+<rect class="bar2" x="102" y="734" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="734" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="734" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="170.51999999999998" y="734" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="193.36" y="734" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="216.2" y="734" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="734" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="398.92" cy="736.5" r="2.4"/>
+<path class="gl" d="M 102 743.5 L 1244 743.5"/>
+<rect class="bar2" x="102" y="741" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="741" width="159.88" height="5" rx="1"/>
+<path class="gl" d="M 102 750.5 L 1244 750.5"/>
+<rect class="bar2" x="102" y="748" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="748" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="748" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="748" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="193.36" cy="750.5" r="2.4"/>
+<path class="gl" d="M 102 757.5 L 1244 757.5"/>
+<rect class="bar2" x="102" y="755" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="755" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="755" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 764.5 L 1244 764.5"/>
+<rect class="bar" x="193.36" y="762" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="762" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="376.08" y="762" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="762" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="558.8" y="762" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="581.64" cy="764.5" r="2.4"/>
+<path class="gl" d="M 102 771.5 L 1244 771.5"/>
+<rect class="bar" x="193.36" y="769" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="769" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="376.08" y="769" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="769" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="558.8" y="769" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 778.5 L 1244 778.5"/>
+<rect class="bar" x="216.2" y="776" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="376.08" y="776" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="776" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="627.32" cy="778.5" r="2.4"/>
+<path class="gl" d="M 102 785.5 L 1244 785.5"/>
+<rect class="bar" x="216.2" y="783" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="376.08" y="783" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="783" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="558.8" y="783" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="581.64" y="783" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="604.48" y="783" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 792.5 L 1244 792.5"/>
+<rect class="bar" x="376.08" y="790" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="535.96" y="790" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="790" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="581.64" y="790" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="604.48" cy="792.5" r="2.4"/>
+<path class="gl" d="M 102 799.5 L 1244 799.5"/>
+<rect class="bar" x="376.08" y="797" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="535.96" y="797" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="581.64" y="797" width="22.84" height="5" rx="1"/>
+<path class="gl" d="M 102 806.5 L 1244 806.5"/>
+<rect class="bar2" x="535.96" y="804" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="804" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="581.64" y="804" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="604.48" y="804" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="764.36" y="804" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="787.2" y="804" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="810.04" y="804" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="832.88" cy="806.5" r="2.4"/>
+<path class="gl" d="M 102 813.5 L 1244 813.5"/>
+<rect class="bar2" x="535.96" y="811" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="810.04" y="811" width="22.84" height="5" rx="1"/>
+<text class="sm" x="94" y="716" text-anchor="end">b0 g0</text>
+<text class="sm" x="94" y="730" text-anchor="end">b0 g1</text>
+<text class="sm" x="94" y="744" text-anchor="end">b1 g2</text>
+<text class="sm" x="94" y="758" text-anchor="end">b1 g3</text>
+<text class="sm" x="94" y="772" text-anchor="end">b2 g4</text>
+<text class="sm" x="94" y="786" text-anchor="end">b2 g5</text>
+<text class="sm" x="94" y="800" text-anchor="end">b3 g6</text>
+<text class="sm" x="94" y="814" text-anchor="end">b3 g7</text>
+<text class="rank" x="94" y="833" text-anchor="end">trainer</text>
+<rect class="train" x="239.04" y="822" width="137.04" height="14" rx="2"/>
+<text class="sm" x="307.56" y="832" text-anchor="middle">train b0</text>
+<path class="sep2" d="M 239.04 819 L 239.04 837"/>
+<rect class="train" x="398.92" y="822" width="137.04" height="14" rx="2"/>
+<text class="sm" x="467.44" y="832" text-anchor="middle">train b1</text>
+<path class="sep2" d="M 398.92 819 L 398.92 837"/>
+<rect class="train" x="627.32" y="822" width="137.04" height="14" rx="2"/>
+<text class="sm" x="695.84" y="832" text-anchor="middle">train b2</text>
+<path class="sep2" d="M 627.32 819 L 627.32 837"/>
+<rect class="train" x="832.88" y="822" width="137.04" height="14" rx="2"/>
+<text class="sm" x="901.4" y="832" text-anchor="middle">train b3</text>
+<path class="sep2" d="M 832.88 819 L 832.88 837"/>
+<path class="sep" d="M 102 841 L 102 844"/>
+<text class="sm" x="102" y="854" text-anchor="middle">0</text>
+<path class="sep" d="M 216.2 841 L 216.2 844"/>
+<text class="sm" x="216.2" y="854" text-anchor="middle">5</text>
+<path class="sep" d="M 330.4 841 L 330.4 844"/>
+<text class="sm" x="330.4" y="854" text-anchor="middle">10</text>
+<path class="sep" d="M 444.6 841 L 444.6 844"/>
+<text class="sm" x="444.6" y="854" text-anchor="middle">15</text>
+<path class="sep" d="M 558.8 841 L 558.8 844"/>
+<text class="sm" x="558.8" y="854" text-anchor="middle">20</text>
+<path class="sep" d="M 673 841 L 673 844"/>
+<text class="sm" x="673" y="854" text-anchor="middle">25</text>
+<path class="sep" d="M 787.2 841 L 787.2 844"/>
+<text class="sm" x="787.2" y="854" text-anchor="middle">30</text>
+<path class="sep" d="M 901.4 841 L 901.4 844"/>
+<text class="sm" x="901.4" y="854" text-anchor="middle">35</text>
+<path class="sep" d="M 1015.6 841 L 1015.6 844"/>
+<text class="sm" x="1015.6" y="854" text-anchor="middle">40</text>
+<path class="sep" d="M 1129.8 841 L 1129.8 844"/>
+<text class="sm" x="1129.8" y="854" text-anchor="middle">45</text>
+<path class="sep" d="M 1244 841 L 1244 844"/>
+<text class="sm" x="1244" y="854" text-anchor="middle">50</text>
+<text class="pt" x="28" y="869" text-anchor="start">④ lag=1 / R：capacity 8 × rollout slot，归还于 inferred，infer workers 8</text>
+<text class="costtx" x="28" y="885" text-anchor="start">makespan 35 · trainer 等待 11 · 引擎空闲 1 · 峰值在途 8 · 闸门峰值 8/8 · staleness 最旧 ≤ 3、最新 ≤ 3</text>
+<rect class="bar1" x="102" y="895" width="137.04" height="8" rx="1"/>
+<text class="dim" x="104" y="915" text-anchor="start">v0</text>
+<rect class="bar1" x="376.08" y="895" width="22.84" height="8" rx="1"/>
+<text class="dim" x="378.08" y="915" text-anchor="start">v1</text>
+<rect class="bar1" x="535.96" y="895" width="45.68" height="8" rx="1"/>
+<text class="dim" x="537.96" y="915" text-anchor="start">v2</text>
+<rect class="bar1" x="718.68" y="895" width="45.68" height="8" rx="1"/>
+<text class="dim" x="720.68" y="915" text-anchor="start">v3</text>
+<rect class="train" x="239.04" y="895" width="137.04" height="8" rx="1"/>
+<rect class="train" x="398.92" y="895" width="137.04" height="8" rx="1"/>
+<rect class="train" x="581.64" y="895" width="137.04" height="8" rx="1"/>
+<rect class="train" x="764.36" y="895" width="137.04" height="8" rx="1"/>
+<text class="rank" x="94" y="903" text-anchor="end">相</text>
+<text class="rank" x="94" y="936" text-anchor="end">gate ×8</text>
+<path class="gl" d="M 102 924.5 L 1244 924.5"/>
+<path class="gl" d="M 102 931.5 L 1244 931.5"/>
+<path class="gl" d="M 102 938.5 L 1244 938.5"/>
+<path class="gl" d="M 102 945.5 L 1244 945.5"/>
+<path class="gl" d="M 102 952.5 L 1244 952.5"/>
+<path class="gl" d="M 102 959.5 L 1244 959.5"/>
+<path class="gl" d="M 102 966.5 L 1244 966.5"/>
+<path class="gl" d="M 102 973.5 L 1244 973.5"/>
+<rect class="acc1" x="102" y="957" width="22.84" height="5" rx="1"/>
+<rect class="acc1" x="102" y="936" width="45.68" height="5" rx="1"/>
+<rect class="acc1" x="102" y="971" width="45.68" height="5" rx="1"/>
+<rect class="acc1" x="102" y="922" width="68.52" height="5" rx="1"/>
+<rect class="acc1" x="102" y="964" width="68.52" height="5" rx="1"/>
+<rect class="acc1" x="102" y="943" width="91.36" height="5" rx="1"/>
+<rect class="acc1" x="147.68" y="971" width="45.68" height="5" rx="1"/>
+<rect class="acc1" x="102" y="929" width="114.2" height="5" rx="1"/>
+<rect class="acc1" x="124.84" y="957" width="91.36" height="5" rx="1"/>
+<rect class="acc1" x="102" y="950" width="137.04" height="5" rx="1"/>
+<rect class="acc1" x="147.68" y="936" width="91.36" height="5" rx="1"/>
+<rect class="acc1" x="170.51999999999998" y="964" width="68.52" height="5" rx="1"/>
+<rect class="acc1" x="193.36" y="943" width="45.68" height="5" rx="1"/>
+<rect class="acc1" x="216.2" y="929" width="22.84" height="5" rx="1"/>
+<rect class="acc1" x="170.51999999999998" y="922" width="388.28" height="5" rx="1"/>
+<rect class="acc1" x="193.36" y="971" width="548.16" height="5" rx="1"/>
+<path class="gl" d="M 102 986.5 L 1244 986.5"/>
+<rect class="bar1" x="102" y="984" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="984" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="984" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="984" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="170.51999999999998" cy="986.5" r="2.4"/>
+<path class="gl" d="M 102 993.5 L 1244 993.5"/>
+<rect class="bar1" x="102" y="991" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="991" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="991" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="991" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="193.36" y="991" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="216.2" y="991" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="216.2" cy="993.5" r="2.4"/>
+<path class="gl" d="M 102 1000.5 L 1244 1000.5"/>
+<rect class="bar1" x="102" y="998" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="998" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="998" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="147.68" cy="1000.5" r="2.4"/>
+<path class="gl" d="M 102 1007.5 L 1244 1007.5"/>
+<rect class="bar1" x="102" y="1005" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="124.84" y="1005" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="147.68" y="1005" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="170.51999999999998" y="1005" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="193.36" y="1005" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="193.36" cy="1007.5" r="2.4"/>
+<path class="gl" d="M 102 1014.5 L 1244 1014.5"/>
+<rect class="bar2" x="102" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="170.51999999999998" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="193.36" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="216.2" y="1012" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1012" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="1014.5" r="2.4"/>
+<path class="gl" d="M 102 1021.5 L 1244 1021.5"/>
+<rect class="bar2" x="102" y="1019" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1019" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="124.84" cy="1021.5" r="2.4"/>
+<path class="gl" d="M 102 1028.5 L 1244 1028.5"/>
+<rect class="bar2" x="102" y="1026" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="1026" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="147.68" y="1026" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="1026" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="170.51999999999998" cy="1028.5" r="2.4"/>
+<path class="gl" d="M 102 1035.5 L 1244 1035.5"/>
+<rect class="bar2" x="102" y="1033" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="124.84" y="1033" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="170.51999999999998" y="1033" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="147.68" cy="1035.5" r="2.4"/>
+<path class="gl" d="M 102 1042.5 L 1244 1042.5"/>
+<rect class="bar" x="124.84" y="1040" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="147.68" y="1040" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="170.51999999999998" y="1040" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="193.36" y="1040" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1040" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="216.2" cy="1042.5" r="2.4"/>
+<path class="gl" d="M 102 1049.5 L 1244 1049.5"/>
+<rect class="bar" x="147.68" y="1047" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="170.51999999999998" y="1047" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="193.36" y="1047" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="1047" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1047" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="1049.5" r="2.4"/>
+<path class="gl" d="M 102 1056.5 L 1244 1056.5"/>
+<rect class="bar" x="147.68" y="1054" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="170.51999999999998" y="1054" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="558.8" y="1054" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="193.36" cy="1056.5" r="2.4"/>
+<path class="gl" d="M 102 1063.5 L 1244 1063.5"/>
+<rect class="bar" x="170.51999999999998" y="1061" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="193.36" y="1061" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="1061" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="376.08" y="1061" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="535.96" y="1061" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="558.8" y="1061" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="558.8" cy="1063.5" r="2.4"/>
+<path class="gl" d="M 102 1070.5 L 1244 1070.5"/>
+<rect class="bar" x="170.51999999999998" y="1068" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="193.36" y="1068" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="1068" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1068" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="1070.5" r="2.4"/>
+<path class="gl" d="M 102 1077.5 L 1244 1077.5"/>
+<rect class="bar" x="193.36" y="1075" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="1075" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="239.04" y="1075" width="159.88" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="1077.5" r="2.4"/>
+<path class="gl" d="M 102 1084.5 L 1244 1084.5"/>
+<rect class="bar" x="193.36" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="216.2" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="bar" x="376.08" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="535.96" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="bar2" x="558.8" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="bar1" x="718.68" y="1082" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="741.52" y="1082" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="741.52" cy="1084.5" r="2.4"/>
+<path class="gl" d="M 102 1091.5 L 1244 1091.5"/>
+<rect class="bar" x="216.2" y="1089" width="22.84" height="5" rx="0"/>
+<rect class="neutral" x="741.52" y="1089" width="22.84" height="5" rx="1"/>
+<circle class="acc1fill" cx="239.04" cy="1091.5" r="2.4"/>
+<text class="sm" x="94" y="994" text-anchor="end">b0 g0</text>
+<text class="sm" x="94" y="1008" text-anchor="end">b0 g1</text>
+<text class="sm" x="94" y="1022" text-anchor="end">b1 g2</text>
+<text class="sm" x="94" y="1036" text-anchor="end">b1 g3</text>
+<text class="sm" x="94" y="1050" text-anchor="end">b2 g4</text>
+<text class="sm" x="94" y="1064" text-anchor="end">b2 g5</text>
+<text class="sm" x="94" y="1078" text-anchor="end">b3 g6</text>
+<text class="sm" x="94" y="1092" text-anchor="end">b3 g7</text>
+<text class="rank" x="94" y="1111" text-anchor="end">trainer</text>
+<rect class="train" x="239.04" y="1100" width="137.04" height="14" rx="2"/>
+<text class="sm" x="307.56" y="1110" text-anchor="middle">train b0</text>
+<path class="sep2" d="M 239.04 1097 L 239.04 1115"/>
+<rect class="train" x="398.92" y="1100" width="137.04" height="14" rx="2"/>
+<text class="sm" x="467.44" y="1110" text-anchor="middle">train b1</text>
+<path class="sep2" d="M 398.92 1097 L 398.92 1115"/>
+<rect class="train" x="581.64" y="1100" width="137.04" height="14" rx="2"/>
+<text class="sm" x="650.16" y="1110" text-anchor="middle">train b2</text>
+<path class="sep2" d="M 581.64 1097 L 581.64 1115"/>
+<rect class="train" x="764.36" y="1100" width="137.04" height="14" rx="2"/>
+<text class="sm" x="832.88" y="1110" text-anchor="middle">train b3</text>
+<path class="sep2" d="M 764.36 1097 L 764.36 1115"/>
+<path class="sep" d="M 102 1119 L 102 1122"/>
+<text class="sm" x="102" y="1132" text-anchor="middle">0</text>
+<path class="sep" d="M 216.2 1119 L 216.2 1122"/>
+<text class="sm" x="216.2" y="1132" text-anchor="middle">5</text>
+<path class="sep" d="M 330.4 1119 L 330.4 1122"/>
+<text class="sm" x="330.4" y="1132" text-anchor="middle">10</text>
+<path class="sep" d="M 444.6 1119 L 444.6 1122"/>
+<text class="sm" x="444.6" y="1132" text-anchor="middle">15</text>
+<path class="sep" d="M 558.8 1119 L 558.8 1122"/>
+<text class="sm" x="558.8" y="1132" text-anchor="middle">20</text>
+<path class="sep" d="M 673 1119 L 673 1122"/>
+<text class="sm" x="673" y="1132" text-anchor="middle">25</text>
+<path class="sep" d="M 787.2 1119 L 787.2 1122"/>
+<text class="sm" x="787.2" y="1132" text-anchor="middle">30</text>
+<path class="sep" d="M 901.4 1119 L 901.4 1122"/>
+<text class="sm" x="901.4" y="1132" text-anchor="middle">35</text>
+<path class="sep" d="M 1015.6 1119 L 1015.6 1122"/>
+<text class="sm" x="1015.6" y="1132" text-anchor="middle">40</text>
+<path class="sep" d="M 1129.8 1119 L 1129.8 1122"/>
+<text class="sm" x="1129.8" y="1132" text-anchor="middle">45</text>
+<path class="sep" d="M 1244 1119 L 1244 1122"/>
+<text class="sm" x="1244" y="1132" text-anchor="middle">50</text>
+<rect class="neutral" x="28" y="1151" width="1216" height="165" rx="8"/>
+<text class="tx" x="40" y="1172" text-anchor="start">R / G / B × 归还状态 × capacity（rollout_granularity.py::get_rl_parallel_generation_tasks · RELEASE_STATE_BY_SUBMISSION · _RolloutPipeline.__init__）</text>
+<path class="edge" d="M 40 1180 L 1232 1180"/>
+<text class="dim" x="40" y="1198" text-anchor="start">capacity = (lag + 1) × [submission ≠ B: grpo_prompts_per_step] × [submission = R: grpo_group_size]；算例 n=2, g=2</text>
+<text class="sm" x="40" y="1214" text-anchor="start">B：归还于 consumed；每 slot 4 条 rollout；capacity = 1（lag=0）/ 2（lag=1）；infer workers = capacity × 每 slot 条数 = 8（lag=1，streaming）</text>
+<text class="sm" x="40" y="1230" text-anchor="start">G：归还于 assembled；每 slot 2 条 rollout；capacity = 2（lag=0）/ 4（lag=1）；infer workers = capacity × 每 slot 条数 = 8（lag=1，streaming）</text>
+<text class="sm" x="40" y="1246" text-anchor="start">R：归还于 inferred；每 slot 1 条 rollout；capacity = 4（lag=0）/ 8（lag=1）；infer workers = capacity × 每 slot 条数 = 8（lag=1，streaming）</text>
+<text class="sm" x="40" y="1262" text-anchor="start">test_rl_utils.py::test_get_rl_parallel_generation_tasks 锁定的 (n=8, g=4)：B 1 / 3，G 8 / 24，R 32 / 96（lag=0 / lag=2）</text>
+<text class="sm" x="40" y="1278" text-anchor="start">prevent_dataset_reorder == (consumption == "B")：四条 lane 都是 B-consume，stage_consume 攒齐 num_groups_per_batch 组、按 index_in_batch 排序后整批 yield</text>
+<text class="sm" x="40" y="1294" text-anchor="start">被拒绝的组合：B-submit + G-consume（_GranularityConfig._validate）、consume R（validate_args）、lag&gt;0 或 R-submit 而无 --rl-partial-rollouts（validate_args）</text>
+<rect class="neutral" x="28" y="1326" width="1216" height="133" rx="8"/>
+<text class="tx" x="40" y="1347" text-anchor="start">仿真结论（脚本算出；时长是示意单位，发起点与归还点来自冻结源码）</text>
+<path class="edge" d="M 40 1355 L 1232 1355"/>
+<text class="dim" x="40" y="1373" text-anchor="start">同步基线 makespan 50、trainer 等待 26；lag=1 的 B / G / R：makespan 38 / 38 / 35，等待 14 / 14 / 11，峰值在途 8 / 8 / 8（同步基线 4）</text>
+<text class="dim" x="40" y="1389" text-anchor="start">B：slot 到 consumed 才还，b(k+2) 只能在相 k+1 开头进闸 → 最旧 token staleness ≤ lag（本例 1）</text>
+<text class="costtx" x="40" y="1405" text-anchor="start">G / R：slot 在 assembled / inferred 就还，归还不再等训练消费，后面的批在相 k 里就进闸 → 最旧 token staleness 由推理时长与 capacity 决定，本例 G 2、R 3（lag=1）；lag=0 时 G / R 也到 1 / 2</text>
+<text class="costtx" x="40" y="1421" text-anchor="start">capacity 只限制「未到归还状态的提交单元」数：lag 是 B 提交下的精确版本差上限，G / R 只把 lag 换算成更细的槽位，并没有把上限一起换算过去</text>
+<text class="sm" x="40" y="1437" text-anchor="start">slot 归还 ≠ 全 rank 可见：rank 0 取满 n 组（橙虚线）→ 退出推理相（suspend）→ broadcast_object_list 才让其它 rank 拿到这批</text>
+</svg>

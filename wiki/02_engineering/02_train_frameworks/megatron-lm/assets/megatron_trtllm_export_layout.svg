@@ -1,0 +1,581 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 1454" width="1272" height="1454" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#E3E8EF;stroke:#AEB6C2;stroke-width:1}
+  .r2{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .r3{fill:#CDD5E1;stroke:#AEB6C2;stroke-width:1}
+  .g0{fill:#F7F8FA;stroke:#AEB6C2;stroke-width:1}
+  .g1{fill:#E9ECF1;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　TensorRT-LLM 导出的离线重布局：训练态 state dict → TRT-LLM 全局布局 → 逐 rank 切片</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：num_layers=4、hidden=8、heads=4、query groups=2（kv_channels=2）、ffn=16（gated）、vocab=10；目标 TP=4、PP=2；TP &gt; kv heads 触发 KV 复制 rep=2；bf16</text>
+<text class="pt" x="28" y="82" text-anchor="start">A　Megatron 训练布局（每格 = 权重的一行；linear_qkv 按 query group 交错，linear_fc1 是 gate|up 融合）</text>
+<text class="rank" x="28" y="104" text-anchor="start">linear_qkv.weight (16, 8)</text>
+<rect class="g0" x="28" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="46" y="122" text-anchor="middle">q0</text>
+<text class="sm" x="46" y="134" text-anchor="middle">r0</text>
+<rect class="g0" x="66" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="84" y="122" text-anchor="middle">q0</text>
+<text class="sm" x="84" y="134" text-anchor="middle">r1</text>
+<rect class="g0" x="104" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="122" y="122" text-anchor="middle">q1</text>
+<text class="sm" x="122" y="134" text-anchor="middle">r2</text>
+<rect class="g0" x="142" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="160" y="122" text-anchor="middle">q1</text>
+<text class="sm" x="160" y="134" text-anchor="middle">r3</text>
+<rect class="g0" x="180" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="198" y="122" text-anchor="middle">k0</text>
+<text class="sm" x="198" y="134" text-anchor="middle">r4</text>
+<rect class="g0" x="218" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="236" y="122" text-anchor="middle">k0</text>
+<text class="sm" x="236" y="134" text-anchor="middle">r5</text>
+<rect class="g0" x="256" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="274" y="122" text-anchor="middle">v0</text>
+<text class="sm" x="274" y="134" text-anchor="middle">r6</text>
+<rect class="g0" x="294" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="312" y="122" text-anchor="middle">v0</text>
+<text class="sm" x="312" y="134" text-anchor="middle">r7</text>
+<rect class="g1" x="332" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="350" y="122" text-anchor="middle">q2</text>
+<text class="sm" x="350" y="134" text-anchor="middle">r8</text>
+<rect class="g1" x="370" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="388" y="122" text-anchor="middle">q2</text>
+<text class="sm" x="388" y="134" text-anchor="middle">r9</text>
+<rect class="g1" x="408" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="426" y="122" text-anchor="middle">q3</text>
+<text class="sm" x="426" y="134" text-anchor="middle">r10</text>
+<rect class="g1" x="446" y="110" width="36" height="30" rx="2"/>
+<text class="sm" x="464" y="122" text-anchor="middle">q3</text>
+<text class="sm" x="464" y="134" text-anchor="middle">r11</text>
+<rect class="g1" x="484" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="502" y="122" text-anchor="middle">k1</text>
+<text class="sm" x="502" y="134" text-anchor="middle">r12</text>
+<rect class="g1" x="522" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="540" y="122" text-anchor="middle">k1</text>
+<text class="sm" x="540" y="134" text-anchor="middle">r13</text>
+<rect class="g1" x="560" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="578" y="122" text-anchor="middle">v1</text>
+<text class="sm" x="578" y="134" text-anchor="middle">r14</text>
+<rect class="g1" x="598" y="110" width="36" height="30" rx="2"/>
+<text class="dim" x="616" y="122" text-anchor="middle">v1</text>
+<text class="sm" x="616" y="134" text-anchor="middle">r15</text>
+<text class="sm" x="179" y="153" text-anchor="middle">group 0：q0…q1 | k0 | v0</text>
+<text class="sm" x="483" y="153" text-anchor="middle">group 1：q2…q3 | k1 | v1</text>
+<text class="rank" x="676" y="104" text-anchor="start">embedding.word_embeddings.weight (10, 8)</text>
+<rect class="neutral" x="676" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="690" y="129" text-anchor="middle">t0</text>
+<rect class="neutral" x="706" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="720" y="129" text-anchor="middle">t1</text>
+<rect class="neutral" x="736" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="750" y="129" text-anchor="middle">t2</text>
+<rect class="neutral" x="766" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="780" y="129" text-anchor="middle">t3</text>
+<rect class="neutral" x="796" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="810" y="129" text-anchor="middle">t4</text>
+<rect class="neutral" x="826" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="840" y="129" text-anchor="middle">t5</text>
+<rect class="neutral" x="856" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="870" y="129" text-anchor="middle">t6</text>
+<rect class="neutral" x="886" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="900" y="129" text-anchor="middle">t7</text>
+<rect class="neutral" x="916" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="930" y="129" text-anchor="middle">t8</text>
+<rect class="neutral" x="946" y="110" width="28" height="30" rx="2"/>
+<text class="sm" x="960" y="129" text-anchor="middle">t9</text>
+<text class="sm" x="826" y="153" text-anchor="middle">10 行，训练态未按 TP 对齐</text>
+<text class="rank" x="28" y="178" text-anchor="start">linear_fc1.weight (32, 8)：前 16 行 = gate（激活的那一半，源码变量 x_glu），后 16 行 = up（线性）</text>
+<rect class="g0" x="28" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="45" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="45" y="208" text-anchor="middle">r0</text>
+<rect class="g0" x="64" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="81" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="81" y="208" text-anchor="middle">r1</text>
+<rect class="g0" x="100" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="117" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="117" y="208" text-anchor="middle">r2</text>
+<rect class="g0" x="136" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="153" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="153" y="208" text-anchor="middle">r3</text>
+<rect class="g0" x="172" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="189" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="189" y="208" text-anchor="middle">r4</text>
+<rect class="g0" x="208" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="225" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="225" y="208" text-anchor="middle">r5</text>
+<rect class="g0" x="244" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="261" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="261" y="208" text-anchor="middle">r6</text>
+<rect class="g0" x="280" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="297" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="297" y="208" text-anchor="middle">r7</text>
+<rect class="g0" x="316" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="333" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="333" y="208" text-anchor="middle">r8</text>
+<rect class="g0" x="352" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="369" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="369" y="208" text-anchor="middle">r9</text>
+<rect class="g0" x="388" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="405" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="405" y="208" text-anchor="middle">r10</text>
+<rect class="g0" x="424" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="441" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="441" y="208" text-anchor="middle">r11</text>
+<rect class="g0" x="460" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="477" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="477" y="208" text-anchor="middle">r12</text>
+<rect class="g0" x="496" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="513" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="513" y="208" text-anchor="middle">r13</text>
+<rect class="g0" x="532" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="549" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="549" y="208" text-anchor="middle">r14</text>
+<rect class="g0" x="568" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="585" y="196" text-anchor="middle">gate</text>
+<text class="sm" x="585" y="208" text-anchor="middle">r15</text>
+<rect class="g1" x="604" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="621" y="196" text-anchor="middle">up</text>
+<text class="sm" x="621" y="208" text-anchor="middle">r16</text>
+<rect class="g1" x="640" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="657" y="196" text-anchor="middle">up</text>
+<text class="sm" x="657" y="208" text-anchor="middle">r17</text>
+<rect class="g1" x="676" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="693" y="196" text-anchor="middle">up</text>
+<text class="sm" x="693" y="208" text-anchor="middle">r18</text>
+<rect class="g1" x="712" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="729" y="196" text-anchor="middle">up</text>
+<text class="sm" x="729" y="208" text-anchor="middle">r19</text>
+<rect class="g1" x="748" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="765" y="196" text-anchor="middle">up</text>
+<text class="sm" x="765" y="208" text-anchor="middle">r20</text>
+<rect class="g1" x="784" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="801" y="196" text-anchor="middle">up</text>
+<text class="sm" x="801" y="208" text-anchor="middle">r21</text>
+<rect class="g1" x="820" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="837" y="196" text-anchor="middle">up</text>
+<text class="sm" x="837" y="208" text-anchor="middle">r22</text>
+<rect class="g1" x="856" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="873" y="196" text-anchor="middle">up</text>
+<text class="sm" x="873" y="208" text-anchor="middle">r23</text>
+<rect class="g1" x="892" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="909" y="196" text-anchor="middle">up</text>
+<text class="sm" x="909" y="208" text-anchor="middle">r24</text>
+<rect class="g1" x="928" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="945" y="196" text-anchor="middle">up</text>
+<text class="sm" x="945" y="208" text-anchor="middle">r25</text>
+<rect class="g1" x="964" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="981" y="196" text-anchor="middle">up</text>
+<text class="sm" x="981" y="208" text-anchor="middle">r26</text>
+<rect class="g1" x="1000" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="1017" y="196" text-anchor="middle">up</text>
+<text class="sm" x="1017" y="208" text-anchor="middle">r27</text>
+<rect class="g1" x="1036" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="1053" y="196" text-anchor="middle">up</text>
+<text class="sm" x="1053" y="208" text-anchor="middle">r28</text>
+<rect class="g1" x="1072" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="1089" y="196" text-anchor="middle">up</text>
+<text class="sm" x="1089" y="208" text-anchor="middle">r29</text>
+<rect class="g1" x="1108" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="1125" y="196" text-anchor="middle">up</text>
+<text class="sm" x="1125" y="208" text-anchor="middle">r30</text>
+<rect class="g1" x="1144" y="184" width="34" height="30" rx="2"/>
+<text class="sm" x="1161" y="196" text-anchor="middle">up</text>
+<text class="sm" x="1161" y="208" text-anchor="middle">r31</text>
+<text class="cap" x="28" y="230" text-anchor="start">每层还有 linear_proj (8, 8)、linear_fc2 (8, 16) 与两个 layernorm (8)；每层 592 个元素，整模型 2536 个（含 output_layer (10, 8) 与 final_layernorm）</text>
+<text class="pt" x="28" y="260" text-anchor="start">B　TRT-LLM 全局布局（single-device converter 的 trtllm_model_weights，尚未按 rank 切开）</text>
+<text class="rank" x="28" y="278" text-anchor="start">attention.qkv：q | k | v 拼接，k、v 各 expand 成 rep=2 份 → 每 rank 6 行</text>
+<rect class="r0" x="28" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="44" y="298" text-anchor="middle">q0</text>
+<text class="sm" x="44" y="310" text-anchor="middle">r0</text>
+<rect class="r0" x="62" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="78" y="298" text-anchor="middle">q0</text>
+<text class="sm" x="78" y="310" text-anchor="middle">r1</text>
+<rect class="r1" x="96" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="112" y="298" text-anchor="middle">q1</text>
+<text class="sm" x="112" y="310" text-anchor="middle">r2</text>
+<rect class="r1" x="130" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="146" y="298" text-anchor="middle">q1</text>
+<text class="sm" x="146" y="310" text-anchor="middle">r3</text>
+<rect class="r2" x="164" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="180" y="298" text-anchor="middle">q2</text>
+<text class="sm" x="180" y="310" text-anchor="middle">r8</text>
+<rect class="r2" x="198" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="214" y="298" text-anchor="middle">q2</text>
+<text class="sm" x="214" y="310" text-anchor="middle">r9</text>
+<rect class="r3" x="232" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="248" y="298" text-anchor="middle">q3</text>
+<text class="sm" x="248" y="310" text-anchor="middle">r10</text>
+<rect class="r3" x="266" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="282" y="298" text-anchor="middle">q3</text>
+<text class="sm" x="282" y="310" text-anchor="middle">r11</text>
+<rect class="r0" x="310" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="326" y="298" text-anchor="middle">k0</text>
+<text class="sm" x="326" y="310" text-anchor="middle">r4</text>
+<rect class="r0" x="344" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="360" y="298" text-anchor="middle">k0</text>
+<text class="sm" x="360" y="310" text-anchor="middle">r5</text>
+<rect class="acc1" x="378" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="394" y="298" text-anchor="middle">k0</text>
+<text class="sm" x="394" y="310" text-anchor="middle">r4</text>
+<rect class="acc1" x="412" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="428" y="298" text-anchor="middle">k0</text>
+<text class="sm" x="428" y="310" text-anchor="middle">r5</text>
+<rect class="r2" x="446" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="462" y="298" text-anchor="middle">k1</text>
+<text class="sm" x="462" y="310" text-anchor="middle">r12</text>
+<rect class="r2" x="480" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="496" y="298" text-anchor="middle">k1</text>
+<text class="sm" x="496" y="310" text-anchor="middle">r13</text>
+<rect class="acc1" x="514" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="530" y="298" text-anchor="middle">k1</text>
+<text class="sm" x="530" y="310" text-anchor="middle">r12</text>
+<rect class="acc1" x="548" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="564" y="298" text-anchor="middle">k1</text>
+<text class="sm" x="564" y="310" text-anchor="middle">r13</text>
+<rect class="r0" x="592" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="608" y="298" text-anchor="middle">v0</text>
+<text class="sm" x="608" y="310" text-anchor="middle">r6</text>
+<rect class="r0" x="626" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="642" y="298" text-anchor="middle">v0</text>
+<text class="sm" x="642" y="310" text-anchor="middle">r7</text>
+<rect class="acc1" x="660" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="676" y="298" text-anchor="middle">v0</text>
+<text class="sm" x="676" y="310" text-anchor="middle">r6</text>
+<rect class="acc1" x="694" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="710" y="298" text-anchor="middle">v0</text>
+<text class="sm" x="710" y="310" text-anchor="middle">r7</text>
+<rect class="r2" x="728" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="744" y="298" text-anchor="middle">v1</text>
+<text class="sm" x="744" y="310" text-anchor="middle">r14</text>
+<rect class="r2" x="762" y="286" width="32" height="30" rx="2"/>
+<text class="sm" x="778" y="298" text-anchor="middle">v1</text>
+<text class="sm" x="778" y="310" text-anchor="middle">r15</text>
+<rect class="acc1" x="796" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="812" y="298" text-anchor="middle">v1</text>
+<text class="sm" x="812" y="310" text-anchor="middle">r14</text>
+<rect class="acc1" x="830" y="286" width="32" height="30" rx="2"/>
+<text class="dim" x="846" y="298" text-anchor="middle">v1</text>
+<text class="sm" x="846" y="310" text-anchor="middle">r15</text>
+<text class="sm" x="164" y="329" text-anchor="middle">q：8 行（4 头）</text>
+<text class="sm" x="446" y="329" text-anchor="middle">k：8 行（蓝 = 复制份）</text>
+<text class="sm" x="728" y="329" text-anchor="middle">v：8 行</text>
+<text class="rank" x="904" y="278" text-anchor="start">vocab_embedding：pad_vocab_size(10, 4) = 12</text>
+<rect class="neutral" x="904" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="916" y="305" text-anchor="middle">t0</text>
+<rect class="neutral" x="930" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="942" y="305" text-anchor="middle">t1</text>
+<rect class="neutral" x="956" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="968" y="305" text-anchor="middle">t2</text>
+<rect class="neutral" x="982" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="994" y="305" text-anchor="middle">t3</text>
+<rect class="neutral" x="1008" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1020" y="305" text-anchor="middle">t4</text>
+<rect class="neutral" x="1034" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1046" y="305" text-anchor="middle">t5</text>
+<rect class="neutral" x="1060" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1072" y="305" text-anchor="middle">t6</text>
+<rect class="neutral" x="1086" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1098" y="305" text-anchor="middle">t7</text>
+<rect class="neutral" x="1112" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1124" y="305" text-anchor="middle">t8</text>
+<rect class="neutral" x="1138" y="286" width="24" height="30" rx="2"/>
+<text class="sm" x="1150" y="305" text-anchor="middle">t9</text>
+<rect class="acc2" x="1164" y="286" width="24" height="30" rx="2"/>
+<text class="costtx" x="1176" y="305" text-anchor="middle">·</text>
+<rect class="acc2" x="1190" y="286" width="24" height="30" rx="2"/>
+<text class="costtx" x="1202" y="305" text-anchor="middle">·</text>
+<text class="sm" x="1060" y="329" text-anchor="middle">橙 = 2 行零 pad；config.vocab_size = 12</text>
+<text class="rank" x="28" y="346" text-anchor="start">mlp.fc（= Megatron 前半 gate 行 0–15）与 mlp.gate（= 后半 up 行 16–31）拆成两张；TRT-LLM 侧 act(fc)·gate 是它的公开契约</text>
+<rect class="g0" x="28" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="45" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="45" y="378" text-anchor="middle">r0</text>
+<rect class="g0" x="64" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="81" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="81" y="378" text-anchor="middle">r1</text>
+<rect class="g0" x="100" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="117" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="117" y="378" text-anchor="middle">r2</text>
+<rect class="g0" x="136" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="153" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="153" y="378" text-anchor="middle">r3</text>
+<rect class="g0" x="172" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="189" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="189" y="378" text-anchor="middle">r4</text>
+<rect class="g0" x="208" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="225" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="225" y="378" text-anchor="middle">r5</text>
+<rect class="g0" x="244" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="261" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="261" y="378" text-anchor="middle">r6</text>
+<rect class="g0" x="280" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="297" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="297" y="378" text-anchor="middle">r7</text>
+<rect class="g0" x="316" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="333" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="333" y="378" text-anchor="middle">r8</text>
+<rect class="g0" x="352" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="369" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="369" y="378" text-anchor="middle">r9</text>
+<rect class="g0" x="388" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="405" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="405" y="378" text-anchor="middle">r10</text>
+<rect class="g0" x="424" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="441" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="441" y="378" text-anchor="middle">r11</text>
+<rect class="g0" x="460" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="477" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="477" y="378" text-anchor="middle">r12</text>
+<rect class="g0" x="496" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="513" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="513" y="378" text-anchor="middle">r13</text>
+<rect class="g0" x="532" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="549" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="549" y="378" text-anchor="middle">r14</text>
+<rect class="g0" x="568" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="585" y="366" text-anchor="middle">fc</text>
+<text class="sm" x="585" y="378" text-anchor="middle">r15</text>
+<rect class="g1" x="634" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="651" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="651" y="378" text-anchor="middle">r16</text>
+<rect class="g1" x="670" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="687" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="687" y="378" text-anchor="middle">r17</text>
+<rect class="g1" x="706" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="723" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="723" y="378" text-anchor="middle">r18</text>
+<rect class="g1" x="742" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="759" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="759" y="378" text-anchor="middle">r19</text>
+<rect class="g1" x="778" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="795" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="795" y="378" text-anchor="middle">r20</text>
+<rect class="g1" x="814" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="831" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="831" y="378" text-anchor="middle">r21</text>
+<rect class="g1" x="850" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="867" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="867" y="378" text-anchor="middle">r22</text>
+<rect class="g1" x="886" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="903" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="903" y="378" text-anchor="middle">r23</text>
+<rect class="g1" x="922" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="939" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="939" y="378" text-anchor="middle">r24</text>
+<rect class="g1" x="958" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="975" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="975" y="378" text-anchor="middle">r25</text>
+<rect class="g1" x="994" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1011" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1011" y="378" text-anchor="middle">r26</text>
+<rect class="g1" x="1030" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1047" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1047" y="378" text-anchor="middle">r27</text>
+<rect class="g1" x="1066" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1083" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1083" y="378" text-anchor="middle">r28</text>
+<rect class="g1" x="1102" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1119" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1119" y="378" text-anchor="middle">r29</text>
+<rect class="g1" x="1138" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1155" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1155" y="378" text-anchor="middle">r30</text>
+<rect class="g1" x="1174" y="354" width="34" height="30" rx="2"/>
+<text class="sm" x="1191" y="366" text-anchor="middle">gate</text>
+<text class="sm" x="1191" y="378" text-anchor="middle">r31</text>
+<text class="cap" x="28" y="402" text-anchor="start">解交错后 q 按头连续、k / v 按 kv 头连续；rep=2 份复制多出 256 个元素（4 层），pad 多出 16 个；lm_head 在这一步不 pad</text>
+<text class="pt" x="28" y="432" text-anchor="start">C　get_local_model_weights_per_gpu：4 个 TP rank × 2 个 PP rank 各拿什么（行号 = 面板 A 的源行；列号 = 输入列）</text>
+<text class="rank" x="255" y="456" text-anchor="middle">tp rank 0</text>
+<text class="rank" x="533" y="456" text-anchor="middle">tp rank 1</text>
+<text class="rank" x="811" y="456" text-anchor="middle">tp rank 2</text>
+<text class="rank" x="1089" y="456" text-anchor="middle">tp rank 3</text>
+<text class="rank" x="28" y="480" text-anchor="start">pp rank 0</text>
+<text class="sm" x="28" y="494" text-anchor="start">layers 0–1</text>
+<text class="sm" x="28" y="508" text-anchor="start">→ 本地 0–1</text>
+<rect class="r0" x="116" y="464" width="270" height="110" rx="6"/>
+<text class="dim" x="124" y="480" text-anchor="start">qkv 行 q 0–1 | k 4–5 | v 6–7</text>
+<text class="sm" x="124" y="495" text-anchor="start">dense 列 0–1　proj 列 0–3</text>
+<text class="sm" x="124" y="510" text-anchor="start">fc 行 0–3　gate 行 16–19</text>
+<text class="sm" x="124" y="525" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="124" y="540" text-anchor="start">embedding 行 0–2</text>
+<text class="rank" x="124" y="555" text-anchor="start">本地 376 个元素</text>
+<rect class="r1" x="394" y="464" width="270" height="110" rx="6"/>
+<text class="dim" x="402" y="480" text-anchor="start">qkv 行 q 2–3 | k 4–5 | v 6–7</text>
+<text class="sm" x="402" y="495" text-anchor="start">dense 列 2–3　proj 列 4–7</text>
+<text class="sm" x="402" y="510" text-anchor="start">fc 行 4–7　gate 行 20–23</text>
+<text class="sm" x="402" y="525" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="402" y="540" text-anchor="start">embedding 行 3–5</text>
+<text class="rank" x="402" y="555" text-anchor="start">本地 376 个元素</text>
+<rect class="r2" x="672" y="464" width="270" height="110" rx="6"/>
+<text class="dim" x="680" y="480" text-anchor="start">qkv 行 q 8–9 | k 12–13 | v 14–15</text>
+<text class="sm" x="680" y="495" text-anchor="start">dense 列 4–5　proj 列 8–11</text>
+<text class="sm" x="680" y="510" text-anchor="start">fc 行 8–11　gate 行 24–27</text>
+<text class="sm" x="680" y="525" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="680" y="540" text-anchor="start">embedding 行 6–8</text>
+<text class="rank" x="680" y="555" text-anchor="start">本地 376 个元素</text>
+<rect class="r3" x="950" y="464" width="270" height="110" rx="6"/>
+<text class="dim" x="958" y="480" text-anchor="start">qkv 行 q 10–11 | k 12–13 | v 14–15</text>
+<text class="sm" x="958" y="495" text-anchor="start">dense 列 6–7　proj 列 12–15</text>
+<text class="sm" x="958" y="510" text-anchor="start">fc 行 12–15　gate 行 28–31</text>
+<text class="sm" x="958" y="525" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="costtx" x="958" y="540" text-anchor="start">embedding 行 9–11（含 2 行 pad）</text>
+<text class="rank" x="958" y="555" text-anchor="start">本地 376 个元素</text>
+<text class="rank" x="28" y="598" text-anchor="start">pp rank 1</text>
+<text class="sm" x="28" y="612" text-anchor="start">layers 2–3</text>
+<text class="sm" x="28" y="626" text-anchor="start">→ 本地 0–1</text>
+<rect class="r0" x="116" y="582" width="270" height="110" rx="6"/>
+<text class="dim" x="124" y="598" text-anchor="start">qkv 行 q 0–1 | k 4–5 | v 6–7</text>
+<text class="sm" x="124" y="613" text-anchor="start">dense 列 0–1　proj 列 0–3</text>
+<text class="sm" x="124" y="628" text-anchor="start">fc 行 0–3　gate 行 16–19</text>
+<text class="sm" x="124" y="643" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="124" y="658" text-anchor="start">lm_head 行 0–2（3 行，不 pad）+ ln_f</text>
+<text class="rank" x="124" y="673" text-anchor="start">本地 384 个元素</text>
+<rect class="r1" x="394" y="582" width="270" height="110" rx="6"/>
+<text class="dim" x="402" y="598" text-anchor="start">qkv 行 q 2–3 | k 4–5 | v 6–7</text>
+<text class="sm" x="402" y="613" text-anchor="start">dense 列 2–3　proj 列 4–7</text>
+<text class="sm" x="402" y="628" text-anchor="start">fc 行 4–7　gate 行 20–23</text>
+<text class="sm" x="402" y="643" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="402" y="658" text-anchor="start">lm_head 行 3–5（3 行，不 pad）+ ln_f</text>
+<text class="rank" x="402" y="673" text-anchor="start">本地 384 个元素</text>
+<rect class="r2" x="672" y="582" width="270" height="110" rx="6"/>
+<text class="dim" x="680" y="598" text-anchor="start">qkv 行 q 8–9 | k 12–13 | v 14–15</text>
+<text class="sm" x="680" y="613" text-anchor="start">dense 列 4–5　proj 列 8–11</text>
+<text class="sm" x="680" y="628" text-anchor="start">fc 行 8–11　gate 行 24–27</text>
+<text class="sm" x="680" y="643" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="680" y="658" text-anchor="start">lm_head 行 6–8（3 行，不 pad）+ ln_f</text>
+<text class="rank" x="680" y="673" text-anchor="start">本地 384 个元素</text>
+<rect class="r3" x="950" y="582" width="270" height="110" rx="6"/>
+<text class="dim" x="958" y="598" text-anchor="start">qkv 行 q 10–11 | k 12–13 | v 14–15</text>
+<text class="sm" x="958" y="613" text-anchor="start">dense 列 6–7　proj 列 12–15</text>
+<text class="sm" x="958" y="628" text-anchor="start">fc 行 12–15　gate 行 28–31</text>
+<text class="sm" x="958" y="643" text-anchor="start">layernorm ×2：整份复制</text>
+<text class="sm" x="958" y="658" text-anchor="start">lm_head 行 9（1 行，不 pad）+ ln_f</text>
+<text class="rank" x="958" y="673" text-anchor="start">本地 368 个元素</text>
+<text class="cap" x="28" y="714" text-anchor="start">列并行（qkv / fc / gate / embedding）切行，行并行（dense / proj）切列；k、v 行在相邻两个 rank 上是同一份（蓝）；layernorm 每个 rank 整份</text>
+<text class="cap" x="28" y="730" text-anchor="start">lm_head 走 torch.chunk(10, 4) = 3,3,3,1，与 config.vocab_size=12 不一致，TRT-LLM 侧是否接受本仓不能证明</text>
+<text class="rank" x="28" y="748" text-anchor="start">每 rank 张量形状表（脚本按 _convert_transformer_layer / get_local_model_weights_per_gpu 算出）</text>
+<rect class="panel" x="24" y="758" width="1224" height="162" rx="8"/>
+<text class="rank" x="28" y="775" text-anchor="start">张量（TRT-LLM 名）</text>
+<text class="rank" x="228" y="775" text-anchor="start">训练态</text>
+<text class="rank" x="408" y="775" text-anchor="start">TRT-LLM 全局</text>
+<text class="rank" x="588" y="775" text-anchor="start">每 rank 本地</text>
+<text class="rank" x="818" y="775" text-anchor="start">切分</text>
+<text class="rank" x="1028" y="775" text-anchor="start">来源</text>
+<path class="edge" d="M 28 781 L 1240 781"/>
+<text class="sm" x="28" y="798" text-anchor="start">attention.qkv.weight</text>
+<text class="sm" x="228" y="798" text-anchor="start">(16, 8)</text>
+<text class="sm" x="408" y="798" text-anchor="start">(24, 8)</text>
+<text class="dim" x="588" y="798" text-anchor="start">(6, 8)</text>
+<text class="sm" x="818" y="798" text-anchor="start">列并行：切行</text>
+<text class="sm" x="1028" y="798" text-anchor="start">linear_qkv 解交错 + KV expand</text>
+<text class="sm" x="28" y="820" text-anchor="start">attention.dense.weight</text>
+<text class="sm" x="228" y="820" text-anchor="start">(8, 8)</text>
+<text class="sm" x="408" y="820" text-anchor="start">(8, 8)</text>
+<text class="dim" x="588" y="820" text-anchor="start">(8, 2)</text>
+<text class="sm" x="818" y="820" text-anchor="start">行并行：切列</text>
+<text class="sm" x="1028" y="820" text-anchor="start">linear_proj</text>
+<text class="sm" x="28" y="842" text-anchor="start">mlp.fc.weight / mlp.gate.weight</text>
+<text class="sm" x="228" y="842" text-anchor="start">(32, 8)</text>
+<text class="sm" x="408" y="842" text-anchor="start">(16, 8) × 2</text>
+<text class="dim" x="588" y="842" text-anchor="start">(4, 8) × 2</text>
+<text class="sm" x="818" y="842" text-anchor="start">列并行：切行</text>
+<text class="sm" x="1028" y="842" text-anchor="start">linear_fc1 前半 / 后半</text>
+<text class="sm" x="28" y="864" text-anchor="start">mlp.proj.weight</text>
+<text class="sm" x="228" y="864" text-anchor="start">(8, 16)</text>
+<text class="sm" x="408" y="864" text-anchor="start">(8, 16)</text>
+<text class="dim" x="588" y="864" text-anchor="start">(8, 4)</text>
+<text class="sm" x="818" y="864" text-anchor="start">行并行：切列</text>
+<text class="sm" x="1028" y="864" text-anchor="start">linear_fc2</text>
+<text class="sm" x="28" y="886" text-anchor="start">vocab_embedding.weight</text>
+<text class="sm" x="228" y="886" text-anchor="start">(10, 8)</text>
+<text class="sm" x="408" y="886" text-anchor="start">(12, 8)</text>
+<text class="dim" x="588" y="886" text-anchor="start">(3, 8)</text>
+<text class="sm" x="818" y="886" text-anchor="start">切行（仅首 PP rank）</text>
+<text class="sm" x="1028" y="886" text-anchor="start">word_embeddings + pad</text>
+<text class="sm" x="28" y="908" text-anchor="start">lm_head.weight</text>
+<text class="sm" x="228" y="908" text-anchor="start">(10, 8)</text>
+<text class="sm" x="408" y="908" text-anchor="start">(10, 8)</text>
+<text class="dim" x="588" y="908" text-anchor="start">(3, 8) / (3, 8) / (3, 8) / (1, 8)</text>
+<text class="sm" x="818" y="908" text-anchor="start">切行，不 pad（仅末 PP rank）</text>
+<text class="sm" x="1028" y="908" text-anchor="start">output_layer</text>
+<text class="pt" x="28" y="946" text-anchor="start">D　FP8 时 scale 的三跳（fp8_quantized=True；ghost = 被过滤的 extra_state）</text>
+<rect class="ghost" x="28" y="958" width="283" height="92" rx="8"/>
+<text class="tx" x="40" y="979" text-anchor="start">① state dict 里的 _extra_state</text>
+<path class="edge" d="M 40 987 L 299 987"/>
+<text class="sm" x="40" y="1005" text-anchor="start">20 个键（4 层 × 5，TE 模块各带一个）</text>
+<text class="sm" x="40" y="1021" text-anchor="start">TE 序列化的 BytesIO</text>
+<text class="sm" x="40" y="1037" text-anchor="start">core_attention 的那个被跳过</text>
+<path class="aux" d="M 315 1004 L 333 1004"/>
+<rect class="neutral" x="339" y="958" width="283" height="92" rx="8"/>
+<text class="tx" x="351" y="979" text-anchor="start">② _load_scaling_factors</text>
+<path class="edge" d="M 351 987 L 610 987"/>
+<text class="sm" x="351" y="1005" text-anchor="start">取 16 个：改成 .weight 键再重命名</text>
+<text class="sm" x="351" y="1021" text-anchor="start">torch.load → scale_fwd / scale_inv_fwd</text>
+<text class="sm" x="351" y="1037" text-anchor="start">[0] 激活、[1] 权重</text>
+<path class="aux" d="M 626 1004 L 644 1004"/>
+<rect class="ghost" x="650" y="958" width="283" height="92" rx="8"/>
+<text class="tx" x="662" y="979" text-anchor="start">③ 入口过滤</text>
+<path class="edge" d="M 662 987 L 921 987"/>
+<text class="sm" x="662" y="1005" text-anchor="start">删掉全部 20 个 extra_state 键</text>
+<text class="sm" x="662" y="1021" text-anchor="start">rename 时再删 adapter_layer</text>
+<text class="sm" x="662" y="1037" text-anchor="start">被过滤 ≠ 推理不需要</text>
+<path class="main" d="M 937 1004 L 955 1004"/>
+<rect class="acc1" x="961" y="958" width="283" height="92" rx="8"/>
+<text class="tx" x="973" y="979" text-anchor="start">④ 注入输出字典</text>
+<path class="edge" d="M 973 987 L 1232 987"/>
+<text class="sm" x="973" y="1005" text-anchor="start">_cast_value：× scale_fwd 再转 e4m3</text>
+<text class="sm" x="973" y="1021" text-anchor="start">_add_scales_to_converter：40 个 scale</text>
+<text class="sm" x="973" y="1037" text-anchor="start">fp8_kvcache 再加 4 个 = 1.0</text>
+<text class="pt" x="28" y="1076" text-anchor="start">E　分布式路径（on_device_distributed_conversion=True）在同一算例上</text>
+<rect class="neutral" x="28" y="1088" width="594" height="76" rx="8"/>
+<text class="tx" x="40" y="1109" text-anchor="start">TP=4（算例的目标拓扑）：两处失效</text>
+<path class="edge" d="M 40 1117 L 610 1117"/>
+<text class="costtx" x="40" y="1135" text-anchor="start">ng // tp = 0 → qkv reshape(hidden, 0, q_num+2, hn) 非法；这条路不做 KV 复制</text>
+<text class="costtx" x="40" y="1151" text-anchor="start">divide(10, 4) 断言失败：去 pad 后再切片要求 tokenizer vocab 整除 TP</text>
+<rect class="neutral" x="650" y="1088" width="594" height="76" rx="8"/>
+<text class="tx" x="662" y="1109" text-anchor="start">TP=2 才可行：只改名 + 去训练 pad</text>
+<path class="edge" d="M 662 1117 L 1232 1117"/>
+<text class="sm" x="662" y="1135" text-anchor="start">训练 pad 256 行 → 每 rank 128 行 → all_reduce 拼回 → 截到 10 → 每 rank 5 行</text>
+<text class="sm" x="662" y="1151" text-anchor="start">qkv 每 rank 8 行：单 group 内 q|k|v 拼接，不跨 rank 重排</text>
+<rect class="neutral" x="28" y="1184" width="1216" height="126" rx="8"/>
+<text class="tx" x="40" y="1205" text-anchor="start">守恒账与代价（脚本算出）</text>
+<path class="edge" d="M 40 1213 L 1232 1213"/>
+<text class="sm" x="40" y="1231" text-anchor="start">Σ rank 本地 3024 = 全局 2536 + KV 复制 256 + layernorm 复制 216 + vocab pad 16</text>
+<text class="costtx" x="40" y="1247" text-anchor="start">KV 复制每层多 (tp − ng)·2·hn·hidden = 64 个元素；pad 多 16 个；bf16 各 512 B / 32 B</text>
+<text class="sm" x="40" y="1263" text-anchor="start">单设备路径峰值上界 = 输入 2536 + converter 全量字典 3000 = 5536 个元素（11072 B）；逐 rank 字典是全量字典的视图</text>
+<text class="sm" x="40" y="1279" text-anchor="start">PP 切层：Mapping.pp_layers(4) 按 pp_size=2 均分，本地层号减去起点；embedding 只在首 PP rank，lm_head / ln_f 只在末 PP rank</text>
+<text class="sm" x="40" y="1295" text-anchor="start">分布式路径不复制 KV、不 pad，只改名 + 去训练 pad + 单 group 内 q|k|v 拼接</text>
+<rect class="neutral" x="28" y="1324" width="1216" height="110" rx="8"/>
+<text class="tx" x="40" y="1345" text-anchor="start">本图复刻了什么 / 依赖边界</text>
+<path class="edge" d="M 40 1353 L 1232 1353"/>
+<text class="sm" x="40" y="1371" text-anchor="start">精确复刻：_convert_transformer_layer 的 qkv / fc / dense / proj 四种分支、_duplicate_kv_head 的 expand、convert 的 vocab pad、get_padded_vocab_size、get_local_model_weights_per_gpu 的 _split 与 PP 重编号</text>
+<text class="costtx" x="40" y="1387" text-anchor="start">外部契约（本仓测试用 mocker.patch 替代）：tensorrt_llm._utils.pad_vocab_size = ceil(v / tp) · tp；tensorrt_llm.Mapping.pp_layers 按 pp_size 均分</text>
+<text class="sm" x="40" y="1403" text-anchor="start">分布式 lane：_get_remove_vocab_padding 的 all_reduce 拼接 + VocabUtility 切片；训练侧 pad 用 vocab_utils 的 ceil(v / (128 · tp)) · 128 · tp</text>
+<text class="sm" x="40" y="1419" text-anchor="start">简化：不画 bias、position_embedding、MoE 的 expert_split，也不画 layernorm1p 的 +1</text>
+</svg>

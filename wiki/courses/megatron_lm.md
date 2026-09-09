@@ -73,7 +73,7 @@ title: "Megatron-LM 阅读路径"
 | 页面 | 前置 | 学习产出 |
 |---|---|---|
 | [[31_megatron_inference_engine_analysis]] | 10、17 | 能解释 KV cache、连续批处理、prefix caching 与 chunked prefill。 |
-| [[37_megatron_trtllm_export_analysis]] | 11、19、31 | 能把 checkpoint state dict 转成逐 rank TRT-LLM weights/config，并接到 engine build。 |
+| [[37_megatron_trtllm_export_analysis]] | 11、19、31 | 能说清单设备与分布式两条导出路径各自重切什么、KV 复制与 vocab pad 各多付多少，并把逐 rank 权重 / config 配对交给 engine build。 |
 
 ## 分支六：RL 与训推一致性
 
@@ -81,13 +81,13 @@ title: "Megatron-LM 阅读路径"
 |---|---|---|
 | [[31_megatron_inference_engine_analysis]] | Dense 核心路径 | 能建立 rollout 推理侧的请求、批处理与 KV 状态模型。 |
 | [[30_megatron_rl_posttraining_consistency_analysis]] | 31 | 能解释 logprob 一致性、importance sampling 与 reshard/refit 权重搬运。 |
-| [[33_megatron_rl_runtime_analysis]] | 30 | 能追踪 rollout 粒度、Agent 协议、GRPO loss 与训推态切换。 |
+| [[33_megatron_rl_runtime_analysis]] | 30 | 能算出 R / G / B 粒度下的闸门容量与归还状态、追踪 rollout 到全 rank 可见的边界、GRPO 四项损失、序列打包对微批数的外溢与训推态切换。 |
 
 ## 分支七：特殊训练、案例与参考
 
 | 页面 | 前置 | 学习产出 |
 |---|---|---|
-| [[38_megatron_logits_distillation_analysis]] | 11、12 | 能区分离线 top-K 缓存的 producer、未接线 writer、consumer 与 TP-aware sparse KL。 |
+| [[38_megatron_logits_distillation_analysis]] | 11、12 | 能区分离线 top-K 缓存的 producer（写盘链未闭合）、声明哈希、DP 重映射与 consumer 的 TP 感知稀疏 KL，并复算算例里的 KL 与字节账。 |
 | [[34_deepseek_v4_tensor_parallel_analysis]] | 12、14 | 能区分 DSv4 TP=1 硬边界、duplicated 参数与仅保留 TP 接口的投影。 |
 | [[40_megatron_feature_tree_analysis]] | 完成任一机制分支 | 能确认仓库能力是否被页面覆盖，以及 A–Q 模块各归谁负责。 |
 | [[41_megatron_config_surface_analysis]] | 40 | 能从 config dataclass 追到 CLI/YAML 入口与机制 owner。 |

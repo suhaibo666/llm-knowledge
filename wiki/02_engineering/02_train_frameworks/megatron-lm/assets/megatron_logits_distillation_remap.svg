@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 690" width="1272" height="690" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .r2{fill:#C2CBDA;stroke:#AEB6C2;stroke-width:1}
+  .r3{fill:#ACB8CB;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1 · 落盘是确定的轮转，DP 变了就按步长跨取或交错重建</text>
+<text class="su" x="28" y="52" text-anchor="start">算例 A：G = 8 个全局 microbatch；教师 dp_saved = 2 → 学生 dp = 4（升配）、dp_saved = 4 → dp = 2（降配）；数字由复刻的 _compute_dp_remapping 等三个函数算出</text>
+<rect class="panel" x="28" y="68" width="600" height="250" rx="10"/>
+<text class="pt" x="40" y="90" text-anchor="start">A · 教师 dp_saved = 2：轮转落盘（G = 8）</text>
+<text class="sm" x="40" y="108" text-anchor="start">全局 microbatch g 落到 saved rank g mod 2；每 rank 每 iteration num_mb = G / dp_saved = 4</text>
+<text class="rank" x="40" y="142" text-anchor="start">全局 g</text>
+<rect class="r0" x="108" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="130" y="143" text-anchor="middle">0</text>
+<rect class="r1" x="158" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="180" y="143" text-anchor="middle">1</text>
+<rect class="r0" x="208" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="230" y="143" text-anchor="middle">2</text>
+<rect class="r1" x="258" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="280" y="143" text-anchor="middle">3</text>
+<rect class="r0" x="308" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="330" y="143" text-anchor="middle">4</text>
+<rect class="r1" x="358" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="380" y="143" text-anchor="middle">5</text>
+<rect class="r0" x="408" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="430" y="143" text-anchor="middle">6</text>
+<rect class="r1" x="458" y="125" width="44" height="28" rx="4"/>
+<text class="tx" x="480" y="143" text-anchor="middle">7</text>
+<text class="sm" x="528" y="142" text-anchor="start">浅 = dp0，深 = dp1</text>
+<text class="dim" x="40" y="194" text-anchor="start">cp0_dp0__I.tar</text>
+<rect class="r0" x="178" y="176" width="44" height="28" rx="4"/>
+<text class="tx" x="200" y="194" text-anchor="middle">0</text>
+<rect class="r0" x="228" y="176" width="44" height="28" rx="4"/>
+<text class="tx" x="250" y="194" text-anchor="middle">2</text>
+<rect class="r0" x="278" y="176" width="44" height="28" rx="4"/>
+<text class="tx" x="300" y="194" text-anchor="middle">4</text>
+<rect class="r0" x="328" y="176" width="44" height="28" rx="4"/>
+<text class="tx" x="350" y="194" text-anchor="middle">6</text>
+<text class="sm" x="386" y="194" text-anchor="start">→ member I.pt.zst（4 个 mb）</text>
+<text class="dim" x="40" y="238" text-anchor="start">cp0_dp1__I.tar</text>
+<rect class="r1" x="178" y="220" width="44" height="28" rx="4"/>
+<text class="tx" x="200" y="238" text-anchor="middle">1</text>
+<rect class="r1" x="228" y="220" width="44" height="28" rx="4"/>
+<text class="tx" x="250" y="238" text-anchor="middle">3</text>
+<rect class="r1" x="278" y="220" width="44" height="28" rx="4"/>
+<text class="tx" x="300" y="238" text-anchor="middle">5</text>
+<rect class="r1" x="328" y="220" width="44" height="28" rx="4"/>
+<text class="tx" x="350" y="238" text-anchor="middle">7</text>
+<text class="sm" x="386" y="238" text-anchor="start">→ member I.pt.zst（4 个 mb）</text>
+<text class="sm" x="40" y="278" text-anchor="start">tar 名 cp{C}_dp{D}__{I}.tar 只编码 cp / dp / 末 iteration；一个 tar 攒多个 iteration</text>
+<text class="sm" x="40" y="296" text-anchor="start">detect_saved_dp_size = max(dp) + 1 = 2；同一 cp-dp 的 tar 按末 iteration 数值排序</text>
+<rect class="panel" x="644" y="68" width="600" height="250" rx="10"/>
+<text class="pt" x="656" y="90" text-anchor="start">B · 升配 dp = 4（dp_ratio = 2）：一份存档被 2 个 rank 按步长跨取</text>
+<text class="sm" x="656" y="108" text-anchor="start">_compute_dp_remapping → ([dp_rank mod 2], sub_rank = dp_rank div 2, 2, 2)；切片 [sub_rank::2]</text>
+<text class="rank" x="656" y="144" text-anchor="start">student dp0</text>
+<text class="sm" x="744" y="144" text-anchor="start">← dp0</text>
+<rect class="acc1" x="794" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="813" y="144" text-anchor="middle">0</text>
+<rect class="ghost" x="836" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="855" y="144" text-anchor="middle">2</text>
+<rect class="acc1" x="878" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="897" y="144" text-anchor="middle">4</text>
+<rect class="ghost" x="920" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="939" y="144" text-anchor="middle">6</text>
+<path class="main" d="M 966 140 L 1006 140"/>
+<text class="dim" x="986" y="135" text-anchor="middle">[0::2]</text>
+<rect class="r0" x="1014" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="1033" y="144" text-anchor="middle">0</text>
+<rect class="r0" x="1056" y="126" width="38" height="28" rx="4"/>
+<text class="tx" x="1075" y="144" text-anchor="middle">4</text>
+<text class="sm" x="1106" y="144" text-anchor="start">✓ 轮转 dp0 = [0, 4]</text>
+<text class="rank" x="656" y="186" text-anchor="start">student dp1</text>
+<text class="sm" x="744" y="186" text-anchor="start">← dp1</text>
+<rect class="acc1" x="794" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="813" y="186" text-anchor="middle">1</text>
+<rect class="ghost" x="836" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="855" y="186" text-anchor="middle">3</text>
+<rect class="acc1" x="878" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="897" y="186" text-anchor="middle">5</text>
+<rect class="ghost" x="920" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="939" y="186" text-anchor="middle">7</text>
+<path class="main" d="M 966 182 L 1006 182"/>
+<text class="dim" x="986" y="177" text-anchor="middle">[0::2]</text>
+<rect class="r1" x="1014" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="1033" y="186" text-anchor="middle">1</text>
+<rect class="r1" x="1056" y="168" width="38" height="28" rx="4"/>
+<text class="tx" x="1075" y="186" text-anchor="middle">5</text>
+<text class="sm" x="1106" y="186" text-anchor="start">✓ 轮转 dp1 = [1, 5]</text>
+<text class="rank" x="656" y="228" text-anchor="start">student dp2</text>
+<text class="sm" x="744" y="228" text-anchor="start">← dp0</text>
+<rect class="ghost" x="794" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="813" y="228" text-anchor="middle">0</text>
+<rect class="acc1" x="836" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="855" y="228" text-anchor="middle">2</text>
+<rect class="ghost" x="878" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="897" y="228" text-anchor="middle">4</text>
+<rect class="acc1" x="920" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="939" y="228" text-anchor="middle">6</text>
+<path class="main" d="M 966 224 L 1006 224"/>
+<text class="dim" x="986" y="219" text-anchor="middle">[1::2]</text>
+<rect class="r2" x="1014" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="1033" y="228" text-anchor="middle">2</text>
+<rect class="r2" x="1056" y="210" width="38" height="28" rx="4"/>
+<text class="tx" x="1075" y="228" text-anchor="middle">6</text>
+<text class="sm" x="1106" y="228" text-anchor="start">✓ 轮转 dp2 = [2, 6]</text>
+<text class="rank" x="656" y="270" text-anchor="start">student dp3</text>
+<text class="sm" x="744" y="270" text-anchor="start">← dp1</text>
+<rect class="ghost" x="794" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="813" y="270" text-anchor="middle">1</text>
+<rect class="acc1" x="836" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="855" y="270" text-anchor="middle">3</text>
+<rect class="ghost" x="878" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="897" y="270" text-anchor="middle">5</text>
+<rect class="acc1" x="920" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="939" y="270" text-anchor="middle">7</text>
+<path class="main" d="M 966 266 L 1006 266"/>
+<text class="dim" x="986" y="261" text-anchor="middle">[1::2]</text>
+<rect class="r3" x="1014" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="1033" y="270" text-anchor="middle">3</text>
+<rect class="r3" x="1056" y="252" width="38" height="28" rx="4"/>
+<text class="tx" x="1075" y="270" text-anchor="middle">7</text>
+<text class="sm" x="1106" y="270" text-anchor="start">✓ 轮转 dp3 = [3, 7]</text>
+<text class="sm" x="656" y="306" text-anchor="start">每 iteration 每 rank：4 → 2 个 mb；dp_ratio 既是共享数也是 stride</text>
+<rect class="panel" x="28" y="334" width="600" height="230" rx="10"/>
+<text class="pt" x="40" y="356" text-anchor="start">C · 降配 dp = 2：每 rank 读 2 份存档，按 mb 序交错重建轮转</text>
+<text class="sm" x="40" y="374" text-anchor="start">_compute_dp_remapping → ([dp_rank, dp_rank + 2], 0, 0.5, 4)；dp_ratio &lt; 1 只作信息</text>
+<text class="rank" x="40" y="428" text-anchor="start">student dp0</text>
+<text class="sm" x="138" y="412" text-anchor="start">dp0</text>
+<rect class="r0" x="178" y="394" width="38" height="28" rx="4"/>
+<text class="tx" x="197" y="412" text-anchor="middle">0</text>
+<rect class="r0" x="220" y="394" width="38" height="28" rx="4"/>
+<text class="tx" x="239" y="412" text-anchor="middle">4</text>
+<text class="sm" x="138" y="446" text-anchor="start">dp2</text>
+<rect class="r2" x="178" y="428" width="38" height="28" rx="4"/>
+<text class="tx" x="197" y="446" text-anchor="middle">2</text>
+<rect class="r2" x="220" y="428" width="38" height="28" rx="4"/>
+<text class="tx" x="239" y="446" text-anchor="middle">6</text>
+<path class="main" d="M 268 424 L 320 424"/>
+<text class="dim" x="294" y="416" text-anchor="middle">_interleave</text>
+<rect class="acc1" x="328" y="410" width="38" height="28" rx="4"/>
+<text class="tx" x="347" y="428" text-anchor="middle">0</text>
+<rect class="acc1" x="370" y="410" width="38" height="28" rx="4"/>
+<text class="tx" x="389" y="428" text-anchor="middle">2</text>
+<rect class="acc1" x="412" y="410" width="38" height="28" rx="4"/>
+<text class="tx" x="431" y="428" text-anchor="middle">4</text>
+<rect class="acc1" x="454" y="410" width="38" height="28" rx="4"/>
+<text class="tx" x="473" y="428" text-anchor="middle">6</text>
+<text class="sm" x="504" y="428" text-anchor="start">✓ 轮转 dp0</text>
+<text class="rank" x="40" y="504" text-anchor="start">student dp1</text>
+<text class="sm" x="138" y="488" text-anchor="start">dp1</text>
+<rect class="r1" x="178" y="470" width="38" height="28" rx="4"/>
+<text class="tx" x="197" y="488" text-anchor="middle">1</text>
+<rect class="r1" x="220" y="470" width="38" height="28" rx="4"/>
+<text class="tx" x="239" y="488" text-anchor="middle">5</text>
+<text class="sm" x="138" y="522" text-anchor="start">dp3</text>
+<rect class="r3" x="178" y="504" width="38" height="28" rx="4"/>
+<text class="tx" x="197" y="522" text-anchor="middle">3</text>
+<rect class="r3" x="220" y="504" width="38" height="28" rx="4"/>
+<text class="tx" x="239" y="522" text-anchor="middle">7</text>
+<path class="main" d="M 268 500 L 320 500"/>
+<text class="dim" x="294" y="492" text-anchor="middle">_interleave</text>
+<rect class="acc1" x="328" y="486" width="38" height="28" rx="4"/>
+<text class="tx" x="347" y="504" text-anchor="middle">1</text>
+<rect class="acc1" x="370" y="486" width="38" height="28" rx="4"/>
+<text class="tx" x="389" y="504" text-anchor="middle">3</text>
+<rect class="acc1" x="412" y="486" width="38" height="28" rx="4"/>
+<text class="tx" x="431" y="504" text-anchor="middle">5</text>
+<rect class="acc1" x="454" y="486" width="38" height="28" rx="4"/>
+<text class="tx" x="473" y="504" text-anchor="middle">7</text>
+<text class="sm" x="504" y="504" text-anchor="start">✓ 轮转 dp1</text>
+<text class="sm" x="40" y="550" text-anchor="start">同一 group 内各源的 iteration 必须相同，否则 _interleave_decoded_group RuntimeError</text>
+<rect class="panel" x="644" y="334" width="600" height="230" rx="10"/>
+<text class="pt" x="656" y="356" text-anchor="start">D · 两层整除条件被破坏时</text>
+<rect class="acc2" x="656" y="370" width="576" height="76" rx="6"/>
+<text class="tx" x="668" y="390" text-anchor="start">G = 6，dp_saved = 2 → num_mb = 3；学生 dp = 4 → dp_ratio = 2</text>
+<rect class="acc2" x="668" y="400" width="38" height="28" rx="4"/>
+<text class="tx" x="687" y="418" text-anchor="middle">0</text>
+<rect class="acc2" x="710" y="400" width="38" height="28" rx="4"/>
+<text class="tx" x="729" y="418" text-anchor="middle">2</text>
+<rect class="acc2" x="752" y="400" width="38" height="28" rx="4"/>
+<text class="tx" x="771" y="418" text-anchor="middle">4</text>
+<text class="costtx" x="804" y="418" text-anchor="start">3 mod 2 ≠ 0 → _slice_microbatches ValueError（切片前）</text>
+<text class="sm" x="668" y="440" text-anchor="start">Saved microbatch count (3) is not divisible by DP ratio (2).</text>
+<rect class="acc2" x="656" y="456" width="576" height="50" rx="6"/>
+<text class="tx" x="668" y="476" text-anchor="start">dp_saved = 2 → 学生 dp = 3：3 mod 2 ≠ 0 → _compute_dp_remapping ValueError（构造时）</text>
+<text class="sm" x="668" y="496" text-anchor="start">Current DP size (3) is not an exact multiple of saved DP size (2).</text>
+<text class="sm" x="656" y="530" text-anchor="start">目录里没有 tar：detect_saved_dp_size = None → 恒等 ([dp_rank], 0, 1, dp_size)，例 dp_rank 3 → [3]</text>
+<text class="sm" x="656" y="548" text-anchor="start">随后 _shard_groups 找不到任何 shard → FileNotFoundError</text>
+<rect class="neutral" x="28" y="580" width="1216" height="96" rx="8"/>
+<text class="tx" x="40" y="601" text-anchor="start">整除条件（两条）与本图复刻的不变量</text>
+<path class="edge" d="M 40 609 L 1232 609"/>
+<text class="sm" x="40" y="627" text-anchor="start">① DP 世界大小整除：升配要求 dp mod dp_saved = 0，降配要求 dp_saved mod dp = 0（_compute_dp_remapping，两条 ValueError）</text>
+<text class="sm" x="40" y="643" text-anchor="start">② 升配时每个存档 iteration 内的 num_mb mod dp_ratio = 0（_slice_microbatches ValueError）；降配走交错路径，不查这一条</text>
+<text class="dim" x="40" y="659" text-anchor="start">不变量：重建后的 microbatch 序 = 学生 DP 下的轮转序（本图 6 个 rank 逐个核对 ✓）；_meta.json 的哈希只管样本流身份，查不出这一层</text>
+</svg>

@@ -48,12 +48,12 @@ title: "Megatron-LM 知识地图"
 | 30 | [[30_megatron_rl_posttraining_consistency_analysis]] | 训推一致性的五条来源与五环收敛，残差交给 importance sampling。 |
 | 31 | [[31_megatron_inference_engine_analysis]] | 块级 KV cache 上的连续批处理与背压、`InferenceMode` 单一开关，再到 chunked prefill、prefix caching 与图尺寸枚举。 |
 | 32 | [[32_megatron_tflops_analysis]] | 上报 TFLOPS 是 GEMM 的闭式计数乘两个批级统计量：dense/THD/MoE/DSA 各口径偏向哪边、偏多少。 |
-| 33 | [[33_megatron_rl_runtime_analysis]] | Agent 协议、rollout 粒度、GRPO 与训推态切换。 |
+| 33 | [[33_megatron_rl_runtime_analysis]] | 同一批 GPU 轮流做推理与训练的实现层：陈旧度上限与 R / G / B 调度计量分离、四阶段流水线与三种归还状态、GRPO 目标、把变长 rollout 装进 THD 箱的打包、`megatron_rl_inference_mode` 的显存腾挪与 Agent 契约面。 |
 | 34 | [[34_deepseek_v4_tensor_parallel_analysis]] | DSv4 Hybrid Attention 的单卡执行面：两道 TP=1 守卫与参数所有权账本，CSA 索引集合、FlashMLA / cuDNN / cudnn-frontend 融合内核族的分派与回退、FP8 下的精度驻留、up-proj 重算与 mHC 交界。 |
 | 35 | [[35_deepseek_v4_context_parallel_analysis]] | DSv4 的 CP 数据面：contiguous THD 分片、左边界 hidden 的 autograd P2P、定容压紧与 rank-major 压缩行、两个异步 AllGather 与本地投影重叠、反向延迟 reduce-scatter，以及 CP 下的 indexer loss 与 CUDA graph 共存。 |
 | 36 | [[36_megatron_fsdp_analysis]] | Megatron-FSDP 把分片切在 FSDP unit 的扁平桶上：四步分组与 DP-LCM 网格、四类缓冲与「四档 = 三个布尔量」、hook 状态机与 AG / RS 两条流水线、持久池与 HSDP / HFSDP、接入层；并用同一算例复演基线内并存的 v2 数据面（`DBuffer` / placement 变换）。 |
-| 37 | [[37_megatron_trtllm_export_analysis]] | checkpoint 到逐 rank TRT-LLM 权重/config 与 engine build。 |
-| 38 | [[38_megatron_logits_distillation_analysis]] | 离线 top-K 缓存协议、writer 接线边界与 sparse KL。 |
+| 37 | [[37_megatron_trtllm_export_analysis]] | 训练态 state dict 到逐 rank TRT-LLM 权重 / config 的离线重布局：两条互斥路径、KV 复制、vocab pad、FP8 三跳与 engine build 边界。 |
+| 38 | [[38_megatron_logits_distillation_analysis]] | 离线 logits 蒸馏：跨 TP 全局 top-K 缓存与 17 位索引、声明哈希对齐、DP 整除重映射与 TP 感知的稀疏 KL；producer 写盘链在基线未闭合。 |
 | 39 | [[39_megatron_moe_training_optimization_analysis]] | MoE 负载建模、并行策略与调优顺序；结合 NVIDIA 2026 技术报告核对收益条件。 |
 | 40 | [[40_megatron_feature_tree_analysis]] | A–Q 功能树、600 个源文件与页面覆盖对账。 |
 | 41 | [[41_megatron_config_surface_analysis]] | dataclass 到 CLI/YAML 的配置生成、校验与 owner 追踪。 |
