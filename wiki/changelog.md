@@ -12,6 +12,11 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-09：vLLM Scheduler 补齐单步计划构造主流程
+
+- 将 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07 Scheduler]] 原第 4 节从约束细节改造成 `schedule()` 主流程章：承接请求状态机和 R/P/Q 算例，新增 running-first、候选量有序裁剪、KV 落实、抢占出口、waiting 准入与 `SchedulerOutput` 封装流程图，并用文字逐段解释各节点的输入、处理和结果。
+- 原 token/input、speculative、encoder/MTP 与 Mamba 内容完整下沉为约束分支；抢占、waiting、结果对账和后续章节顺延编号，并在章节首尾补出明确控制流入口和出口。同步收紧 vLLM 域索引描述；源码基线保持 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`。
+
 ## 2026-09-09：vLLM Scheduler 补全定位、功能模型与状态处理
 
 - 重构 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07 Scheduler]] 的阅读主线：先说明它是 EngineCore 内把请求状态和联合资源约束转成 `SchedulerOutput` 的有状态决策层，再用七组功能连接请求生命周期、依赖就绪、每步选择、资源保留、抢占撤回、计划发布、结果对账与完成释放；同步更新 vLLM 域索引的问题描述。
