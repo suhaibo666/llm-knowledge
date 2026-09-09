@@ -1,0 +1,448 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 776" width="1272" height="776" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#E3E8EF;stroke:#AEB6C2;stroke-width:1}
+  .r2{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .r3{fill:#CDD5E1;stroke:#AEB6C2;stroke-width:1}
+  .r4{fill:#C2CBDA;stroke:#AEB6C2;stroke-width:1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .bar2{fill:#9CC2F3;stroke:#2563EB;stroke-width:.8}
+  .bar3{fill:#5E97E4;stroke:#2563EB;stroke-width:.8}
+  .bar4{fill:#E7EAEE;stroke:#AEB6C2;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　Megatron-FSDP 的 DP-LCM 网格：一个 unit 的五个参数怎样装进按 rank 切分的扁平桶</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：DP=5，P0=(2,6) P1=(4,4) P2=(4,4) P3=(1,2) P4=(1,6)；chunk_size_factor = LCM(行宽) = 12，size = pad(…, DP × LCM) = 60，每 rank 12 个元素；v1 与 v2 在此算例上给出同一组 offsets</text>
+<text class="pt" x="28" y="82" text-anchor="start">A　unit 内的五个参数（每格一个元素，按行分段）与 LCM 尺规</text>
+<rect class="neutral" x="28" y="96" width="168" height="18" rx="3"/>
+<path class="gl" d="M 112 96 L 112 114"/>
+<text class="sm" x="112" y="128" text-anchor="middle">P0 (2,6) = 12，整除 LCM</text>
+<rect class="acc1" x="236" y="96" width="224" height="18" rx="3"/>
+<path class="gl" d="M 292 96 L 292 114"/>
+<path class="gl" d="M 348 96 L 348 114"/>
+<path class="gl" d="M 404 96 L 404 114"/>
+<text class="dim" x="348" y="142" text-anchor="middle">P1 (4,4) = 16，余 4</text>
+<rect class="acc1" x="500" y="96" width="224" height="18" rx="3"/>
+<path class="gl" d="M 556 96 L 556 114"/>
+<path class="gl" d="M 612 96 L 612 114"/>
+<path class="gl" d="M 668 96 L 668 114"/>
+<text class="dim" x="612" y="128" text-anchor="middle">P2 (4,4) = 16，余 4</text>
+<rect class="acc2" x="764" y="96" width="28" height="18" rx="3"/>
+<text class="costtx" x="778" y="142" text-anchor="middle">P3 (1,2) = 2，碎片</text>
+<rect class="acc2" x="832" y="96" width="84" height="18" rx="3"/>
+<text class="costtx" x="874" y="128" text-anchor="middle">P4 (1,6) = 6，碎片</text>
+<rect class="ghost" x="966" y="96" width="168" height="18" rx="3"/>
+<path class="gl" d="M 980 96 L 980 114"/>
+<path class="gl" d="M 994 96 L 994 114"/>
+<path class="gl" d="M 1008 96 L 1008 114"/>
+<path class="gl" d="M 1022 96 L 1022 114"/>
+<path class="gl" d="M 1036 96 L 1036 114"/>
+<path class="gl" d="M 1050 96 L 1050 114"/>
+<path class="gl" d="M 1064 96 L 1064 114"/>
+<path class="gl" d="M 1078 96 L 1078 114"/>
+<path class="gl" d="M 1092 96 L 1092 114"/>
+<path class="gl" d="M 1106 96 L 1106 114"/>
+<path class="gl" d="M 1120 96 L 1120 114"/>
+<text class="sm" x="1050" y="142" text-anchor="middle">LCM = 12：DP 分片边界只落在它的倍数上</text>
+<text class="cap" x="28" y="162" text-anchor="start">蓝框 = conjugate 配对（P1 余 4 + P2 余 4 ≤ 12，装进同一个 chunk）；橙框 = 小于 LCM 的碎片，去填 regular 参数留下的 gap；共 52 个元素，pad 8 格</text>
+<text class="pt" x="28" y="184" text-anchor="start">B　全局扁平桶 60 格，按 5 个 rank 各 12 格切开：offsets = (0, 12, 32, 28, 48)</text>
+<rect class="r0" x="28" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="37.11666666666667" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="37.11666666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="47.733333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="56.85" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="56.85" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="67.46666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="76.58333333333334" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="76.58333333333334" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="87.2" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="96.31666666666666" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="96.31666666666666" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="106.93333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="116.05000000000001" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="116.05000000000001" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="126.66666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="135.78333333333333" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="135.78333333333333" y="220" text-anchor="middle">r0</text>
+<rect class="r0" x="146.4" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="155.51666666666668" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="155.51666666666668" y="220" text-anchor="middle">r1</text>
+<rect class="r0" x="166.13333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="175.25" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="175.25" y="220" text-anchor="middle">r1</text>
+<rect class="r0" x="185.86666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="194.98333333333335" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="194.98333333333335" y="220" text-anchor="middle">r1</text>
+<rect class="r0" x="205.60000000000002" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="214.7166666666667" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="214.7166666666667" y="220" text-anchor="middle">r1</text>
+<rect class="r0" x="225.33333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="234.45000000000002" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="234.45000000000002" y="220" text-anchor="middle">r1</text>
+<rect class="r0" x="245.06666666666666" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="254.18333333333334" y="209" text-anchor="middle">P0</text>
+<text class="sm" x="254.18333333333334" y="220" text-anchor="middle">r1</text>
+<rect class="r1" x="272.8" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="281.9166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="281.9166666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r1" x="292.53333333333336" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="301.65000000000003" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="301.65000000000003" y="220" text-anchor="middle">r0</text>
+<rect class="r1" x="312.26666666666665" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="321.3833333333333" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="321.3833333333333" y="220" text-anchor="middle">r0</text>
+<rect class="r1" x="332" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="341.1166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="341.1166666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r1" x="351.73333333333335" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="360.85" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="360.85" y="220" text-anchor="middle">r1</text>
+<rect class="r1" x="371.4666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="380.58333333333337" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="380.58333333333337" y="220" text-anchor="middle">r1</text>
+<rect class="r1" x="391.20000000000005" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="400.3166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="400.3166666666667" y="220" text-anchor="middle">r1</text>
+<rect class="r1" x="410.93333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="420.05" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="420.05" y="220" text-anchor="middle">r1</text>
+<rect class="r1" x="430.6666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="439.78333333333336" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="439.78333333333336" y="220" text-anchor="middle">r2</text>
+<rect class="r1" x="450.40000000000003" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="459.5166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="459.5166666666667" y="220" text-anchor="middle">r2</text>
+<rect class="r1" x="470.1333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="479.25" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="479.25" y="220" text-anchor="middle">r2</text>
+<rect class="r1" x="489.8666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="498.98333333333335" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="498.98333333333335" y="220" text-anchor="middle">r2</text>
+<rect class="r2" x="517.6" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="526.7166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="526.7166666666667" y="220" text-anchor="middle">r3</text>
+<rect class="r2" x="537.3333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="546.45" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="546.45" y="220" text-anchor="middle">r3</text>
+<rect class="r2" x="557.0666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="566.1833333333334" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="566.1833333333334" y="220" text-anchor="middle">r3</text>
+<rect class="r2" x="576.8000000000001" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="585.9166666666667" y="209" text-anchor="middle">P1</text>
+<text class="sm" x="585.9166666666667" y="220" text-anchor="middle">r3</text>
+<rect class="r2" x="596.5333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="605.65" y="209" text-anchor="middle">P3</text>
+<text class="sm" x="605.65" y="220" text-anchor="middle">r0</text>
+<rect class="r2" x="616.2666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="625.3833333333333" y="209" text-anchor="middle">P3</text>
+<text class="sm" x="625.3833333333333" y="220" text-anchor="middle">r0</text>
+<rect class="ghost" x="636" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="645.1166666666667" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="655.7333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="664.85" y="215" text-anchor="middle">·</text>
+<rect class="r2" x="675.4666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="684.5833333333334" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="684.5833333333334" y="220" text-anchor="middle">r0</text>
+<rect class="r2" x="695.2" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="704.3166666666667" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="704.3166666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r2" x="714.9333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="724.0500000000001" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="724.0500000000001" y="220" text-anchor="middle">r0</text>
+<rect class="r2" x="734.6666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="743.7833333333334" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="743.7833333333334" y="220" text-anchor="middle">r0</text>
+<rect class="r3" x="762.4000000000001" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="771.5166666666668" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="771.5166666666668" y="220" text-anchor="middle">r1</text>
+<rect class="r3" x="782.1333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="791.25" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="791.25" y="220" text-anchor="middle">r1</text>
+<rect class="r3" x="801.8666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="810.9833333333333" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="810.9833333333333" y="220" text-anchor="middle">r1</text>
+<rect class="r3" x="821.6" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="830.7166666666667" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="830.7166666666667" y="220" text-anchor="middle">r1</text>
+<rect class="r3" x="841.3333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="850.45" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="850.45" y="220" text-anchor="middle">r2</text>
+<rect class="r3" x="861.0666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="870.1833333333334" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="870.1833333333334" y="220" text-anchor="middle">r2</text>
+<rect class="r3" x="880.8000000000001" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="889.9166666666667" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="889.9166666666667" y="220" text-anchor="middle">r2</text>
+<rect class="r3" x="900.5333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="909.6500000000001" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="909.6500000000001" y="220" text-anchor="middle">r2</text>
+<rect class="r3" x="920.2666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="929.3833333333333" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="929.3833333333333" y="220" text-anchor="middle">r3</text>
+<rect class="r3" x="940" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="949.1166666666667" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="949.1166666666667" y="220" text-anchor="middle">r3</text>
+<rect class="r3" x="959.7333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="968.85" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="968.85" y="220" text-anchor="middle">r3</text>
+<rect class="r3" x="979.4666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="988.5833333333334" y="209" text-anchor="middle">P2</text>
+<text class="sm" x="988.5833333333334" y="220" text-anchor="middle">r3</text>
+<rect class="r4" x="1007.2" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1016.3166666666667" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1016.3166666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r4" x="1026.9333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1036.05" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1036.05" y="220" text-anchor="middle">r0</text>
+<rect class="r4" x="1046.6666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1055.7833333333333" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1055.7833333333333" y="220" text-anchor="middle">r0</text>
+<rect class="r4" x="1066.4" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1075.5166666666667" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1075.5166666666667" y="220" text-anchor="middle">r0</text>
+<rect class="r4" x="1086.1333333333334" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1095.25" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1095.25" y="220" text-anchor="middle">r0</text>
+<rect class="r4" x="1105.8666666666668" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1114.9833333333333" y="209" text-anchor="middle">P4</text>
+<text class="sm" x="1114.9833333333333" y="220" text-anchor="middle">r0</text>
+<rect class="ghost" x="1125.6000000000001" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1134.7166666666667" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="1145.3333333333335" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1154.45" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="1165.0666666666666" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1174.1833333333332" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="1184.8" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1193.9166666666665" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="1204.5333333333333" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1213.6499999999999" y="215" text-anchor="middle">·</text>
+<rect class="ghost" x="1224.2666666666667" y="198" width="18.233333333333334" height="26" rx="2"/>
+<text class="sm" x="1233.3833333333332" y="215" text-anchor="middle">·</text>
+<rect class="outline1" x="271.3" y="195" width="325.2333333333333" height="32" rx="3"/>
+<rect class="outline1" x="673.9666666666667" y="195" width="325.23333333333335" height="32" rx="3"/>
+<rect class="outline2" x="595.0333333333333" y="195" width="40.9666666666667" height="32" rx="3"/>
+<rect class="outline2" x="1005.7" y="195" width="119.90000000000009" height="32" rx="3"/>
+<text class="rank" x="146.4" y="242" text-anchor="middle">rank0：全局 [0, 12)</text>
+<text class="rank" x="391.20000000000005" y="242" text-anchor="middle">rank1：全局 [12, 24)</text>
+<text class="rank" x="636" y="242" text-anchor="middle">rank2：全局 [24, 36)</text>
+<text class="rank" x="880.8000000000001" y="242" text-anchor="middle">rank3：全局 [36, 48)</text>
+<text class="rank" x="1125.6000000000001" y="242" text-anchor="middle">rank4：全局 [48, 60)</text>
+<text class="cap" x="28" y="264" text-anchor="start">每格写「参数 / 行号」，· = pad；rank 边界都是 12 的倍数，所以没有任何一行被劈开。P2 的余数段 [32, 36) 补进 P1 的 pad；P3 填进 gap；P4 装不进 gap，落在尾部并再 pad 到 60</text>
+<text class="pt" x="28" y="288" text-anchor="start">C　每 rank 的本地形状（get_local_tensor：owned range 必须整行，否则 RuntimeError；整参数在别的 rank 时本地为空）</text>
+<rect class="panel" x="24" y="300" width="900" height="142" rx="8"/>
+<text class="rank" x="28" y="317" text-anchor="start">rank</text>
+<text class="rank" x="168" y="317" text-anchor="start">P0 (2,6)</text>
+<text class="rank" x="278" y="317" text-anchor="start">P1 (4,4)</text>
+<text class="rank" x="388" y="317" text-anchor="start">P2 (4,4)</text>
+<text class="rank" x="498" y="317" text-anchor="start">P3 (1,2)</text>
+<text class="rank" x="608" y="317" text-anchor="start">P4 (1,6)</text>
+<text class="rank" x="718" y="317" text-anchor="start">本地元素数</text>
+<path class="edge" d="M 28 323 L 918 323"/>
+<text class="sm" x="28" y="340" text-anchor="start">rank0  [0, 12)</text>
+<text class="dim" x="168" y="340" text-anchor="start">(2,6)</text>
+<text class="sm" x="278" y="340" text-anchor="start">(0,4)</text>
+<text class="sm" x="388" y="340" text-anchor="start">(0,4)</text>
+<text class="sm" x="498" y="340" text-anchor="start">(0,2)</text>
+<text class="sm" x="608" y="340" text-anchor="start">(0,6)</text>
+<text class="sm" x="718" y="340" text-anchor="start">12 / 12（pad 0）</text>
+<text class="sm" x="28" y="362" text-anchor="start">rank1  [12, 24)</text>
+<text class="sm" x="168" y="362" text-anchor="start">(0,6)</text>
+<text class="dim" x="278" y="362" text-anchor="start">(3,4)</text>
+<text class="sm" x="388" y="362" text-anchor="start">(0,4)</text>
+<text class="sm" x="498" y="362" text-anchor="start">(0,2)</text>
+<text class="sm" x="608" y="362" text-anchor="start">(0,6)</text>
+<text class="sm" x="718" y="362" text-anchor="start">12 / 12（pad 0）</text>
+<text class="sm" x="28" y="384" text-anchor="start">rank2  [24, 36)</text>
+<text class="sm" x="168" y="384" text-anchor="start">(0,6)</text>
+<text class="dim" x="278" y="384" text-anchor="start">(1,4)</text>
+<text class="dim" x="388" y="384" text-anchor="start">(1,4)</text>
+<text class="dim" x="498" y="384" text-anchor="start">(1,2)</text>
+<text class="sm" x="608" y="384" text-anchor="start">(0,6)</text>
+<text class="sm" x="718" y="384" text-anchor="start">10 / 12（pad 2）</text>
+<text class="sm" x="28" y="406" text-anchor="start">rank3  [36, 48)</text>
+<text class="sm" x="168" y="406" text-anchor="start">(0,6)</text>
+<text class="sm" x="278" y="406" text-anchor="start">(0,4)</text>
+<text class="dim" x="388" y="406" text-anchor="start">(3,4)</text>
+<text class="sm" x="498" y="406" text-anchor="start">(0,2)</text>
+<text class="sm" x="608" y="406" text-anchor="start">(0,6)</text>
+<text class="sm" x="718" y="406" text-anchor="start">12 / 12（pad 0）</text>
+<text class="sm" x="28" y="428" text-anchor="start">rank4  [48, 60)</text>
+<text class="sm" x="168" y="428" text-anchor="start">(0,6)</text>
+<text class="sm" x="278" y="428" text-anchor="start">(0,4)</text>
+<text class="sm" x="388" y="428" text-anchor="start">(0,4)</text>
+<text class="sm" x="498" y="428" text-anchor="start">(0,2)</text>
+<text class="dim" x="608" y="428" text-anchor="start">(1,6)</text>
+<text class="sm" x="718" y="428" text-anchor="start">6 / 12（pad 6）</text>
+<text class="pt" x="948" y="288" text-anchor="start">D　对照：逐参数 Shard(0)</text>
+<rect class="panel" x="944" y="300" width="300" height="142" rx="8"/>
+<text class="rank" x="948" y="317" text-anchor="start">参数</text>
+<text class="rank" x="1028" y="317" text-anchor="start">各 rank 行数</text>
+<text class="rank" x="1148" y="317" text-anchor="start">空 rank</text>
+<path class="edge" d="M 948 323 L 1236 323"/>
+<text class="sm" x="948" y="340" text-anchor="start">P0 (2,6)</text>
+<text class="costtx" x="1028" y="340" text-anchor="start">[1,1,0,0,0]</text>
+<text class="costtx" x="1148" y="340" text-anchor="start">3</text>
+<text class="sm" x="948" y="362" text-anchor="start">P1 (4,4)</text>
+<text class="costtx" x="1028" y="362" text-anchor="start">[1,1,1,1,0]</text>
+<text class="costtx" x="1148" y="362" text-anchor="start">1</text>
+<text class="sm" x="948" y="384" text-anchor="start">P2 (4,4)</text>
+<text class="costtx" x="1028" y="384" text-anchor="start">[1,1,1,1,0]</text>
+<text class="costtx" x="1148" y="384" text-anchor="start">1</text>
+<text class="sm" x="948" y="406" text-anchor="start">P3 (1,2)</text>
+<text class="costtx" x="1028" y="406" text-anchor="start">[1,0,0,0,0]</text>
+<text class="costtx" x="1148" y="406" text-anchor="start">4</text>
+<text class="sm" x="948" y="428" text-anchor="start">P4 (1,6)</text>
+<text class="costtx" x="1028" y="428" text-anchor="start">[1,0,0,0,0]</text>
+<text class="costtx" x="1148" y="428" text-anchor="start">4</text>
+<text class="costtx" x="948" y="450" text-anchor="start">5 个参数 = 5 次 collective</text>
+<text class="cap" x="28" y="466" text-anchor="start">按 DTensor 公开契约推演（每个参数各自沿 dim-0 均分、前面的 rank 先拿），不是读过 FSDP2 源码；Megatron-FSDP 的做法是整个 unit 一次 collective，每 rank 恰好 12 个元素</text>
+<text class="pt" x="28" y="490" text-anchor="start">E　v1 与 v2 的差异：(4,4) + (1,6)，DP=2，LCM=12，size 都是 24</text>
+<text class="rank" x="28" y="520" text-anchor="start">v1 build_data_parallel_buffer_index</text>
+<rect class="r0" x="278" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="288.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="300" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="310.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="322" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="332.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="344" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="354.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="366" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="376.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="388" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="398.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="410" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="420.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="432" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="442.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="454" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="464.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="476" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="486.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="498" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="508.25" y="520" text-anchor="middle">P0</text>
+<rect class="r0" x="520" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="530.25" y="520" text-anchor="middle">P0</text>
+<rect class="r1" x="550" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="560.25" y="520" text-anchor="middle">P0</text>
+<rect class="r1" x="572" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="582.25" y="520" text-anchor="middle">P0</text>
+<rect class="r1" x="594" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="604.25" y="520" text-anchor="middle">P0</text>
+<rect class="r1" x="616" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="626.25" y="520" text-anchor="middle">P0</text>
+<rect class="acc2" x="638" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="648.25" y="520" text-anchor="middle">P1</text>
+<rect class="acc2" x="660" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="670.25" y="520" text-anchor="middle">P1</text>
+<rect class="acc2" x="682" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="692.25" y="520" text-anchor="middle">P1</text>
+<rect class="acc2" x="704" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="714.25" y="520" text-anchor="middle">P1</text>
+<rect class="acc2" x="726" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="736.25" y="520" text-anchor="middle">P1</text>
+<rect class="acc2" x="748" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="758.25" y="520" text-anchor="middle">P1</text>
+<rect class="ghost" x="770" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="780.25" y="520" text-anchor="middle">·</text>
+<rect class="ghost" x="792" y="504" width="20.5" height="24" rx="2"/>
+<text class="sm" x="802.25" y="520" text-anchor="middle">·</text>
+<text class="costtx" x="826" y="520" text-anchor="start">P1 offset 16，不是行宽 6 的倍数</text>
+<text class="rank" x="28" y="560" text-anchor="start">v2 GlobalLayout.build</text>
+<rect class="r0" x="278" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="288.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="300" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="310.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="322" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="332.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="344" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="354.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="366" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="376.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="388" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="398.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="410" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="420.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="432" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="442.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="454" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="464.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="476" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="486.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="498" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="508.25" y="560" text-anchor="middle">P0</text>
+<rect class="r0" x="520" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="530.25" y="560" text-anchor="middle">P0</text>
+<rect class="r1" x="550" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="560.25" y="560" text-anchor="middle">P0</text>
+<rect class="r1" x="572" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="582.25" y="560" text-anchor="middle">P0</text>
+<rect class="r1" x="594" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="604.25" y="560" text-anchor="middle">P0</text>
+<rect class="r1" x="616" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="626.25" y="560" text-anchor="middle">P0</text>
+<rect class="ghost" x="638" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="648.25" y="560" text-anchor="middle">·</text>
+<rect class="ghost" x="660" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="670.25" y="560" text-anchor="middle">·</text>
+<rect class="acc1" x="682" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="692.25" y="560" text-anchor="middle">P1</text>
+<rect class="acc1" x="704" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="714.25" y="560" text-anchor="middle">P1</text>
+<rect class="acc1" x="726" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="736.25" y="560" text-anchor="middle">P1</text>
+<rect class="acc1" x="748" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="758.25" y="560" text-anchor="middle">P1</text>
+<rect class="acc1" x="770" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="780.25" y="560" text-anchor="middle">P1</text>
+<rect class="acc1" x="792" y="544" width="20.5" height="24" rx="2"/>
+<text class="sm" x="802.25" y="560" text-anchor="middle">P1</text>
+<text class="dim" x="826" y="560" text-anchor="start">P1 offset 18，是行宽 6 的倍数</text>
+<text class="cap" x="28" y="592" text-anchor="start">v1 把碎片直接放在 gap_offset=16；v2 先 pad 到自身行宽 6 得 18，GlobalLayout.__post_init__ 会拒绝任何 offset % row_size ≠ 0 的布局</text>
+<text class="cap" x="28" y="608" text-anchor="start">v1 的 sorted(fragment_items, …) 返回值没被接住，碎片按注册顺序填 gap；v2 用 fragment_items.sort(…) 让大碎片优先</text>
+<rect class="neutral" x="28" y="626" width="600" height="130" rx="8"/>
+<text class="tx" x="40" y="647" text-anchor="start">本图算出的规则</text>
+<path class="edge" d="M 40 655 L 616 655"/>
+<text class="sm" x="40" y="673" text-anchor="start">chunk_size_factor = LCM(p.shape[1:].numel()) = 12；桶 size = pad(装填终点, DP × LCM) = 60</text>
+<text class="sm" x="40" y="689" text-anchor="start">整除 LCM 的参数直接顺排；大于 LCM 但不整除的参数按余数找 conjugate 装进同一个 chunk</text>
+<text class="sm" x="40" y="705" text-anchor="start">小于 LCM 的碎片先填 regular 参数留下的 gap，填不进的放尾部</text>
+<text class="sm" x="40" y="721" text-anchor="start">每 rank 拿全局 [rank × 12, (rank+1) × 12)：整参数不在本 rank 时本地形状首维为 0</text>
+<text class="sm" x="40" y="737" text-anchor="start">不做 pad 的唯一情况：no_shard（_pad_if_needed 直接返回）</text>
+<rect class="neutral" x="644" y="626" width="600" height="130" rx="8"/>
+<text class="tx" x="656" y="647" text-anchor="start">两代算法在本算例上的差别与复刻范围</text>
+<path class="edge" d="M 656 655 L 1232 655"/>
+<text class="sm" x="656" y="673" text-anchor="start">docstring 算例：v1 offsets (0, 12, 32, 28, 48) = v2 offsets (0, 12, 32, 28, 48)，size 相同</text>
+<text class="costtx" x="656" y="689" text-anchor="start">差异小例：v1 P1 offset 16 vs v2 18；顺序小例 (4,4)+(1,2)+(1,6)：v1 size 24 vs v2 48</text>
+<text class="sm" x="656" y="705" text-anchor="start">精确复刻：v1 的 regular / conjugate / fragment 三段与 _pad_if_needed；v2 的排序、行宽对齐、校验</text>
+<text class="sm" x="656" y="721" text-anchor="start">简化：不画 bucket group 的 NCCL 合并与 TP 维（strided shard 交给 make_fsdp_dtensor）</text>
+<text class="sm" x="656" y="737" text-anchor="start">面板 D 的逐参数分片只是推演，用来对照「一个 unit 一次 collective」</text>
+</svg>

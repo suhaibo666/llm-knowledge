@@ -51,7 +51,7 @@ title: "Megatron-LM 知识地图"
 | 33 | [[33_megatron_rl_runtime_analysis]] | Agent 协议、rollout 粒度、GRPO 与训推态切换。 |
 | 34 | [[34_deepseek_v4_tensor_parallel_analysis]] | DSv4 Hybrid Attention 的单卡执行面：两道 TP=1 守卫与参数所有权账本，CSA 索引集合、FlashMLA / cuDNN / cudnn-frontend 融合内核族的分派与回退、FP8 下的精度驻留、up-proj 重算与 mHC 交界。 |
 | 35 | [[35_deepseek_v4_context_parallel_analysis]] | DSv4 的 CP 数据面：contiguous THD 分片、左边界 hidden 的 autograd P2P、定容压紧与 rank-major 压缩行、两个异步 AllGather 与本地投影重叠、反向延迟 reduce-scatter，以及 CP 下的 indexer loss 与 CUDA graph 共存。 |
-| 36 | [[36_megatron_fsdp_analysis]] | MegatronFSDP 的 buffer、hook、mesh 与预取流水线。 |
+| 36 | [[36_megatron_fsdp_analysis]] | Megatron-FSDP 把分片切在 FSDP unit 的扁平桶上：四步分组与 DP-LCM 网格、四类缓冲与「四档 = 三个布尔量」、hook 状态机与 AG / RS 两条流水线、持久池与 HSDP / HFSDP、接入层；并用同一算例复演基线内并存的 v2 数据面（`DBuffer` / placement 变换）。 |
 | 37 | [[37_megatron_trtllm_export_analysis]] | checkpoint 到逐 rank TRT-LLM 权重/config 与 engine build。 |
 | 38 | [[38_megatron_logits_distillation_analysis]] | 离线 top-K 缓存协议、writer 接线边界与 sparse KL。 |
 | 39 | [[39_megatron_moe_training_optimization_analysis]] | 按四种所有权组织的 MoE 工程选型地图。 |

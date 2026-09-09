@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 572" width="1272" height="572" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .outline1{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .outline2{fill:none;stroke:#C3651F;stroke-width:1.8}
+  .r0{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1}
+  .r1{fill:#E3E8EF;stroke:#AEB6C2;stroke-width:1}
+  .r2{fill:#D8DEE8;stroke:#AEB6C2;stroke-width:1}
+  .r3{fill:#CDD5E1;stroke:#AEB6C2;stroke-width:1}
+  .r4{fill:#C2CBDA;stroke:#AEB6C2;stroke-width:1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .bar2{fill:#9CC2F3;stroke:#2563EB;stroke-width:.8}
+  .bar3{fill:#5E97E4;stroke:#2563EB;stroke-width:.8}
+  .bar4{fill:#E7EAEE;stroke:#AEB6C2;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　每参数每 rank 的字节账：四档 + HSDP / HFSDP 的常驻、双缓冲的瞬态、每 step 的通信</text>
+<text class="su" x="28" y="52" text-anchor="start">llama3_8b 配方：hidden 4096、ffn 14336、32 层、GQA 8×128，DP=8，16 microbatch/step；unit = 218,112,000 参数（bf16 416.0 MiB，fp8 208.0 MiB）；HSDP / HFSDP 按 D=8、O=4 延伸</text>
+<text class="pt" x="28" y="92" text-anchor="start">常驻字节 / 参数 / rank（W 计算权重、G 主梯度、M fp32 主权重、O Adam 两个 fp32 状态）</text>
+<path class="sep" d="M 68 302 L 668 302"/>
+<path class="gl" d="M 68 302 L 668 302"/>
+<text class="sm" x="64" y="306" text-anchor="end">0 B</text>
+<path class="gl" d="M 68 262 L 668 262"/>
+<text class="sm" x="64" y="266" text-anchor="end">4 B</text>
+<path class="gl" d="M 68 222 L 668 222"/>
+<text class="sm" x="64" y="226" text-anchor="end">8 B</text>
+<path class="gl" d="M 68 182 L 668 182"/>
+<text class="sm" x="64" y="186" text-anchor="end">12 B</text>
+<path class="gl" d="M 68 142 L 668 142"/>
+<text class="sm" x="64" y="146" text-anchor="end">16 B</text>
+<rect class="bar3" x="81.0" y="282.0" width="39.0" height="20.0"/>
+<rect class="bar2" x="81.0" y="262.0" width="39.0" height="20.0"/>
+<rect class="bar1" x="81.0" y="222.0" width="39.0" height="40.0"/>
+<rect class="bar4" x="81.0" y="142.0" width="39.0" height="80.0"/>
+<text class="dim" x="100.5" y="137" text-anchor="middle">16</text>
+<text class="sm" x="100.5" y="315" text-anchor="middle">none</text>
+<rect class="bar3" x="126.0" y="282.0" width="39.0" height="20.0"/>
+<rect class="bar2" x="126.0" y="262.0" width="39.0" height="20.0"/>
+<rect class="bar1" x="126.0" y="257.0" width="39.0" height="5.0"/>
+<rect class="bar4" x="126.0" y="247.0" width="39.0" height="10.0"/>
+<text class="dim" x="145.5" y="242" text-anchor="middle">5.500</text>
+<text class="sm" x="145.5" y="315" text-anchor="middle">optim</text>
+<rect class="bar3" x="171.0" y="282.0" width="39.0" height="20.0"/>
+<rect class="bar2" x="171.0" y="279.5" width="39.0" height="2.5"/>
+<rect class="bar1" x="171.0" y="274.5" width="39.0" height="5.0"/>
+<rect class="bar4" x="171.0" y="264.5" width="39.0" height="10.0"/>
+<text class="dim" x="190.5" y="259.5" text-anchor="middle">3.750</text>
+<text class="sm" x="190.5" y="315" text-anchor="middle">og</text>
+<rect class="bar3" x="216.0" y="299.5" width="39.0" height="2.5"/>
+<rect class="bar2" x="216.0" y="297.0" width="39.0" height="2.5"/>
+<rect class="bar1" x="216.0" y="292.0" width="39.0" height="5.0"/>
+<rect class="bar4" x="216.0" y="282.0" width="39.0" height="10.0"/>
+<text class="dim" x="235.5" y="277" text-anchor="middle">2</text>
+<text class="sm" x="235.5" y="315" text-anchor="middle">ogp</text>
+<rect class="bar3" x="261.0" y="299.5" width="39.0" height="2.5"/>
+<rect class="bar2" x="261.0" y="297.0" width="39.0" height="2.5"/>
+<rect class="bar1" x="261.0" y="292.0" width="39.0" height="5.0"/>
+<rect class="bar4" x="261.0" y="282.0" width="39.0" height="10.0"/>
+<text class="dim" x="280.5" y="277" text-anchor="middle">2</text>
+<text class="sm" x="280.5" y="315" text-anchor="middle">hsdp</text>
+<rect class="bar3" x="306.0" y="299.5" width="39.0" height="2.5"/>
+<rect class="bar2" x="306.0" y="297.0" width="39.0" height="2.5"/>
+<rect class="bar1" x="306.0" y="295.8" width="39.0" height="1.3"/>
+<rect class="bar4" x="306.0" y="293.3" width="39.0" height="2.5"/>
+<text class="dim" x="325.5" y="288.25" text-anchor="middle">0.875</text>
+<text class="sm" x="325.5" y="315" text-anchor="middle">hfsdp</text>
+<text class="rank" x="213" y="330" text-anchor="middle">bf16 参数</text>
+<rect class="bar3" x="371.0" y="292.0" width="39.0" height="10.0"/>
+<rect class="bar2" x="371.0" y="272.0" width="39.0" height="20.0"/>
+<rect class="bar1" x="371.0" y="232.0" width="39.0" height="40.0"/>
+<rect class="bar4" x="371.0" y="152.0" width="39.0" height="80.0"/>
+<text class="dim" x="390.5" y="147" text-anchor="middle">15</text>
+<text class="sm" x="390.5" y="315" text-anchor="middle">none</text>
+<rect class="bar3" x="416.0" y="292.0" width="39.0" height="10.0"/>
+<rect class="bar2" x="416.0" y="272.0" width="39.0" height="20.0"/>
+<rect class="bar1" x="416.0" y="267.0" width="39.0" height="5.0"/>
+<rect class="bar4" x="416.0" y="257.0" width="39.0" height="10.0"/>
+<text class="dim" x="435.5" y="252" text-anchor="middle">4.500</text>
+<text class="sm" x="435.5" y="315" text-anchor="middle">optim</text>
+<rect class="bar3" x="461.0" y="292.0" width="39.0" height="10.0"/>
+<rect class="bar2" x="461.0" y="289.5" width="39.0" height="2.5"/>
+<rect class="bar1" x="461.0" y="284.5" width="39.0" height="5.0"/>
+<rect class="bar4" x="461.0" y="274.5" width="39.0" height="10.0"/>
+<text class="dim" x="480.5" y="269.5" text-anchor="middle">2.750</text>
+<text class="sm" x="480.5" y="315" text-anchor="middle">og</text>
+<rect class="bar3" x="506.0" y="300.8" width="39.0" height="1.3"/>
+<rect class="bar2" x="506.0" y="298.3" width="39.0" height="2.5"/>
+<rect class="bar1" x="506.0" y="293.3" width="39.0" height="5.0"/>
+<rect class="bar4" x="506.0" y="283.3" width="39.0" height="10.0"/>
+<text class="dim" x="525.5" y="278.25" text-anchor="middle">1.875</text>
+<text class="sm" x="525.5" y="315" text-anchor="middle">ogp</text>
+<rect class="bar3" x="551.0" y="300.8" width="39.0" height="1.3"/>
+<rect class="bar2" x="551.0" y="298.3" width="39.0" height="2.5"/>
+<rect class="bar1" x="551.0" y="293.3" width="39.0" height="5.0"/>
+<rect class="bar4" x="551.0" y="283.3" width="39.0" height="10.0"/>
+<text class="dim" x="570.5" y="278.25" text-anchor="middle">1.875</text>
+<text class="sm" x="570.5" y="315" text-anchor="middle">hsdp</text>
+<rect class="bar3" x="596.0" y="300.8" width="39.0" height="1.3"/>
+<rect class="bar2" x="596.0" y="298.3" width="39.0" height="2.5"/>
+<rect class="bar1" x="596.0" y="297.0" width="39.0" height="1.3"/>
+<rect class="bar4" x="596.0" y="294.5" width="39.0" height="2.5"/>
+<text class="dim" x="615.5" y="289.5" text-anchor="middle">0.750</text>
+<text class="sm" x="615.5" y="315" text-anchor="middle">hfsdp</text>
+<text class="rank" x="503" y="330" text-anchor="middle">fp8 参数（--fp8-param-gather）</text>
+<rect class="bar3" x="78" y="339" width="12" height="12"/>
+<text class="sm" x="96" y="349" text-anchor="start">W 计算权重</text>
+<rect class="bar2" x="198" y="339" width="12" height="12"/>
+<text class="sm" x="216" y="349" text-anchor="start">G 主梯度</text>
+<rect class="bar1" x="318" y="339" width="12" height="12"/>
+<text class="sm" x="336" y="349" text-anchor="start">M 主权重 fp32</text>
+<rect class="bar4" x="438" y="339" width="12" height="12"/>
+<text class="sm" x="456" y="349" text-anchor="start">O Adam 状态</text>
+<rect class="neutral" x="28" y="364" width="640" height="130" rx="8"/>
+<text class="tx" x="40" y="385" text-anchor="start">怎么算的（none=no_shard，og=optim_grads，ogp=optim_grads_params）</text>
+<path class="edge" d="M 40 393 L 656 393"/>
+<text class="sm" x="40" y="411" text-anchor="start">no_shard：W+G+M+O 全复制 = 16 B；optim：W+G + (M+O)/D = 5.5 B；optim_grads：W + (G+M+O)/D = 3.75 B</text>
+<text class="sm" x="40" y="427" text-anchor="start">optim_grads_params：(W+G+M+O)/D = 2 B；HSDP 外层复制 = 2 B；HFSDP：(W+G)/D + (M+O)/(D·O) = 0.875 B</text>
+<text class="sm" x="40" y="443" text-anchor="start">G：main_grads_dtype=None → 参数 dtype（bf16 2 B），fp8 参数 → bf16；M：main_params_dtype 默认 fp32</text>
+<text class="costtx" x="40" y="459" text-anchor="start">O = Adam 两个 fp32 状态（假设）；整模型 8.03B 参数：ogp 每 rank 14.96 GiB，no_shard 119.66 GiB</text>
+<text class="sm" x="40" y="475" text-anchor="start">vocab 不进 unit 账，进整模型账；TP=1，没有 strided shard</text>
+<text class="pt" x="708" y="92" text-anchor="start">瞬态：一个 unit 的未分片桶 × 持久池槽数（MiB / rank）</text>
+<rect class="panel" x="704" y="104" width="540" height="120" rx="8"/>
+<text class="rank" x="708" y="121" text-anchor="start">桶</text>
+<text class="rank" x="968" y="121" text-anchor="start">× 2（默认）</text>
+<text class="rank" x="1108" y="121" text-anchor="start">× 3（1F1B EP overlap）</text>
+<path class="edge" d="M 708 127 L 1236 127"/>
+<text class="sm" x="708" y="144" text-anchor="start">bf16 参数桶</text>
+<text class="dim" x="968" y="144" text-anchor="start">832.0 MiB</text>
+<text class="costtx" x="1108" y="144" text-anchor="start">1248.0 MiB</text>
+<text class="sm" x="708" y="166" text-anchor="start">fp8 参数桶</text>
+<text class="dim" x="968" y="166" text-anchor="start">416.0 MiB</text>
+<text class="costtx" x="1108" y="166" text-anchor="start">624.0 MiB</text>
+<text class="sm" x="708" y="188" text-anchor="start">MXFP8 rowwise + columnwise</text>
+<text class="dim" x="968" y="188" text-anchor="start">832.0 MiB</text>
+<text class="costtx" x="1108" y="188" text-anchor="start">1248.0 MiB</text>
+<text class="sm" x="708" y="210" text-anchor="start">bf16 梯度桶（grad_comm_dtype=None）</text>
+<text class="dim" x="968" y="210" text-anchor="start">832.0 MiB</text>
+<text class="costtx" x="1108" y="210" text-anchor="start">1248.0 MiB</text>
+<text class="cap" x="708" y="240" text-anchor="start">参数桶与梯度桶各一个池；双缓冲 = 当前 unit + 预取的后继；HSDP 自定义 grad_comm_dtype 另加一份</text>
+<text class="pt" x="708" y="264" text-anchor="start">每 step 每 rank 接收字节 / 参数（bf16，16 个 microbatch）</text>
+<path class="sep" d="M 748 464 L 1244 464"/>
+<path class="gl" d="M 748 464 L 1244 464"/>
+<text class="sm" x="744" y="468" text-anchor="end">0</text>
+<path class="gl" d="M 748 446.22222222222223 L 1244 446.22222222222223"/>
+<text class="sm" x="744" y="450.22222222222223" text-anchor="end">10</text>
+<path class="gl" d="M 748 428.44444444444446 L 1244 428.44444444444446"/>
+<text class="sm" x="744" y="432.44444444444446" text-anchor="end">20</text>
+<path class="gl" d="M 748 410.6666666666667 L 1244 410.6666666666667"/>
+<text class="sm" x="744" y="414.6666666666667" text-anchor="end">30</text>
+<path class="gl" d="M 748 392.8888888888889 L 1244 392.8888888888889"/>
+<text class="sm" x="744" y="396.8888888888889" text-anchor="end">40</text>
+<path class="gl" d="M 748 375.1111111111111 L 1244 375.1111111111111"/>
+<text class="sm" x="744" y="379.1111111111111" text-anchor="end">50</text>
+<path class="gl" d="M 748 357.3333333333333 L 1244 357.3333333333333"/>
+<text class="sm" x="744" y="361.3333333333333" text-anchor="end">60</text>
+<path class="gl" d="M 748 339.55555555555554 L 1244 339.55555555555554"/>
+<text class="sm" x="744" y="343.55555555555554" text-anchor="end">70</text>
+<path class="gl" d="M 748 321.77777777777777 L 1244 321.77777777777777"/>
+<text class="sm" x="744" y="325.77777777777777" text-anchor="end">80</text>
+<rect class="bar" x="757.0" y="457.8" width="73.0" height="6.2"/>
+<text class="dim" x="793.5" y="452.77777777777777" text-anchor="middle">3.5</text>
+<text class="sm" x="793.5" y="477" text-anchor="middle">none</text>
+<rect class="bar" x="838.0" y="457.8" width="73.0" height="6.2"/>
+<text class="dim" x="874.5" y="452.77777777777777" text-anchor="middle">3.5</text>
+<text class="sm" x="874.5" y="477" text-anchor="middle">optim</text>
+<rect class="bar3" x="919.0" y="414.2" width="73.0" height="49.8"/>
+<rect class="bar" x="919.0" y="411.1" width="73.0" height="3.1"/>
+<text class="dim" x="955.5" y="406.11111111111114" text-anchor="middle">29.8</text>
+<text class="sm" x="955.5" y="477" text-anchor="middle">og</text>
+<rect class="bar3" x="1000.0" y="314.7" width="73.0" height="149.3"/>
+<text class="dim" x="1036.5" y="309.66666666666663" text-anchor="middle">84.0</text>
+<text class="sm" x="1036.5" y="477" text-anchor="middle">ogp</text>
+<rect class="bar3" x="1081.0" y="314.7" width="73.0" height="149.3"/>
+<rect class="bar" x="1081.0" y="314.0" width="73.0" height="0.7"/>
+<text class="dim" x="1117.5" y="308.99999999999994" text-anchor="middle">84.4</text>
+<text class="sm" x="1117.5" y="477" text-anchor="middle">hsdp</text>
+<rect class="bar3" x="1162.0" y="314.7" width="73.0" height="149.3"/>
+<rect class="bar" x="1162.0" y="314.0" width="73.0" height="0.7"/>
+<text class="dim" x="1198.5" y="308.99999999999994" text-anchor="middle">84.4</text>
+<text class="sm" x="1198.5" y="477" text-anchor="middle">hfsdp</text>
+<rect class="bar3" x="753" y="486" width="12" height="12"/>
+<text class="sm" x="771" y="496" text-anchor="start">每 microbatch：AG 前向 + AG 反向 + RS</text>
+<rect class="bar" x="1008" y="486" width="12" height="12"/>
+<text class="sm" x="1026" y="496" text-anchor="start">每优化周期：延迟 RS / AG / 外层 AR 或 RS+AG</text>
+<text class="cap" x="708" y="516" text-anchor="start">ogp 每 microbatch (2W+G)(D−1)/D = 5.25 B</text>
+<text class="cap" x="708" y="532" text-anchor="start">HSDP 外层 AR 只在最后一个 microbatch：+0.375 B；HFSDP 外层 RS+AG 只在优化周期：+0.375 B</text>
+<text class="cap" x="708" y="548" text-anchor="start">no_shard 每周期 AR = 3.50 B；optim 延迟 RS + AG = 3.50 B；optim_grads = 29.75 B</text>
+</svg>

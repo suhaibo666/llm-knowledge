@@ -58,7 +58,7 @@ title: "Megatron-LM 阅读路径"
 | [[24_megatron_linear_cross_entropy_analysis]] | 12 | 能解释 LM head 与 cross-entropy 怎样避免完整 logits 物化。 |
 | [[26_megatron_optimizer_step_internals_deepdive]] | 16、23 | 能走通 optimizer factory、混合精度 step、LR/WD、CPU offload 与 Muon/μP。 |
 | [[32_megatron_tflops_analysis]] | 10、14 | 能核对 dense/MoE FLOPs、吞吐与 MFU 的统计口径。 |
-| [[36_megatron_fsdp_analysis]] | 16 | 能追踪 MegatronFSDP buffer、hook、mesh 与预取流水线。 |
+| [[36_megatron_fsdp_analysis]] | 16 | 能追踪 Megatron-FSDP 的分组 / 缓冲 / hook 流水线 / 持久池，并分清 v1 与 v2 两条数据面。 |
 
 ## 分支四：可靠性
 
