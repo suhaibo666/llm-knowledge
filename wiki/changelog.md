@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-09：vLLM Scheduler 补全定位、功能模型与状态处理
+
+- 重构 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07 Scheduler]] 的阅读主线：先说明它是 EngineCore 内把请求状态和联合资源约束转成 `SchedulerOutput` 的有状态决策层，再用七组功能连接请求生命周期、依赖就绪、每步选择、资源保留、抢占撤回、计划发布、结果对账与完成释放；同步更新 vLLM 域索引的问题描述。
+- 将原来只列枚举和迁移边的状态章节改为逐状态处理合同，分别列出进入条件、Scheduler 动作、队列/资源语义与退出条件；补齐六个终态的触发与 finish reason，并明确 `WAITING_FOR_STREAMING_REQ` 可对外呈现 `STOP`、但内部并非 finished。
+- 结合固定源码 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae` 核对同步/批队列闭环、blocked waiting promotion、抢占重置、remote KV load、resumable session 与延迟释放；保留原有预算、Mamba、抢占、stale 和失败恢复算例及证据边界，新增闭环图并重编号全部图示。未运行模型、GPU 或 connector。
+
 ## 2026-09-08：吸收四篇 vLLM 深挖笔记的独有增量
 
 - 新增 [[02_engineering/03_infer_frameworks/vllm/26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]：在当前 `199cb9b` 基线上重建本机 worker 启动、READY/队列握手、广播 RPC、output rank 与 aggregator、共享内存 ring 背压、Future FIFO 及 shutdown；原笔记中的旧 commit 行号未作为知识库证据沿用。

@@ -5,7 +5,7 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 # vLLM 推理引擎：按问题与依赖组织的知识地图
 
 > **核验基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（2026-09-07 UTC）；各页适用范围与证据限制见页头和正文。
-> **核验状态**：26篇正文已完成本轮重构与逐页核验。最后更新：2026-09-08。
+> **核验状态**：26篇正文已完成本轮重构与逐页核验。最后更新：2026-09-09。
 > **目录范围**：26篇内容页 + 本索引，按原有相对顺序连续编号为01–26；旧版系统设计原则页已合并到架构与具体机制页。本页只维护本级入口及阅读依赖；使用、调优、排障、架构和具体机制分别从下表进入。
 
 ## 读者入口
@@ -23,7 +23,7 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 |---|---|---|
 | [[03_vllm_request_semantics_analysis|03 请求语义]] | 消息怎样经模板、参数与任务转换成为引擎请求，再恢复为用户输出？ | 架构概览 → Engine、采样与多模态 |
 | [[06_vllm_engine_architecture_analysis|06 Engine架构]] | 请求怎样登记、提交与完成，两批在途工作怎样配对并释放资源？ | 请求语义 → Scheduler、Serving与分布式 |
-| [[07_vllm_scheduler_analysis|07 Scheduler]] | 每步怎样分配token与encoder预算、抢占请求并按真实输出对账？ | Engine → KV、Runner与生成特性 |
+| [[07_vllm_scheduler_analysis|07 Scheduler]] | Scheduler怎样管理请求状态，联合分配token、slot、KV与encoder，并按原计划对账？ | Engine → KV、Runner与生成特性 |
 | [[08_vllm_kv_cache_management_analysis|08 KV Cache]] | 物理块怎样分配、共享、淘汰和回收，prefix/hybrid/offload怎样接合？ | Scheduler → Attention、Runner与分离式KV |
 | [[13_vllm_serving_control_plane_analysis|13 Serving控制面]] | 服务怎样启动、就绪、路由、背压、传播故障并关闭？ | 架构与Engine → 分布式、可观测性 |
 

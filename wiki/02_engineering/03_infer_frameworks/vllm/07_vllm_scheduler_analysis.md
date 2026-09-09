@@ -1,15 +1,55 @@
 ---
-title: "vLLM Scheduler：每步 token 预算、抢占与结果对账"
+title: "vLLM Scheduler：请求生命周期、联合资源调度与结果对账"
 ---
 
-# vLLM Scheduler：每步 token 预算、抢占与结果对账
+# vLLM Scheduler：请求生命周期、联合资源调度与结果对账
 
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（main 快照，2026-09-07 UTC）
-> **主题**：一次 `schedule()` 怎样在 running decode 与 waiting prefill 之间分配预算，取得 KV/encoder 容量，再根据执行结果修正进度。
+> **主题**：Scheduler 在 EngineCore 中怎样管理请求生命周期，把 token、request slot、KV 与 encoder 等约束合成每步执行计划，并用对应结果修正乐观进度与释放资源。
 > **适用范围**：V1 `Scheduler` / `AsyncScheduler` 的队列、token/input/spec/encoder 预算、抢占、输出与完成；设备行列及异步执行归 11/12，KV block/hash/refcount 算法归 08，采样和投机正确性归 14/16。
-> **最近更新**：2026-09-08。按固定源码与测试静态核验；数值例用于重放控制流，未实跑模型、GPU 或 connector。
+> **最近更新**：2026-09-09。按固定源码与测试静态核验；数值例用于重放控制流，未实跑模型、GPU 或 connector。
 
-## 1. 一步只能算 6 个 token，先给谁
+## 1. Scheduler 的定位：把请求状态变成可执行的一步
+
+V1 `Scheduler` 是 EngineCore 内的**有状态决策层**。它接收的不是一批已经定形的 GPU 输入，而是处在不同生命周期阶段的请求，以及 token、request slot、KV、encoder、LoRA 和 connector 等资源视图；它输出 `SchedulerOutput`，说明本步哪些请求计算多少位置、使用哪些新块和 encoder 输入、哪些请求首次进入或恢复、哪些 worker 镜像需要清理。模型执行器只消费这份计划，设备侧怎样排 row、跑 attention 或采样不由 Scheduler 实现。
+
+反过来，Scheduler 也不是 KV 分配器或 API 排队器。`KVCacheManager.allocate_slots()` 决定具体块能否落实，前端 admission 决定请求能否进入 EngineCore；Scheduler 的职责是把这些组件的结果放进同一个请求进度和 step 边界中，保证**发出的计划可执行、返回的结果能找到原计划、终止后的资源按各自完成条件回收**。因此它更像持续闭环的协调器，而不是只给 waiting 队列排一次序的优先级队列。
+
+<!-- 图1 spec：输入是请求、队列/进度和资源视图；展示EngineCore调用schedule形成SchedulerOutput、执行器返回与原计划配对、update_from_output更新状态后进入下一步；外部add/abort进入生命周期入口；明确计划提交、结果确认、资源回收三个完成边界，不展开设备行布局。 -->
+```mermaid
+flowchart TB
+    A["前端请求或续写输入"] --> L["生命周期入口<br/>add_request 或 finish_requests"]
+    L --> S["Scheduler 持久状态<br/>状态、队列、进度、资源所有权"]
+    S --> P["schedule<br/>选请求、裁剪预算、联合保留"]
+    P --> O["SchedulerOutput<br/>本步请求、token、blocks、encoder 与清理差量"]
+    O --> E["ModelExecutor 和 Runner<br/>执行与采样"]
+    E --> U["update_from_output<br/>按原计划对账、stop、失败与释放"]
+    U --> R["EngineCoreOutputs<br/>交付可见结果"]
+    U --> S
+    X["abort、connector 完成或失败"] --> L
+    classDef acc fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef ext fill:#f8fafc,stroke:#64748b,color:#0f172a
+    class P,O,U acc
+    class A,E,R,X ext
+```
+
+同步 `EngineCore.step()` 依次调用 `schedule()`、`execute_model()` / `sample_tokens()` 和 `update_from_output()`；开启 batch queue 时，Core 可在旧 future 返回前继续发新计划，再把每个 future 与当时的 `SchedulerOutput` 成对保存。所以下面三个时间点不能合并：`schedule()` 返回只说明**计划已提交**，`update_from_output()` 才说明**结果已确认**，connector 与执行 fence 满足后才说明**资源已回收**。
+
+Scheduler 的功能可以压缩为七组。后文每一节都对应其中一组，而不是按源码长函数逐段翻译。
+
+| 功能 | 要解决的问题 | 设计与实现入口 | 产出的可观察变化 |
+|---|---|---|---|
+| 请求生命周期 | 新请求、续写会话与外部终止怎样进入同一状态空间 | `add_request()` 建立/续接请求；`finish_requests()` 从队列移除并进入统一释放 | `requests`、waiting 队列、终态与 `finished_req_ids` 改变 |
+| 就绪性管理 | grammar、remote KV、streaming 输入未就绪时，怎样不阻塞所有后来请求 | `_enqueue_waiting_request()` 将 blocked 请求放入 skipped；`_try_promote_blocked_waiting_request()` 按外部完成信号恢复 | blocked 状态在 skipped 中等待，ready 后回到 `WAITING` 或 `PREEMPTED` |
+| 每步选择与预算 | 已运行请求和新请求谁能在本步计算多少位置 | `schedule()` 先扫 running，再在无抢占时准入 waiting；统一用 computed 追赶 known/spec/placeholder 目标 | `num_scheduled_tokens`、new/resumed/cached request 差量形成 |
+| 联合资源保留 | token 数可行时，slot、KV、encoder、LoRA 和 lookahead 是否也同时可行 | `_try_schedule_encoder_inputs()`、`_reserve_prefill_lookahead()` 与 `allocate_slots()` 共同裁剪/落实 | 只有联合成功的请求进入本步 maps；异步 KV load 是只持块、不执行的例外 |
+| 抢占与显式撤回 | KV 不足时怎样回收容量，又不让已撤销工作残留在本步计划 | `schedule()` 选择 victim；`_preempt_request()` 重置进度并释放资源，同时撤回 victim 已登记的预算和 maps | victim 变 `PREEMPTED`、回 waiting，worker 收到 reset id |
+| 计划发布 | runner 需要的首次数据、缓存差量、块与 connector 操作怎样冻结在同一步 | `SchedulerOutput` 构造后，`_update_after_schedule()` 乐观推进 computed/in-flight | 后续可继续发 step，但必须保留原计划用于结果对账 |
+| 结果对账与完成 | spec rejection、stale、load failure、stop 和延迟释放怎样各走正确分支 | `update_from_output()`、`_update_request_with_output()`、`_free_request()` 与 deferred-free fence | token 恰好交付一次；终态、对象删除和物理块回池分别发生 |
+
+这张表也给出本页边界：调度策略只决定候选顺序和 victim，不单独保证公平；KV block/hash/refcount 算法见 08，Engine future 与设备完成见 06/11/12，采样和投机正确性见 14/16。Scheduler 在这些模块之间维护控制一致性，但不替它们证明数据面正确。
+
+## 2. 一步只能算 6 个 token，先给谁
 
 设每步 token budget 和 input budget 都为 6，最多 3 个 running 请求；开启 chunked prefill，关闭长 prefill 限额，无 spec、媒体或 prefix hit，KV 足够。R 已在 decode：已知 21 个 token、算过 20 个，差 1 个；P、Q 按顺序等待，prompt 分别长 10、3。每步结果返回后再排下一步，R 在这三步内不结束。
 
@@ -21,7 +61,7 @@ title: "vLLM Scheduler：每步 token 预算、抢占与结果对账"
 
 这里“发出 5 个 token”是计算 5 个输入位置，不是向用户交付 5 个新 token。`num_computed_tokens` 在提交计划时已经推进，表中“结果返回”才确定采样输出。若不开 chunked prefill，等待中的长请求放不下会停止本轮 waiting 扫描；不能从本例推成“总会越过长请求，让后面的短请求先走”。`test_schedule_order` 用 800/800/10/10 的请求和 1024 预算验证了这个差别。
 
-<!-- 图1 spec：输入是 R 差1、P差10、Q差3和预算6；沿一次 schedule 的实际顺序显示6→5→0，输出R1/P5和仍waiting的Q；矩形依次表示准入动作与结果对账，非时间比例图。 -->
+<!-- 图2 spec：输入是 R 差1、P差10、Q差3和预算6；沿一次 schedule 的实际顺序显示6→5→0，输出R1/P5和仍waiting的Q；矩形依次表示准入动作与结果对账，非时间比例图。 -->
 ```mermaid
 flowchart TB
     I["step 1：预算 6，KV 足够<br/>running R 差 1；waiting P 差 10、Q 差 3"] --> R["R：裁剪为 1，取得 KV slots<br/>登记 R:1，预算 6 → 5"]
@@ -37,12 +77,71 @@ flowchart TB
 
 但“每步重排”也把 Scheduler 放进延迟关键路径。token 数、可驻留 request slot、KV blocks 分别受限；多发 token 可能拉长一步，多占 KV 可能引发重算，多接纳请求也不等于降低排队时间。后文沿本例逐项加入这些限制。
 
-## 2. 调度器记住了什么
+## 3. 请求状态机：每个状态里 Scheduler 实际做什么
 
-| 状态 | 用途 | 不能混同的边界 |
+`RequestStatus` 回答“请求处在生命周期哪一段”，但不能单独回答“下一步能否执行”。Scheduler 真正判断的是一个组合状态：**枚举值 + 所在队列 + computed/in-flight/stale 进度 + KV/encoder 所有权 + connector/fence 完成信号**。同为 `WAITING`，新请求可能没有块，remote KV 刚完成的请求却可能已经持有并缓存了块；同为终态，对象和物理块也可能尚未删除。
+
+先逐个看非终态。表中的“占 slot”指 `max_num_seqs` 对应的 model-runner request slot，不是本步一定有执行行。
+
+| `RequestStatus` | 怎样进入 | Scheduler 在该状态做什么 | 队列与资源语义 | 怎样离开 |
+|---|---|---|---|---|
+| `WAITING` | 普通新请求；grammar 或首次 remote KV ready；续写输入到达 | 作为可准入候选，检查策略顺序、slot、LoRA、prefix、token/input、encoder 与 KV；失败按原因选择 skip 或停止扫描 | 通常在 `waiting`；不占 running slot，但可因已完成 remote load 而持有 blocks | 联合保留成功后设 `RUNNING`；异步 KV load 启动后设 `WAITING_FOR_REMOTE_KVS`；abort/error 进终态 |
+| `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR` | `Request` 创建时发现结构化输出请求 | `_try_promote_blocked_waiting_request()` 轮询 grammar 对象；未就绪继续跳过，异常登记为 request-level error | 在 `skipped_waiting`，不进入本步 token/KV 计划 | grammar 可用后设 `WAITING`；编译异常在结果更新尾部统一设 `FINISHED_ERROR` |
+| `WAITING_FOR_REMOTE_KVS` | waiting 或 preempted 请求已为外部 KV load 分配 blocks | 本步不执行 token；等待 worker connector 的 finished/failed 信号。ready 后缓存有效块，失败时截到有效前缀或释放 | 在 `skipped_waiting`；**可能持有 blocks 和 prefill 容量保留**，但不进 `running`，也不扣本步执行预算 | 首次请求回 `WAITING`，有过抢占的请求回 `PREEMPTED`；load fail 可转重算或 `FINISHED_ERROR` |
+| `WAITING_FOR_STREAMING_REQ` | resumable 请求当前输入段触发 stop，且暂时没有下一段输入 | 保留会话对象，拒绝把它当普通 waiting 准入；`add_request()` 收到同 id 更新时调用 `_update_request_as_session()` 拼接新输入 | 在 `skipped_waiting`；不在 `running`，但 `num_waiting_for_streaming_input` 仍计入 slot 上限 | 新输入到达后设 `WAITING`；结束 sentinel 或外部 abort 进终态 |
+| `RUNNING` | waiting/preempted 请求联合保留成功 | 每步先扫描：计算待追赶位置，逐项裁剪预算，申请新增 KV，登记本步 maps；候选为零时可跳过它继续扫后续请求 | 在 `running` 并占 slot，通常持有 KV/encoder 状态；是否当步执行只看 `num_scheduled_tokens` | KV 不足且被选为 victim 时设 `PREEMPTED`；stop/error/abort 进完成路径；未结束则留在 `RUNNING` |
+| `PREEMPTED` | 只有 `RUNNING` 可由 `_preempt_request()` 进入 | computed 归零、清 draft/placeholders、标记 stale 份额和 reset id；等待重新查 prefix、补资源并重算 | 从 `running` 移除、KV/encoder 引用释放，插到 `waiting` 队首；旧 step 的结果仍可能在途 | stale 排空后通常再准入；drop 模式允许同一步恢复但丢弃旧结果；也可被 abort 或被 stale stop 终止 |
+
+终态不是一个枚举，而是六个原因。`RequestStatus.is_finished()` 的实现是 `status > PREEMPTED`，所以新增终态必须保持这个枚举顺序契约。
+
+| 终态 | 本基线中的触发/含义 | 对外 finish reason 与处理 |
+|---|---|---|
+| `FINISHED_STOPPED` | EOS、stop token；pooling 得到结果；encoder-only 完整消费 prompt | `STOP`；resumable 请求可能先捕获本段 stop reason，随后立即复位到 `WAITING`，并不最终释放 |
+| `FINISHED_LENGTH_CAPPED` | 已达模型长度或请求 `max_tokens` | `LENGTH`；进入统一 `_free_request()` |
+| `FINISHED_ABORTED` | 客户端断开、Core 关闭或 streaming session 明确结束等外部终止 | `ABORT`；`finish_requests()` 先从当前队列移除再释放 |
+| `FINISHED_IGNORED` | 枚举注释保留给 prompt 超过长度上限的忽略语义；本基线 V1 Scheduler 没有写入该状态的生产路径 | 映射为 `LENGTH`；不能据枚举存在声称当前 Scheduler 会产生它 |
+| `FINISHED_ERROR` | grammar 编译/推进失败，或配置为 fail 的 KV load failure | `ERROR`；错误请求不再参与准入，走统一释放与空 token 输出 |
+| `FINISHED_REPETITION` | 满足 `min_tokens` 后命中配置的序列重复检测 | `REPETITION`，并记录 `repetition_detected` |
+
+还有一个容易误读的接口细节：`WAITING_FOR_STREAMING_REQ` 虽然不是终态，`get_finished_reason()` 仍把它映射为 `STOP`，用于表达“当前输入段已停止”。**对外 finish reason 与内部 `is_finished()` 不是同一判定。**
+
+<!-- 图3 spec：输入是新请求；主路径展示三个blocked等待、联合准入、KV抢占重置、可续会话和完成释放；状态内写Scheduler动作，边写触发信号；任意非终态的abort/error终止边由旁注合并，避免重复连线掩盖主路径；不把skipped队列误画为enum。 -->
+```mermaid
+stateDiagram-v2
+    state "WAITING<br/>可做联合准入" as W
+    state "等待 grammar<br/>轮询或记 error" as G
+    state "等待 remote KV<br/>持块但不执行" as K
+    state "等待 streaming 输入<br/>保会话并占 slot 计数" as S
+    state "RUNNING<br/>逐项裁剪并形成 step maps" as R
+    state "PREEMPTED<br/>释放资源并重置进度" as P
+    state "FINISHED_*<br/>停止调度并统一释放" as F
+    [*] --> W: 普通新请求
+    [*] --> G: 创建时需异步 grammar
+    G --> W: grammar ready<br/>重新参加准入
+    W --> K: 先分配 blocks<br/>发起外部 load
+    P --> K: 恢复时需外部 load
+    K --> W: 首次 load 完成<br/>缓存有效前缀
+    K --> P: 抢占后 load 完成<br/>保留重算语义
+    W --> R: token、slot、KV、encoder<br/>联合保留成功
+    P --> R: stale 边界允许且<br/>联合保留成功
+    R --> P: KV 不足<br/>撤回本步登记并重置
+    R --> S: 本段 stop 且可续<br/>暂存会话
+    S --> W: 新输入到达<br/>扩展 session
+    G --> F: grammar 编译失败
+    K --> F: load 失败且策略为 fail
+    R --> F: stop、length 或执行错误
+    F --> [*]: connector 允许后删对象<br/>fence 完成后 blocks 回池
+    note right of F
+        任意非终态收到 abort<br/>或请求级 error 都可进入终态
+    end note
+```
+
+支撑这个组合状态的是以下持久字段和每步差量：
+
+| 状态载体 | 用途 | 不能混同的边界 |
 |---|---|---|
 | `requests` | request id 到 `Request` 的映射 | connector 延迟释放时，终态对象仍可能在映射中 |
-| `waiting`、`skipped_waiting` | 准入候选，以及等待依赖/本轮约束而跳过的请求 | 队列位置不是额外的 `RequestStatus`；blocked 不等于 finished |
+| `waiting`、`skipped_waiting` | 可直接准入候选，以及等待依赖/本轮约束而跳过的请求 | 队列位置不是额外的 `RequestStatus`；blocked 不等于 finished |
 | `running` | 已准入、占活跃 slot 的请求 | 不保证每步都执行；当步执行子集看 `num_scheduled_tokens` |
 | `num_tokens_with_spec` | prompt + 已返回 output + 当前 draft 的长度 | draft 还没有通过验证 |
 | `num_computed_tokens`、`num_in_flight_tokens` | 已提交进度，以及尚未返回的执行位置数 | computed 含乐观推进，不等于全部已确认的 KV |
@@ -50,44 +149,11 @@ flowchart TB
 | 本步 maps | 新 blocks、每请求 token 数、encoder 项、scheduled spec | 联合资源成功后才登记；异步 KV load 可只持 blocks 而不执行 |
 | `finished_req_ids`、`reset_preempted_req_ids` | 下游清理旧请求镜像的生命周期增量 | 放进 output 后换新 set，不能原地 `clear()` 破坏旧计划 |
 
-请求状态区分普通等待、三个 blocked waiting、running、preempted 和终态；`RequestStatus.is_finished()` 将枚举中 `PREEMPTED` 之后的值视为终态。图中的资源驻留说明不是新的枚举。
-
-<!-- 图2 spec：输入是新请求；展示三个异步等待原因、准入运行、抢占重排和终止路径；终态后connector可留对象，KV fence可继续留块；不把skipped队列误画为enum。 -->
-```mermaid
-stateDiagram-v2
-    state "WAITING" as W
-    state "等待 grammar" as G
-    state "等待 remote KV" as K
-    state "等待 streaming 输入" as S
-    state "RUNNING" as R
-    state "PREEMPTED" as P
-    state "终态" as F
-    [*] --> W: 新请求
-    [*] --> G: grammar 异步构建
-    G --> W: ready
-    W --> K: 保留 blocks 并发起 load
-    P --> K: 恢复时异步 load
-    K --> W: 首次请求 transfer 完成
-    K --> P: 被抢占请求 transfer 完成
-    W --> R: 预算与资源允许
-    P --> R: 普通 stale 排空后恢复<br/>drop 模式可提前恢复
-    R --> P: KV 不足
-    R --> S: 可续会话等待新输入
-    S --> W: 输入到达
-    W --> F: abort 或 error
-    G --> F: abort 或 grammar error
-    K --> F: abort 或 transfer error
-    S --> F: 会话结束或 abort
-    R --> F: stop、length、abort 或 error
-    P --> F: stale 输出触发 stop 或 abort
-    F --> [*]: connector 允许后删除对象<br/>KV 回池还可能等 fence
-```
-
 五条不变量贯穿后文：已发 token 总量不超上限；token/input budget 非负；running 数不超 slot 上限；发给 runner 的计划只能包含本步能执行的联合保留；返回结果必须按产生它的那份计划对账。源码在封装 output 前直接断言前几项。`running` 数可以大于当步 scheduled 请求数，因此不能拿整个 running 列表当作模型输入。
 
-## 3. 一个请求的 token 数怎样逐项被裁剪
+## 4. 联合资源调度：一个请求的 token 数怎样逐项被裁剪
 
-### 3.1 两种 token 预算和 request slot
+### 4.1 两种 token 预算和 request slot
 
 每轮 `token_budget = max_num_scheduled_tokens`，`input_budget = max_num_batched_tokens`。二者通常相等；模型会在执行中追加输入位置时，调度上限可以更小。若 speculative 配置要求 `draft_slots = max_num_new_slots_for_drafting`，每接纳一个请求，input budget 扣掉的是 `num_new_tokens + draft_slots`，token budget 只扣 `num_new_tokens`。例如 token budget 6、input budget 8、每请求 draft slots 2：第一个请求取 4 后，剩 token=2、input=2；第二个请求因 `input_budget <= draft_slots` 停止，即使还剩 token 预算也不能入场。
 
@@ -97,7 +163,7 @@ running 的候选量按 `num_tokens_with_spec + num_output_placeholders - num_co
 
 waiting 除 token 外还检查 `len(running) + num_waiting_for_streaming_input`：暂停等输入的 streaming session 仍占 runner slot。`max_num_seqs` 是驻留/执行容量约束，前端 `max_num_queued_reqs/tokens` admission 是另一道入口限流，见 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_semantics_analysis|请求语义]]，两者不能替代。
 
-### 3.2 speculative 也花预算，且 shape 不能随意截断
+### 4.2 speculative 也花预算，且 shape 不能随意截断
 
 running 只将批准区间内的 draft 写入 `scheduled_spec_decode_tokens`，然后清空 request 的旧 draft，等 `update_draft_token_ids()` 或 async worker 更新。prefill chunk 不接收 draft：现有测试以 prompt 80、预算 50、draft 3 逐步验证 **50 → 30 → 1+3**；第二步是剩余 30 个 prompt 位置，不能混入 3 个 draft 而变成 33。投机的 propose/verify/accept 分布推导属于 [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]]。
 
@@ -105,7 +171,7 @@ running 只将批准区间内的 draft 写入 `scheduled_spec_decode_tokens`，�
 
 **Mamba 对齐后的修正不同于预算不足。** 已补成 `1+3=4` 行的请求，若 split 裁到 1、2、3 中任何一个正数，最终都回退为 **1 行并清掉 padding 标志**，不附 spec placeholders。否则 sampler 按 draft 数推导的 row window 与实际 query 行数不一致；回归测试明确覆盖三个裁剪值。对齐直接得到零则本轮停止准入。动态 spec 在计划结尾按本步 scheduled request 数查询下一步 K；它是下一轮 draft 数选择，不能追溯改写本轮已批准区间。
 
-### 3.3 encoder 预算决定 decoder 能走到哪里
+### 4.3 encoder 预算决定 decoder 能走到哪里
 
 在主例中加入一幅图：P 的媒体占位从位置 4 开始，需要 6 个 encoder embeddings，本步 encoder budget 只有 4，起点为 0、无预读 shift。即使 decoder 获得 5-token 候选区间，也只能取前 4 个文本位置。若下一步起点已在 4，encoder 仍不可用，就取零；running 跳过 P，继续尝试后面的请求。
 
@@ -115,13 +181,13 @@ running 只将批准区间内的 draft 写入 `scheduled_spec_decode_tokens`，�
 
 EAGLE 类方法的 prefill lookahead 通常为 1；multi-module MTP 为 spec 数。这个 shift 同时影响 encoder 提前调度、延后释放与 chunk 末端：若 prompt 10、lookahead 3、候选先算 8，会只留下 2 个已知输入供下轮 drafter 预读，因此 `_reserve_prefill_lookahead()` 将本轮退到 7，留下完整 3 个。要么完成 prefill，要么留够预读窗口；不能让尾部 MTP 模块过早改读采样 draft 并污染其 KV。编码后的 cache 也要等已确认进度越过媒体末端加 lookahead 才释放，不能只看包含 placeholders 的乐观 computed。
 
-### 3.4 Mamba split 保证缓存的是哪个位置的状态
+### 4.4 Mamba split 保证缓存的是哪个位置的状态
 
 Mamba `align` 模式保存的是某个确切 token 边界后的递归状态。可复用的完整块槽 p 必须代表计算完 `(p+1)*block_size` 个 token 的状态；把在 364 处结束的中间状态标成 state@1600，会让命中它的后续请求从错误状态恢复。普通 attention 的 token KV 与这种递归状态不能用同一“随便切一个 chunk”的假设。
 
 `_mamba_block_aligned_split()` 先合并已有进度、本地命中、外部命中得到 start，只在 prefill/重放旧输出期间裁剪。中间 chunk 向块边界对齐；若物理块大于整个配置允许的 chunk，允许先以私有 running state 小步前进，再停在下一个边界。还有几个必须检查的提前停止点：从块中部恢复后的下一个整块边界、最后可缓存块边界、细粒度 prefix hit 所需的 prompt 最后 hash 边界、按块向下对齐的 shared-prefix 分叉点。不能把所有情况简写为“永远按 block_size 向下取整”。
 
-<!-- 图3 spec：两个具体query分别重放共用checkpoint校验；1984→3602的initial/checkpoint列均1因而拒绝，0→100的列为-1/0且满足hash与16对齐因而可导出96；明确输入、算式、判定与下一步，不是二维KV布局。 -->
+<!-- 图4 spec：两个具体query分别重放共用checkpoint校验；1984→3602的initial/checkpoint列均1因而拒绝，0→100的列为-1/0且满足hash与16对齐因而可导出96；明确输入、算式、判定与下一步，不是二维KV布局。 -->
 ```mermaid
 flowchart TB
     subgraph A["块中部恢复：必须先停在 3200"]
@@ -148,7 +214,7 @@ flowchart TB
 
 新基线还分开 `use_eagle` 与 `use_eagle_block_drop`：前者决定 hidden-state drafter / 预读语义，后者才决定丢弃易变的尾部 prefix block，并传给 KV manager 与 split/checkpoint 计算。禁用 block drop 不会同时关闭 EAGLE。测试用 prompt=3602、block=1600、无内部 checkpoint，开启 drop 首次停在 1600，关闭则停在 3200。块分配与 checkpoint 的物理保存、partial-tail hash/CoW 仍由 08 页展开。
 
-## 4. KV 不够时，怎样撤回本步已经选中的请求
+## 5. 抢占与回滚：KV 不够时怎样撤回已选请求
 
 running 请求的 token 区间算好后，`allocate_slots()` 尝试落实逻辑 KV。失败会从 running 选 victim：FCFS 从列表尾部取；priority 按 `(priority, arrival_time)` 最大者取，数值越大优先级越低，同优先级晚到者先被选。priority 排序主要决定等待队列与 victim，不能假定 running 列表每轮都重新全排序。
 
@@ -156,7 +222,7 @@ running 请求的 token 区间算好后，`allocate_slots()` 尝试落实逻辑 
 
 现有 priority 测试给出可重放的容量例：block_size=16，总 6 块含 1 个 null，实际可用 5 块。低优先级 L 的 32-token prompt 先占 2 块，输出后下一步扩成 3 块；随后高优先级 H 的 32-token prompt 占 2 块，正好用完。再下一步先选中的 L 尚在这 3 块内，H 则需要第 3 块：此时抢占 L，**撤销刚登记的 L:1**，归还预算与 L 的 3 块，H 才能继续。最终计划里不能同时有“执行 L”与“L 的旧 KV 已释放”。
 
-<!-- 图4 spec：采用priority测试的5个可用块与token预算200；L先登记1却随后成为victim，展示撤销L1、budget199→200、释放L3块，再给H第3块并输出仅H1；free块0→3→2，不画物理布局。 -->
+<!-- 图5 spec：采用priority测试的5个可用块与token预算200；L先登记1却随后成为victim，展示撤销L1、budget199→200、释放L3块，再给H第3块并输出仅H1；free块0→3→2，不画物理布局。 -->
 ```mermaid
 flowchart TB
     I["步前：L 占 3 块，H 占 2 块，free 0<br/>token budget 200；L 优先级低"] --> L["先为 L 登记本步 1 token<br/>无需新块，budget 200 → 199"]
@@ -177,7 +243,7 @@ flowchart TB
 
 抢占不是把 KV swap 到 CPU 保存。V1 设计文档明确移除了 swapped preemption 与 `--swap-space`，改用 prefix caching 加 recompute：恢复时重查可用前缀，再计算缺失部分。computed 归零意味着重新建立有效进度，未必意味着所有历史 token 都要从零做前向，但重算绝不是免费暂停。
 
-## 5. waiting：就绪、slot 与容量同时满足才入场
+## 6. Waiting admission：就绪、slot 与容量同时满足才入场
 
 waiting 扫描先在普通与 skipped 队列中按策略挑候选。grammar 尚未就绪、remote KV 尚未完成、streaming 输入未到的请求继续跳过；grammar 编译异常进入 request-level error 路径。新的 LoRA 会超出本步 `max_loras`、connector 暂不能确定命中数、EC 预取尚未就绪，也会移到本步 skipped 队列再尝试其它请求；pass 末把跳过项放回 skipped 前部。相反，slot 耗尽、等待长请求的不可切分区间放不下、KV 分配失败会停止这次 waiting 扫描。**跳过与停止不是同一策略。**
 
@@ -189,9 +255,9 @@ worker 报告接收完成后才缓存有效前缀、promote 为 WAITING 或 PREE
 
 DP prefill balancing 可让 Core 对某些 step 传入 `throttle_prefills`：存在需要保护的 decode、且上次放行不是容量饱和时，running prefill 暂停、waiting 本地 prefill 延后，decode 继续。没有 decode 工作可保护时仍允许 prefill，避免白跑 dummy；它并非简单的“每隔固定 N 步才能处理 prompt”。Core 的全局 unfinished 同步是另一机制：当前基线在 step 1 及 `dp_sync_interval` 倍数同步，调用与 wave 完成见 [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|Engine 架构]]。
 
-## 6. 计划发出后，进度怎样变成事实
+## 7. 计划发布与结果对账：进度怎样变成事实
 
-### 6.1 原计划与结果配对
+### 7.1 原计划与结果配对
 
 `SchedulerOutput` 携带 new request 首次数据、cached request 差量、每请求 token 数、spec tokens、encoder 项、共同前缀、finished/reset ids，以及 connector metadata、待清零块与 CoW copy 工作。V2 把 resumed 请求并入 new 数据恢复完整 token 历史；V1 在 cached delta 标记 resume。KV connector 的精确 block snapshot 只供 Scheduler 构造 metadata，发往 worker 前会清掉。runner 的 compact/stable row 更新属于 15/16，本页不推断它们的设备布局。
 
@@ -199,9 +265,9 @@ output 先保留原始进度，随后 `_update_after_schedule()` 才增加 compu
 
 `AsyncScheduler` 对非 partial-prefill 增加本步预期的 sampled + scheduled spec 数为 placeholders，设置下一轮 spec placeholder 列表；grammar 依赖尚未返回 token 时设置 pending 标志，由 Core 延后生成相应 mask/采样。它不是把未知 token 当作已知文本，而是给下一轮调度提供位置数量。新的 decode 资格 step、KV cache 可确认边界和输出上限 guard 都要使用这些计数。
 
-以普通自回归的一次 spec 为例：已知 token 数 21、computed=20，draft=3，本轮排 4。提交后 computed=24、in-flight 加 4，async placeholders 加 4；假设结果为“接受 1 个 draft + 1 个采样 token”，则接受 draft 数=`2-1=1`、拒绝数=`3-1=2`。结果对账先把 in-flight 减 4，computed 回退到 22，placeholders 因 rejection 从 4 减到 2，再因交付 2 个 token 减到 0；已知 token 数变成 23，下一轮又差 1。若中间发生抢占，这些回退不能照搬，见下一节。
+以普通自回归的一次 spec 为例：已知 token 数 21、computed=20，draft=3，本轮排 4。提交后 computed=24、in-flight 加 4，async placeholders 加 4；假设结果为“接受 1 个 draft + 1 个采样 token”，则接受 draft 数=`2-1=1`、拒绝数=`3-1=2`。结果对账先把 in-flight 减 4，computed 回退到 22，placeholders 因 rejection 从 4 减到 2，再因交付 2 个 token 减到 0；已知 token 数变成 23，下一轮又差 1。若中间发生抢占，这些回退不能照搬，见下一小节。
 
-### 6.2 三种迟到/失败结果，不能都叫“丢弃 stale”
+### 7.2 三种迟到/失败结果，不能都叫“丢弃 stale”
 
 `update_from_output()` 按传入计划的 `num_scheduled_tokens` 遍历，先减少仍存在请求的 in-flight 与 stale 份额，再检查是否受 KV load failure 影响、是否已删除/终态，最后通过 runner 的 `req_id_to_index` 取结果。队列位置不能当作结果行号；abort/finished 不会被旧结果重新激活。
 
@@ -217,7 +283,7 @@ output 先保留原始进度，随后 `_update_after_schedule()` 才增加 compu
 
 `reset_prefix_cache` 需要同一步恢复，以及 connector `requires_kv_delivery` 的 KV hand-off 情况，使用 drop 模式：旧 KV 已不能支持这些 token 的交付语义，或相同位置已经重采，所以不交付旧结果。多次抢占时，尚未排空的 drop 份额仍保持 drop，不能改回可交付。现有 async 测试覆盖普通 KV 压力、重复 reset、PP 多步在途、producer/consumer 不同 hand-off 要求，并检查 token 恰好交付一次、无 placeholder 下溢、无位置重复采样。
 
-<!-- 图5 spec：输入是原计划S和结果O；先排空本步in-flight，再区分失效KV、终态、drop stale、可交付stale和正常结果；只有正常分支回退已重置前不存在的计数，两个可交付分支汇合stop；负向分支输出明确。 -->
+<!-- 图6 spec：输入是原计划S和结果O；先排空本步in-flight，再区分失效KV、终态、drop stale、可交付stale和正常结果；只有正常分支回退已重置前不存在的计数，两个可交付分支汇合stop；负向分支输出明确。 -->
 ```mermaid
 flowchart TB
     I["原计划 S + 返回结果 O<br/>按 request id 配对"] --> D["对象仍存在时：减本步 in-flight<br/>若有 stale，同时排空其份额"]
@@ -241,7 +307,7 @@ KV load failure 不是计算结果只“过时”：它依赖的数据无效。`
 
 异步 load 尚未缓存，recompute 把请求记入失败接收集合，等传输真正结束才缓存成功前缀并重新准入；一个有效位置也没有时释放原分配。当前 invalid-block 扫描直接解包单组 block IDs，源码留有 hybrid allocator 支持 TODO，因此不能把这套恢复规则宣称成任意 hybrid group 都已覆盖。对应测试分别验证同步保留 blocks、fail 驱逐污染 cache、异步不缓存坏块。
 
-### 6.3 stop、终态和物理回收是不同完成点
+### 7.3 stop、终态和物理回收是不同完成点
 
 实际输出逐 token 追加，按 EOS、stop token、模型长度/max tokens 的顺序检查，再经过 min_tokens 门槛判断配置的序列重复终止；触发后裁掉同一返回块里多余 token。pooling 有结果即停止；encoder-only 实例要消费完整 prompt 后才能结束，不能首个媒体项算完就结束。grammar 只推进真正需要约束的输出部分，拒绝实际 token 或编译失败走请求级 ERROR；文本 stop 字符串与协议 finish 的前端语义见 03，采样/grammar 算法见 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。部分 prefill 不产生用户采样输出，代码有相应断言。
 
@@ -251,7 +317,7 @@ KV load failure 不是计算结果只“过时”：它依赖的数据无效。`
 
 即使 connector 已允许 `_free_blocks()` 删除 request mapping，物理 blocks 仍可能等待执行 fence 才回池。该 defer gate 在当前生产路径是 **KV consumer connector 且 `max_concurrent_batches > 1`**，防止新 load 覆盖仍被旧 batch 写入的块，不是所有异步模式无条件延迟。`finished_req_ids` 用来让 worker 清镜像，不是“物理 blocks 已空闲”的证明；具体 Core 队列与 fence 时序已在 06 页重放。
 
-## 7. 成本与可观察的边界
+## 8. 成本与可观察的边界
 
 | 现象或约束 | 机制上的原因/后果 | 不能直接推出 |
 |---|---|---|
@@ -268,11 +334,11 @@ KV load failure 不是计算结果只“过时”：它依赖的数据无效。`
 
 调度、分页、async 与 graph 不是必须同时开启的一组开关。它们可以独立配置或回退；共同参与时则要在同一 token 进度和容量边界保持一致：KV 不足改写当步计划，placeholder 改变未返回进度，graph dispatcher 按最终 batch 形状挑路径。本页能证明的是 Scheduler 在其逻辑资源视角内按这些规则形成计划与更新状态，不是 GPU 无故障、采样分布正确或 KV 永无碎片的保证；设备与 graph 能力另见 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
 
-## 8. 源码阅读路线
+## 9. 源码阅读路线
 
 以下均为本基线实际打开的定位符；测试只静态阅读，没有声称在本机运行通过。
 
-1. 状态与计划：`vllm/v1/request.py::Request`、`RequestStatus`；`vllm/v1/core/sched/output.py::SchedulerOutput`，先区分数量、状态与每步 maps。
+1. 定位、状态与计划：`vllm/v1/engine/core.py::EngineCore.step`、`EngineCore.step_with_batch_queue`；`vllm/v1/request.py::Request`、`RequestStatus`；`vllm/v1/core/sched/output.py::SchedulerOutput`，先区分闭环调用、生命周期状态与每步 maps。
 2. 从主例重放完整循环：`vllm/v1/core/sched/scheduler.py::Scheduler.schedule`；`tests/v1/core/test_scheduler.py::test_schedule_order`、`test_schedule_partial_requests`，核对 running-first 与 break/continue。
 3. 预算和配置前提：`vllm/config/scheduler.py::SchedulerConfig.verify_max_model_len`；`vllm/config/speculative.py::SpeculativeConfig.use_eagle`、`SpeculativeConfig.use_eagle_block_drop`；预算字段与开关不互相代替。
 4. encoder / MTP 边界：`vllm/v1/core/sched/scheduler.py::Scheduler._try_schedule_encoder_inputs`、`Scheduler._reserve_prefill_lookahead`、`Scheduler._free_encoder_inputs`，连读调度与回收 shift。
@@ -282,7 +348,7 @@ KV load failure 不是计算结果只“过时”：它依赖的数据无效。`
 8. 抢占与乐观推进：`vllm/v1/core/sched/scheduler.py::Scheduler._preempt_request`、`Scheduler._update_after_schedule`；`tests/v1/core/test_scheduler.py::test_priority_scheduling_preemption`；`docs/design/metrics.md` 的 Removed Metrics，确认 recompute 取代旧 swap。
 9. 异步结果：`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`、`AsyncScheduler._update_request_with_output`；`vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output`；`tests/v1/core/test_async_scheduler.py` 的 KV-pressure、reset-prefix-cache 与 mid-handoff 测试。
 10. 远端 KV：`vllm/v1/core/sched/scheduler.py::Scheduler._update_requests_with_invalid_blocks`、`Scheduler._handle_invalid_blocks`、`Scheduler._update_waiting_for_remote_kv`、`Scheduler._try_promote_blocked_waiting_request`；`tests/v1/kv_connector/unit/test_invalid_blocks_correctness.py` 的 sync recompute/fail 与 async recompute 测试。
-11. 完成：`vllm/v1/core/sched/scheduler.py::Scheduler.finish_requests`、`Scheduler._free_request`、`Scheduler._free_request_blocks`、`Scheduler._update_from_kv_xfer_finished`；`vllm/v1/core/sched/utils.py::check_stop`；`tests/v1/core/test_deferred_block_free.py`，与 06 页的完成时序对照。
+11. 生命周期与完成：`vllm/v1/core/sched/scheduler.py::Scheduler.add_request`、`Scheduler._update_request_as_session`、`Scheduler._handle_stopped_request`、`Scheduler.finish_requests`、`Scheduler._free_request`、`Scheduler._free_request_blocks`、`Scheduler._update_from_kv_xfer_finished`；`vllm/v1/core/sched/utils.py::check_stop`；`tests/v1/core/test_deferred_block_free.py`，与 06 页的完成时序对照。
 12. 观察成本：`vllm/v1/metrics/stats.py::SchedulerStats`、`IterationStats.update_from_output`、`IterationStats.update_from_events`；配置/设备动态 graph 的前提接续 19、23 页。
 
 ## Related Pages
