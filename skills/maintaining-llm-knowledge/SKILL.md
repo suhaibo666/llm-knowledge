@@ -131,30 +131,19 @@ The following tables are **optional presentation examples**, not three mandatory
 - **Group configuration contract tables by configuration class.** End each subsection with one line stating the class's total field count, how many the table covers, and where the remaining fields' owners are recorded in a coverage ledger such as `docs/coverage/megatron-lm.yaml`. Put the ledger path in that line, not in the heading.
 - During a rewrite, **retain every field assigned to this page by the coverage ledger**; see the conservation rule in `source-faithful-analysis`. `tools/check_coverage.py` C2 rechecks only **manual** owners, not mention coverage for `auto: true` rows. This requirement therefore needs manual/process review beyond the automated gate.
 
-### MCP Tools
+### Answering questions from the wiki
 
-Two MCP servers are configured in `.mcp.json`:
+Answer from the wiki before answering from memory: find the pages that cover the topic (the
+`qmd` MCP server offers BM25 keyword search when it is connected; plain text search over `wiki/`
+is equivalent), read them in full, and name the pages the answer drew on. The relevant `index.md`
+and `[[wiki links]]` show the surrounding domain.
 
-1. **filesystem** (`@modelcontextprotocol/server-filesystem`) — Read, write, search, and manage files in `wiki/` and `raw/`. Use for all file operations when this connector is available; otherwise use the runtime's file tools.
-2. **qmd** (`qmd mcp`) — Search engine over wiki pages. Currently operating in **BM25 keyword mode only** (no embedding model). Use `search` for keyword matching; `vsearch` and `query` require embeddings (not yet available on this system).
-
-When to use which:
-- **filesystem** for: reading/writing files, listing directories, exact text search.
-- **qmd** for: keyword search across all wiki pages, finding pages that mention a specific term, cross-reference discovery. If unavailable, use local keyword search.
-
-### Query Workflow
-
-When the user asks a question:
-
-1. **Search wiki first**: Use `qmd search` to find wiki pages matching relevant keywords, or local keyword search if the connector is unavailable.
-2. **Navigate the graph**: Check the relevant `index.md` to understand the domain landscape and follow `[[wiki links]]`.
-3. **Read the pages**: Use filesystem `read_file`, or the runtime's file tools, to read the full content of the most relevant pages.
-4. **Synthesize**: If the answer requires synthesizing multiple pages, do so and note which pages contributed.
-5. **Check raw sources on gap**: If the answer is NOT in the wiki, do NOT just say "not found". Instead:
-   - Scan `raw/` for relevant source documents using topic keywords in filenames; for code-based topics, check whether a relevant sibling repository checkout is already referenced elsewhere in the wiki.
-   - If a relevant source exists, **automatically ingest it** following the Ingest Workflow, then answer from the newly created wiki content.
-   - If no relevant source exists, say so and offer to create a stub wiki page in the correct functional-tree module, not a new standalone learning-track directory; see the constitution's Courses rules.
-6. **Grow the wiki**: Every query that reveals a gap should result in either a new wiki page or a note under Knowledge Gaps in the relevant `index.md`.
+A question the wiki cannot answer is a gap, not a dead end. Look for a source first: a document
+in `raw/` whose filename matches the topic, or a sibling repository checkout the wiki already
+references. If one exists, ingest it through the Ingest Workflow and answer from the new page. If
+none exists, say so and offer a stub page in the correct functional-tree module (never a new
+learning-track directory; see the constitution's Courses rules), or record the gap under Knowledge
+Gaps in that directory's `index.md`.
 
 ### Maintenance Workflow
 

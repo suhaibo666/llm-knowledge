@@ -4,9 +4,8 @@ description: >-
   Use when a repository or repo subdomain must be inventoried as a feature tree — major modules →
   function items → sub-functions → leaf function points — with a contract-style spec per function
   point (inputs/outputs, processing logic, boundary constraints, supported scope), or when
-  re-verifying such a tree after a baseline bump. Triggers: feature-tree inventory / function-point definitions /
-  feature inventory / function-point spec / capability breakdown / "list everything this repo
-  provides with per-feature I/O and constraints". Not for why-design analysis: a focused mechanism
+  re-verifying such a tree after a baseline bump. Trigger on any request for an exhaustive
+  inventory of what a repository provides with a per-feature contract. Not for why-design analysis: a focused mechanism
   goes to source-faithful-analysis alone; a whole codebase goes to planning-codebase-analysis first,
   then approved architecture, feature, and mechanism pages use the matching document profile under
   source-faithful-analysis. This skill owns the exhaustive what-and-contract view.

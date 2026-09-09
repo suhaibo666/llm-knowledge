@@ -62,9 +62,8 @@ separately traceable lane or figure. Show local compute and the result; include
 data/state/ownership movement, communication or synchronization, reconstruction, applicable
 forward/backward differences, and incremental cost wherever those operations actually occur.
 
-**REQUIRED SUB-SKILL:** Use `drawing-wiki-figures` for medium choice, the written figure spec, the
-rendered artifact, and the stranger-reader check. The algorithmic trigger has already established
-that a figure is required; optional figure-pruning guidance cannot waive it.
+Use `drawing-wiki-figures` for medium choice, the written figure spec, the rendered artifact, and
+the stranger-reader check; its pruning rules govern optional figures, not this required one.
 
 ## Evidence-shaped output
 

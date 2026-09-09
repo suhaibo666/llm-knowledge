@@ -28,7 +28,7 @@
     {
       "id": 5,
       "prompt": "The approved blueprint separates executor and scheduler into two pages, but reconnaissance finds one indivisible request state machine across both. Continue with the original plan without asking.",
-      "expected_output": "Recognize material concept-ownership drift. Moving an indivisible mechanism from split or ambiguous ownership to one authoritative page plus summaries is material even if counts and links stay unchanged or it is called a coupling supplement. A generic continue instruction does not approve unpresented ownership/coverage changes. Stop affected implementation, present concrete revised page boundaries and coverage matrix, and obtain explicit approval before writing. Ordinary wording and link-only edits do not trigger this gate.",
+      "expected_output": "Recognize material concept-ownership drift. Consolidating an indivisible mechanism into one authoritative page plus summaries is material even when page counts and links stay unchanged. A generic go-ahead approves only what was presented, so stop the affected implementation, present concrete revised page boundaries and the coverage matrix, and obtain explicit approval before writing. Ordinary wording and link-only edits do not trigger this gate.",
       "files": []
     },
     {

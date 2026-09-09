@@ -17,7 +17,9 @@ Draw figures for three purposes:
 3. **The most informative result or cost**: the evidence that supports the page's explanation.
 
 Skip decorative background, related-work or terminology diagrams, abstract design-philosophy sketches,
-anything a single sentence explains, and repetitive charts for every ablation.
+anything a single sentence explains, and repetitive charts for every ablation. This pruning applies
+to optional figures only: when the selected document profile's algorithmic trigger fires, the
+principle figure is required and this section decides what it shows, not whether it exists.
 
 Choose the explanatory question before the shape. An algorithm figure should expose a concrete
 input, intermediate transformations, and output; a layout figure should expose placement and movement;

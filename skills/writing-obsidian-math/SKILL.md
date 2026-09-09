@@ -141,8 +141,8 @@ The checker validates high-confidence Markdown/MathJax structure and selected no
 ## Checker rules, and what each one actually wants
 
 `tools/check_math.py` emits stable codes. Errors block; warnings block under `--strict`.
-The corpus was taken to **0 errors and 0 warnings** on 2026-08-26, so any new finding is
-something you just introduced.
+The corpus stands at **0 errors and 0 warnings** (see the baselines table in `CLAUDE.md`), so
+any new finding is something you just introduced.
 
 | Code | Severity | Means | Fix |
 |---|---|---|---|
@@ -174,7 +174,7 @@ not by what silences the warning.
 
 ## Things that look like math problems but are not
 
-Four traps cost real time during the 2026-08-26 cleanup. Recognise them before "fixing" anything.
+Four things trip the checker or the eye without being math errors. Recognise them before "fixing" anything.
 
 1. **Escaped square brackets in prose are not display math.** `List\[str\]`, `A\[t\]`,
    `\[B,H,N,N\]`, and step labels like `\[B\]` are Markdown escapes for a literal `[`.

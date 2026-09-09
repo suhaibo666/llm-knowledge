@@ -62,9 +62,7 @@ directory-for-directory. Most `wiki/` domains are sourced from external code rep
 post-training frontier).
 
 - A learning domain or course series may only be created as **one guide page under
-  `wiki/courses/`**. Do not create a separate vertical directory for it. (Historic
-  `19_torch_compile_end_to_end/` and `03_posttraining/` were exactly this anti-pattern and were
-  dissolved into the functional tree during the kb-reorg.)
+  `wiki/courses/`**. Do not create a separate vertical directory for it.
 - A course page contains **only**: reading order, `[[wiki links]]` into the functional tree, and
   a one-line orientation per entry. It **must not carry body content** — it may not restate
   mechanisms that a functional-tree page already covers, and must never become a second source
@@ -185,13 +183,13 @@ It grades its findings three ways: `missing_file` is an error; `out_of_range`,
 `ambiguous`, `unanchored_page` and `unknown_repo` are page defects an author can fix;
 `unresolved_repo`, `commit_unavailable` and `unverifiable` are **environment gaps** — this
 machine lacks the checkout or the commit — reported separately and kept out of the exit code
-unless `--include-env`. `region_sized` is a promoted rule: labs_torch_compile used to apply a
-100-line span limit to four historical directories, and the span is arithmetic on the citation
-itself, so it now runs repo-wide and is judged even where the baseline repo cannot be resolved.
+unless `--include-env`. `region_sized` (a citation spanning more than 100 lines) is arithmetic on
+the citation itself, so it runs repo-wide and is judged even where the baseline repo cannot be
+resolved.
 
 The grades show where the debt actually sits: **306** citations pin a range wider than 100 lines,
 **245** are bare filenames that resolve ambiguously, and **183** pages cite code with no pinned
 baseline header. Only **4** name a line past the end of its file. Every one of these is a
 provenance defect this constitution already requires fixing, and for the first three the remedy
-is the same — a more specific anchor, which is what `source-faithful-analysis` now asks for by
+is the same — a more specific anchor, which is what `source-faithful-analysis` asks for by
 default.

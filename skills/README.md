@@ -1,6 +1,6 @@
 # skills/ — Shared Agent Skills
 
-This directory is the repository's **single physical copy** of skill definitions, shared by all supported agents. The former `.claude/skills/` and `.agents/skills/` copies had started to drift, including conflicting host-instruction references, and needed a test merely to keep their contents synchronized. Only this shared copy remains.
+This directory is the repository's **single physical copy** of skill definitions, shared by all supported agents. A second copy under an agent directory drifts, so `tools/test_math_skill.py` fails when one appears.
 
 ## Loading Conventions
 
@@ -32,7 +32,7 @@ This directory is the **only physical copy**. The repository's two supported age
 
 - **Codex** reads the task-to-skill table in `AGENTS.md` and opens the required file in this directory. Keep this repository's explicit loading convention; do not create a mirrored `.codex/skills` directory or duplicate skill definitions.
 
-Only these two integrations are maintained here. The historical `.agents/skills/` duplicate and `opencode.json` were removed. `tools/test_math_skill.py` guards two invariants: agent-side skill paths must resolve to this directory, and each skill has only one physical `SKILL.md` in the repository.
+Only these two integrations are maintained here. `tools/test_math_skill.py` guards two invariants: agent-side skill paths must resolve to this directory, and each skill has only one physical `SKILL.md` in the repository.
 
 ## Language Contract
 

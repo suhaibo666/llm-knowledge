@@ -128,9 +128,8 @@ When this trigger is present:
 - Include **at least one principle figure** that shows input → decisive transformation or schedule →
   output, including the invariant, constraint, or cost that explains why the algorithm works. A
   class diagram, ownership inventory, caller tree, code excerpt, or prose/table alone does not count.
-- **REQUIRED SUB-SKILL:** Use `drawing-wiki-figures` for the medium, figure specification, rendered
-  artifact, and stranger-reader check. This profile has already decided that the figure is required;
-  optional figure-pruning guidance cannot waive it.
+- Use `drawing-wiki-figures` for the medium, figure specification, rendered artifact, and
+  stranger-reader check; its pruning rules govern optional figures, not this required one.
 - Give every distinct live algorithm or data plane a separately traceable lane or figure using the
   same concrete example. Show local compute, data/state/ownership movement, synchronization or
   communication, reconstruction, applicable forward/backward differences, and incremental cost.

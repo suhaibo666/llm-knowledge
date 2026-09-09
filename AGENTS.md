@@ -24,5 +24,4 @@ There is no equivalent symlink for Codex, deliberately: Codex has no project-lev
 discovery — its skills come from `~/.codex/skills/` and the plugin marketplaces (`codex plugin`).
 For Codex the load path is this file: read the table above and open the skill you need.
 
-Only Claude and Codex are supported here. The duplicated `.agents/skills/` tree and the
-`opencode.json` config were removed.
+Only Claude and Codex are supported here.

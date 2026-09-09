@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-09：按 Claude Fable 5.1 提示审计清理约束文本与技能化石
+
+- 用 `/claude-api` 的 prompt-audit 流程审计 `CLAUDE.md`、`AGENTS.md` 与 `skills/` 全部 SKILL.md 及 references：没有旧模型脚手架、压力语言或反格式规则；处理的是七处"历史叙事 / 相对措辞 / 单次事故补丁"。删除 `CLAUDE.md` 课程规则里的 kb-reorg 考古括注和 `check_locators` 段的"used to / now"相对措辞；`skills/README.md`、`AGENTS.md` 去掉已删除目录的来历叙述；`writing-obsidian-math` 两处 2026-08-26 清理日期改为指向宪法基线表。
+- 修正两份 document profile 与 `drawing-wiki-figures` 的互相覆盖：在图示技能第 1 节声明剪枝只管可选图、profile 触发的原理图必画，`mechanism-analysis` / `feature-analysis` 的大写 REQUIRED SUB-SKILL 覆盖降为一句平述。`planning-codebase-analysis` 的"continue 不等于批准"红旗行压缩为原则并同步其 evals；`feature-tree-analysis` 描述的六个近义触发词改为意图类别；`maintaining-llm-knowledge` 的 MCP Tools 与六步 Query Workflow 合并为不点名工具的"从 wiki 作答"一节（filesystem / qmd 连接器本机已不可用）。
+- 决定本仓库不启用 superpowers 插件：本地会话记录里 26 次技能调用有 25 次来自仓库自带技能，其 brainstorming / TDD / worktree 流程与本库的蓝图审批门和内容门禁重叠，SessionStart 钩子的压力措辞会让当前模型过度触发。`docs/superpowers/specs/` 仅是 gitignored 的路径约定，保留。技能门禁 51 项、`check_links --strict`、`check_math` / `check_markdown` / `check_assets --changed --strict` 全部通过。
+
 ## 2026-09-09：vLLM Scheduler 补齐单步计划构造主流程
 
 - 将 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07 Scheduler]] 原第 4 节从约束细节改造成 `schedule()` 主流程章：承接请求状态机和 R/P/Q 算例，新增 running-first、候选量有序裁剪、KV 落实、抢占出口、waiting 准入与 `SchedulerOutput` 封装流程图，并用文字逐段解释各节点的输入、处理和结果。
