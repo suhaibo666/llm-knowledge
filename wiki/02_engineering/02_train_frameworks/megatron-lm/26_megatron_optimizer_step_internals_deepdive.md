@@ -7,7 +7,7 @@ title: "Megatron-LM Optimizer Step 内部机制深度解析"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **主题**：一次 `optimizer.step()` 内部发生什么——参数怎样分组并选中 wrapper，混合精度 step 如何依次完成搬梯度与 unscale、溢出闸门、全局裁剪、base optimizer 更新与回拷，以及 loss scaling、LR/WD 调度、μP、两条 CPU offload 与 LayerWise/Muon 集成。核心代码在 `megatron/core/optimizer/`。
 > **适用范围**：optimizer step 边界内的状态变化与配套开关；参数、梯度与优化器状态沿 DP 的分片归 [[16_megatron_distributed_optimizer_analysis]]，参数精度 recipe 与 CUDA Graph 归 [[23_megatron_precision_cudagraph_fusion_analysis]]，Muon 的 Newton–Schulz 数学归 [[11_muon_analysis]]，Megatron-FSDP 支持矩阵归 [[36_megatron_fsdp_analysis]]。
-> **最近更新**：2026-09-06。按房子形状重写，新增四张生成图与数值回归测试。
+> **最近更新**：2026-09-08。§4.4 补 QKV 切分的真实粒度（按投影、非 per-head）与 per-expert 的来源，并订正 `emerging-optimizers` 版本口径。
 
 ---
 
@@ -301,7 +301,7 @@ train_step                                            megatron/training/training
 4. loss scaling：`megatron/core/optimizer/grad_scaler.py::ConstantGradScaler` / `::DynamicGradScaler.update`。
 5. 链式与 MXFP8：`megatron/core/optimizer/optimizer.py::ChainedOptimizer.step` / `._should_defer_mxfp8_param_sync` / `._step_with_deferred_mxfp8_param_sync`。
 6. 调度完成链：`megatron/training/training.py::train_step`（`optimizer.step()` → `logical_and_across_model_parallel_group` → `opt_param_scheduler.step`）；`megatron/core/optimizer_param_scheduler.py::OptimizerParamScheduler.get_lr` / `.get_wd` / `.step` / `._restore_param_group_scheduler_overrides`。
-7. offload 与 emerging：`megatron/core/optimizer/cpu_offloading/chunked_optimizer_state_offload.py::ChunkedOptimizerStateOffloader.step` / `.prefetch_for_step` / `.offload_for_forward`；`megatron/core/optimizer/cpu_offloading/hybrid_optimizer.py::HybridDeviceOptimizer`；`megatron/core/optimizer/layer_wise_optimizer.py::is_managed_by_layer_wise_optimizer`；`megatron/core/optimizer/param_layout.py::BufferKey`；`megatron/core/optimizer/emerging_optimizers.py::TensorParallelMuon` / `::TensorParallelAdaptiveMuon` / `::_EMERGING_OPTIMIZERS`。
+7. offload 与 emerging：`megatron/core/optimizer/cpu_offloading/chunked_optimizer_state_offload.py::ChunkedOptimizerStateOffloader.step` / `.prefetch_for_step` / `.offload_for_forward`；`megatron/core/optimizer/cpu_offloading/hybrid_optimizer.py::HybridDeviceOptimizer`；`megatron/core/optimizer/layer_wise_optimizer.py::is_managed_by_layer_wise_optimizer`；`megatron/core/optimizer/param_layout.py::BufferKey`；`megatron/core/optimizer/emerging_optimizers.py::TensorParallelMuon` / `::TensorParallelAdaptiveMuon` / `::_EMERGING_OPTIMIZERS` / `::_get_qkv_split_shapes`；`is_qkv` 标记在 `megatron/core/optimizer/__init__.py::_get_megatron_emerging_optimizer`；切分粒度的判据测试 `tests/unit_tests/test_emerging_optimizers.py::test_muon_qkv_split_shapes` 与 `::test_muon_optimizer_blockwise_mode_different_result`。
 8. μP：`megatron/core/transformer/transformer_config.py::TransformerConfig.__post_init__`；`megatron/core/optimizer/__init__.py::get_mup_config_overrides` / `::get_standard_config_overrides` / `::check_config_overrides_consistency`；运行时缩放在 `megatron/core/models/common/embeddings/language_model_embedding.py` 与 `megatron/core/models/common/language_module/language_module.py::LanguageModule._scale_logits`。
 9. 边界断言：`megatron/core/optimizer/optimizer_config.py::OptimizerConfig.__post_init__`；`megatron/training/arguments.py::validate_args`（bf16 梯度累加、emerging 优化器触发与 FSDP 互斥）。
 
@@ -371,7 +371,37 @@ Muon 对矩阵参数用 Newton–Schulz 正交化产生更新方向，因此它�
 
 **限制。** 该 split 路径要求 `use_layer_wise_param_layout=True`（默认开；`--no-use-layer-wise-param-layout` 回退到 legacy ping-pong）、`num_distributed_optimizer_instances == 1`，且不支持 expert-parallel 的非-Muon 参数组与 `overlap_param_gather_with_optimizer_step`。
 
-**依赖边界。** Muon / AdaptiveMuon 的实际实现是 `megatron/core/optimizer/emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`，经 `_EMERGING_OPTIMIZERS` 注册表接入，并依赖**外部包 `emerging-optimizers`**（基线要求 v0.3.0）。`megatron/core/optimizer/muon.py` 现在只是一个 28 行的向后兼容 shim（`get_megatron_muon_optimizer` 转调 `get_megatron_optimizer`），本页旧版把实现归给它是错的。Megatron 侧能证明的是注册表内容、默认 override 规则（`_is_nonlinear_or_embedding` 把非线性/embedding/output 路由给 Adam）、QKV 切分形状（`_get_qkv_split_shapes`：`attention_output_gate=True` 时由 3 段变 4 段 `[q, q_gate, k, v]`，并对 `shape[0] % sum(splits) != 0` 的参数跳过 QKV 标记），以及注册表自动收编上游包注册的其它优化器（如 SOAP）；Newton–Schulz 迭代本身在外部包内，其数学见 [[11_muon_analysis]]。配套的 `megatron/core/optimizer/qk_clip.py::clip_qk` 由训练循环在 `optimizer.step()` 之后调用，用来稳住注意力 logits。
+**依赖边界。** Muon / AdaptiveMuon 的实际实现是 `megatron/core/optimizer/emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`，经 `_EMERGING_OPTIMIZERS` 注册表接入，并依赖**外部包 `emerging-optimizers`**。版本口径在基线内并不统一：`docker/lts/requirements.txt` 钉的是 `v0.2.0`，而 `examples/moe_recipes/deepseek_v4_flash/gb200/` 下两个 DSv4 recipe 在 Dockerfile 段里 `git checkout r0.3.0`，第三个（`mxfp8_SL4K_128GPU_TP1PP1EP64.yaml`）克隆后不切 tag、装默认分支。引这条依赖时须说清是哪一路。`megatron/core/optimizer/muon.py` 现在只是一个 28 行的向后兼容 shim（`get_megatron_muon_optimizer` 转调 `get_megatron_optimizer`），本页旧版把实现归给它是错的。Megatron 侧能证明的是注册表内容、默认 override 规则（`_is_nonlinear_or_embedding` 把非线性/embedding/output 路由给 Adam）、QKV 切分形状（`_get_qkv_split_shapes`，粒度见下），以及注册表自动收编上游包注册的其它优化器（如 SOAP）；Newton–Schulz 迭代本身在外部包内，其数学见 [[11_muon_analysis]]。配套的 `megatron/core/optimizer/qk_clip.py::clip_qk` 由训练循环在 `optimizer.step()` 之后调用，用来稳住注意力 logits。
+
+**QKV 切分的真实粒度：按投影，不按头。** `muon_split_qkv` 默认 `True`（`--muon-no-split-qkv` 关闭），
+但它切出来的单位是 **Q / K / V 三个完整投影矩阵**（`attention_output_gate=True` 时变成
+`[q, q_gate, k, v]` 四段），**不是 per-head**。容易读反的是 `_get_qkv_split_shapes` 里的
+`query_projection_size = num_attention_heads // num_query_groups * kv_channels`——它算的是**一个 query group**
+里 Q 占的行数，不是整个 Q。单元测试 `tests/unit_tests/test_emerging_optimizers.py::test_muon_qkv_split_shapes`
+钉死了这组数：`num_attention_heads=16, num_query_groups=8, hidden_size=1024` 时结果是 `[128, 64, 64]`。
+
+之所以要按 query group 记形状，是因为 Megatron 的 `linear_qkv.weight` 沿输出维**按 group 交错存放**
+（`[q×(h/g), k, v]` 重复 $g$ 次）。`TensorParallelMuon.orthogonalize` 因此先
+`grad.view(num_query_groups, qkv_split_dim, -1)` 再 `torch.split(..., dim=1)` 把交错解开，
+**紧接着 `g.reshape(-1, grad_shape[-1])` 又把 group 维合了回去**，才送进 `scaled_orthogonalize_fn`。
+所以每次 Newton–Schulz 看到的是整块 $Q$、整块 $K$、整块 $V$，group 与 head 都不构成独立的正交化单元。
+这一步修掉的是「缩放因子用了拼接后的形状」——`get_muon_scale_factor` 收到的是子矩阵的
+`size`；**没有**修掉「迭代在不同 head 之间混合奇异方向」。要 per-head 语义（如
+[[25_kimi_k3_stability_analysis]] 的 Per-Head Muon、[[21_qwen3_8_flash_next_optimization_deepdive]] §2.3
+主张的拆法）必须自行改 `qkv_split_shapes` 或换实现，基线不提供开关。
+
+三个相邻边界一并记下：① 标记只打在 `linear_qkv.weight` 上，源码带 `# TODO(deyuf): support MLA`，
+**MLA 注意力不做任何切分**；② SwiGLU 的 `fc1` 同样不切，gate 与 up 合在一个矩阵里一起正交化；
+③ `muon_tp_mode` 默认 `blockwise`，此时 `partition_dim` 被置 `None`，每个 TP rank 对**自己那块本地分片**
+独立做 NS——这是块对角近似，与 `duplicated` / `distributed` 两种模式结果不同
+（`test_muon_optimizer_blockwise_mode_different_result` 就是断言这件事）。
+
+**per-expert 则不需要切分开关，是存储布局送的。** `TEGroupedMLP` / `SequentialMLP` 把每个专家存成独立的
+2D `weight{i}`（`megatron/core/transformer/moe/experts.py`），Muon 逐参数处理，天然就是 per-expert 正交化。
+反过来说，`_is_nonlinear_or_embedding` 对 `len(param.shape) != 2` 一律返回 True → 路由给 Adam，
+所以任何把专家堆成 3D 的表示都会**静默退出 Muon**；基线里那个
+`InferenceGroupedMLP._build_concatenated_weights` 建的 `[num_experts, out, in]` 大张量只是共享存储的**视图**，
+`nn.Parameter` 仍是逐专家 2D，不触发这条。
 
 ### 4.5 仅是相邻、不由本页展开的机制
 

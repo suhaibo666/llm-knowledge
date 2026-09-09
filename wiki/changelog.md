@@ -71,6 +71,19 @@ All source ingestions and significant wiki updates are logged here.
 - 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 索引]] 的架构阅读入口，取消对系统设计原则的先读要求，注明仅本页完成新基线迁移，其余 23 篇仍在旧基线。未删除或改写 01/02，未更新全域 radar 基线。
 - 独立复核覆盖源码主线、旧稿内容保留和图示可读性；四幅 Mermaid 已渲染并目视检查。链接、公式、Markdown 和资源检查通过；页面构建检查通过。调度数字是条件明确的教学例子，未运行 GPU 推理、部署或性能测试。
 
+## 2026-09-08：核实 Megatron 基线不支持 per-head N-S，QKV 切分是按投影
+
+承接同日上一条登记的待核项，在基线 `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`
+（用户检出 `1ff25ca7`，基线是其祖先，只用 `git show <commit>:<path>` 读取，未移动工作树）上核实。
+
+- **结论：基线不提供 per-head 粒度的 Newton–Schulz。** `muon_split_qkv` 默认 `True`（`--muon-no-split-qkv` 关闭），但切分单位是 **Q / K / V 三个完整投影矩阵**（`attention_output_gate=True` 时为 `[q, q_gate, k, v]` 四段）。容易读反的是 `_get_qkv_split_shapes` 里的 `num_attention_heads // num_query_groups * kv_channels`——它算的是**一个 query group** 内 Q 占的行数，不是整个 Q；`test_muon_qkv_split_shapes` 钉死 `heads=16, groups=8, hidden=1024 → [128, 64, 64]`。`TensorParallelMuon.orthogonalize` 先 `view(num_query_groups, qkv_split_dim, -1)` + `split(dim=1)` 解开 Megatron 的 group 交错存储，**紧接着 `reshape(-1, hidden)` 把 group 维合回去**才送进 NS，所以每次迭代看到的是整块 $Q$、整块 $K$、整块 $V$。
+- **它修了什么、没修什么**：修掉的是 [[21_qwen3_8_flash_next_optimization_deepdive]] §2.3 指出的第二条——缩放因子用拼接后的形状（`get_muon_scale_factor` 现在收到子矩阵的 `size`）；**没有**修第一条——迭代在不同 head 之间混合奇异方向。要 [[25_kimi_k3_stability_analysis]] 那种 Per-Head Muon 语义，基线没有开关，须自改 `qkv_split_shapes` 或换实现。
+- **三个相邻边界**：① 标记只打在 `linear_qkv.weight`，源码带 `# TODO(deyuf): support MLA`，**MLA 不做任何切分**；② SwiGLU 的 `fc1` 不切，gate 与 up 一起正交化；③ `muon_tp_mode` 默认 `blockwise` → `partition_dim=None`，每个 TP rank 对本地分片独立做 NS（块对角近似），`test_muon_optimizer_blockwise_mode_different_result` 断言它与另两种模式结果不同。
+- **per-expert 是存储布局送的，不是切分功能**：`TEGroupedMLP` / `SequentialMLP` 把每个专家存成独立的 2D `weight{i}`，Muon 逐参数处理即为 per-expert。反向约束：`_is_nonlinear_or_embedding` 对 `len(shape) != 2` 返回 True → 路由给 Adam，任何 3D 堆叠的专家表示都会**静默退出 Muon**；`InferenceGroupedMLP._build_concatenated_weights` 建的 3D 大张量只是共享存储的视图，`nn.Parameter` 仍是逐专家 2D，不触发这条。
+- **订正 [[26_megatron_optimizer_step_internals_deepdive]] 的一处版本口径**：旧写「基线要求 `emerging-optimizers` v0.3.0」不准确。基线内 `docker/lts/requirements.txt` 钉 `v0.2.0`；`examples/moe_recipes/deepseek_v4_flash/gb200/` 下两个 recipe 在 Dockerfile 段 `git checkout r0.3.0`；第三个 `mxfp8_SL4K_128GPU_TP1PP1EP64.yaml` 克隆后不切 tag、装默认分支。
+- 落点：26 号页 §4.4 新增三段（切分粒度、相邻边界、per-expert 来源），源码阅读路线补 `::_get_qkv_split_shapes`、`__init__.py::_get_megatron_emerging_optimizer` 与两条判据测试；[[11_muon_analysis]] §3.2 加一条框架现状 callout 指回 26。**未验证项**：`newton_schulz_tp` 与 `get_muon_scale_factor` 的实现在外部包 `emerging-optimizers` 内，本机未安装该包，只能从调用点推断契约。
+- 门禁：`check_links --strict` 446 页 0/0/0/0/0；`check_math` / `check_markdown` / `check_assets` 的 `--changed --strict` 0 错 0 警；因触及 `megatron-lm/**` 另跑 `check_coverage docs/coverage/megatron-lm.yaml --strict`。
+
 ## 2026-09-08：Megatron 36 按房子形状重组，把 MFSDP v2 升为并列数据面并补齐基线内的优化提交
 
 - **[[36_megatron_fsdp_analysis]] 全文重写**（404 → 639 行）。标题改为「Megatron-FSDP：按 FSDP unit 扁平分桶的 ZeRO 机器与它的第二代数据面」，骨架换成特性概览 / 机制详细方案 / 代码实现分析 / 配套机制 / 约束与趋势 / 配置契约。thesis 收成一句：分片切在 unit 的扁平桶上而不是参数上，为的是零 `COPY` 与连续 / 局部性，整台机器的每一层都是它的后果。旧页 §10 只当「趋势」提一句的 `experimental/`（`DBuffer` / `Placement` / `GlobalLayout` / `FsdpParameterGroup` / `FsdpContext`）升为与 v1 并列的 live variant，用同一算例复演。变体枚举从三个真实选择点写起（`_ddp_wrap`、`_init_each_parameter_group_buffers` 四分支、`fully_shard_model` 的外层档位与分配器选择）。
