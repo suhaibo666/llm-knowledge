@@ -6,7 +6,7 @@ title: "后训练框架 — 目录索引"
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、TitanRL 异步 GRPO/DAPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-08-31（verl 分析域按共享能力与动态生命周期重构，补齐 Agent/Reward runtime 与训练 checkpoint/recovery）
+> 最后更新: 2026-09-10（slime 完成基线核实整改，新增多模态、评估与 SFT 专题）
 
 ---
 
@@ -28,7 +28,7 @@ title: "后训练框架 — 目录索引"
 
 | 系统 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
-| **slime** | THUDM，SGLang-native + Megatron-native；本域**覆盖最全**的框架，从配置、端到端主链到容错、低精度、Agent workflow 逐项展开 | 20 篇 + index（**系统性源码覆盖**） | `THUDM/slime@681b3adc` |
+| **slime** | THUDM，SGLang-native + Megatron-native；本域**覆盖最全**的框架，从配置、端到端主链到容错、低精度、Agent workflow 逐项展开 | 23 篇内容页 + index（**系统性源码覆盖**） | `THUDM/slime@681b3adc` |
 | **verl** | 字节 **HybridFlow** 开源版；当前默认 V1 以 TransferQueue 解耦控制/数据，共享 Agent/Reward、Worker/Engine、rollout、权重发布与训练恢复能力 | 16 篇 + index（**系统性源码覆盖**） | `volcengine/verl@254a23ed` |
 | **AReaL** | Fully Async 与 Agentic 架构的代表：微服务化、Hermes、policy lag 的显式管理 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **ROLL** | 多后端 Strategy 抽象 + AutoDeviceMapping；异构与 **Ascend** 侧的代表 | 1 篇（**架构专题，非全景**） | 见页头 |
@@ -81,7 +81,7 @@ title: "后训练框架 — 目录索引"
 | 目录 | 核心主题 |
 |------|---------|
 | [[02_engineering/04_posttrain_frameworks/verl/index|verl]] | 字节 **HybridFlow** 开源版 RL 后训练编排框架；16 篇内容页按共享能力与动态生命周期组织，覆盖 V1 sync、两类 async、V0、Agent/Reward、TransferQueue、Engine、rollout、权重发布与训练恢复；当前基线 `main@254a23ed` |
-| [[slime/index]] | THUDM **slime** 独立源码知识域；SGLang-native + Megatron-native，覆盖配置、端到端迭代、Ray/数据/rollout/训练/loss/权重、训推一致性、容错观测、backend 扩展、vime/vLLM 衍生实现、OPD、在线 MTP、FP8/INT4、新架构、Agent、优化与稳定性，共 21 篇 |
+| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
 
 ---
 
@@ -99,7 +99,7 @@ title: "后训练框架 — 目录索引"
 | 1 | [[11_rl_sandbox_design_analysis]] | Coding RL Sandbox 架构设计 |
 | 1 | [[12_rl_infra_efficiency_analysis]] | RL Infra 效率优化机制 |
 | 1 | [[13_opd_infra_mechanism_analysis]] | OPD 基础设施机制:带宽账与八项工程工作 W1-W8 |
-| 2 | [[slime/index]] | slime 独立源码知识域入口 |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
 | 2 | [[21_areal_async_architecture_analysis]] | AReaL 框架架构专题 |
 | 2 | [[22_roll_strategy_and_ascend_analysis]] | ROLL 框架架构专题 |
 | 3 | [[30_rl_framework_comparison]] | 工业框架统一机制矩阵对比 |
@@ -131,7 +131,7 @@ title: "后训练框架 — 目录索引"
 |------|---------|
 | [[01_posttraining_infra_mechanism_analysis]] | 后训练 Infra 核心机制(原 D05):control/data/weight 三平面模型、五种执行结构、backpressure 接口定义、weight publish 协议、checkpoint 与故障域 |
 | [[30_rl_framework_comparison]] | 工业后训练框架对比(原 D06):verl/slime/AReaL/ROLL 统一机制矩阵、四级支持证据、控制面可修改性、async 语义对照 |
-| [[slime/index]] | slime 独立源码知识域：架构总览、配置与端到端主链、Ray/DataSource/SGLang/Megatron 实现、loss/并行、权重提交、容错、rollout backend 扩展、vime/vLLM 衍生实现支持度、OPD、在线 MTP、低精度、新模型架构、Agent workflow、rollout 优化、训推一致性与稳定性；slime 基线 `main@681b3adc`，vime 基线 `main@8144096e` |
+| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
 | [[21_areal_async_architecture_analysis]] | AReaL Fully Async 与 Agentic 架构:微服务、Hermes、policy lag、agent trajectory |
 | [[22_roll_strategy_and_ascend_analysis]] | ROLL Strategy、异构与 Ascend:多后端 Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
 | [[31_cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照:通信、推理、并行、权重同步、kernel 与诊断的能力与差距矩阵 |

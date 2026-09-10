@@ -4,13 +4,12 @@ title: "slime Agent 工作流分析：把树状执行压成线性训练片段"
 
 # slime Agent 工作流分析：把树状执行压成线性训练片段
 
-> **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **文档基线**：同一提交下 `docs/{zh,en}/get_started/{agent,customization}.md` 与 `examples/{coding_agent_rl,multi_agent,search-r1,retool}`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：Agent rollout 的自然形态是带工具、副作用、subagent 分支和上下文压缩的**执行树**，Megatron 训练器需要的却是带 token、mask、reward 和行为策略元数据的**线性片段批次**。slime 没有让训练器理解消息协议或沙箱，而是把 agent 运行时留在自定义 rollout 的数据路径中：适配层捕获推理服务实际采样的 token，`TrajectoryManager` 暂存每个会话的消息树，执行结束时才线性化为共享 `rollout_id` 的 `list[Sample]`。代价是轨迹状态归属、reward 分配、取消操作与外部副作用恢复都必须在 rollout 侧明确处理；训练器只保证片段统计不会把一次逻辑执行重复计数，并不会替 agent 运行时修复语义错误。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
-> **第 5 拍说明**：在固定基线的 `slime/agent/`、`examples/coding_agent_rl/` 与 `examples/multi_agent/` 中检索 `TODO|FIXME|deprecat|will be removed|NOTE.*should` 无命中，本页无可锚定的在途改动，第 5 拍略。
+> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
+> **主题**：Agent harness 和协议适配层如何记录真实采样轨迹；消息树线性化、reward 分配及外部环境边界。
+> **适用范围**：Agent 工作流；Sample 契约归 12，DP 调度归 14，多模态数据通路归 26。
+> **最近更新**：2026-09-10。按固定源码核实接口、边界与诊断证据。
+
+Agent rollout 的自然形态是带工具、副作用、subagent 分支和上下文压缩的**执行树**，Megatron 训练器需要的却是带 token、mask、reward 和行为策略元数据的**线性片段批次**。slime 没有让训练器理解消息协议或沙箱，而是把 agent 运行时留在自定义 rollout 的数据路径中：适配层捕获推理服务实际采样的 token，`TrajectoryManager` 暂存每个会话的消息树，执行结束时才线性化为共享 `rollout_id` 的 `list[Sample]`。代价是轨迹状态归属、reward 分配、取消操作与外部副作用恢复都必须在 rollout 侧明确处理；训练器只保证片段统计不会把一次逻辑执行重复计数，并不会替 agent 运行时修复语义错误。
 
 本文把带 fixed-commit 定位符的内容视为源码或官方文档事实；“**设计分析**”与“**由此可推断**”是依据实现边界作出的判断，不代表项目作者原话。
 
@@ -99,6 +98,8 @@ Anthropic adapter 把 system/user/tool/assistant blocks 归一化成 chat-templa
 
 > **为什么不只存 final text**：final text 会丢掉中间 tool-call action、每 turn 的 behavior logprob、分支共享关系与 context compact 前的可训练 response。即使文本看起来相同，chat template、special token、whitespace 与 tool block 重渲染也可能改变 token ids；这时用 `decode → encode` 得到的是“相似文本的另一条 tokenization”，不是 behavior policy 实际采取的 action。该风险不是假设：trajectory builder 专门为 TITO 与 chat-template drift 实现了 realign/fork。[`slime/agent/trajectory.py:141-191`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L141-L191)
 
+`slime/agent/parsing.py::parse_model_output` 将文本分成 reasoning、visible text 与 tool uses。模型专属 reasoning/tool parser 委托 SGLang，slime 负责组织结果：tool 参数 JSON 解码失败时保留 `_raw_arguments` 并置 `ill_formed=True`；只有 tool parser 的 `parse_non_stream` 调用异常被捕获、记录并继续 fallback；reasoning parser 的构造与调用、`FunctionCallParser` 构造和 `has_tool_call` 均不在这段 try 内，异常可能向外传播。捕获分支也不自动把所有异常标成 ill-formed。没有解析出 tool call 且 schema 存在时，再用 XML fallback，且只接受 schema 内工具名。因而 `ill_formed` 是明确的 JSON 参数错误标记，不是完整的协议合法性判定。SGLang parser 内部在本页证据范围之外。
+
 ### 4.3 只有客户端收到响应，才算完成一个交互轮次
 
 adapter 先把协议响应 flush 给客户端，只有 flush 成功后才调用 `record_turn`；连接在生成后、响应前断开时不会记录一个客户端从未见过的 assistant turn。[`slime/agent/adapters/common.py:340-390`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L340-L390) 若 SGLang 请求被 cancel、client error 或 timeout 打断，adapter 会 best-effort 调 `/abort_request` 释放对应 request id，避免孤儿 generation 一直占用 KV slot。[`slime/agent/adapters/common.py:470-511`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L470-L511)
@@ -122,9 +123,43 @@ adapter 先把协议响应 flush 给客户端，只有 flush 成功后才调用 
 
 `append_turn` 与 `_align_to_prompt` 实际执行这套 mask 规则。[`slime/agent/trajectory.py:193-229`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L193-L229) 分支测试进一步固定了 clean tool loop 中 tool token 为 context、两个 leaf 共享的 assistant response 只在第一个 leaf 训练一次。[`tests/test_agent/test_trajectory_manager_branching.py:402-419`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_trajectory_manager_branching.py#L402-L419) [`tests/test_agent/test_trajectory_manager_branching.py:481-503`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_trajectory_manager_branching.py#L481-L503)
 
+下面假定无 token drift，且先枚举 C1 叶：同一 generated 节点 A 只能被一条 Sample 认领训练信号，第二条路径仍保留其 token 作为上下文。
+
+<!-- Figure spec: Shared generated A branches through tool B1/B2 to generated C1/C2. First leaf claims A+C1; second keeps A mask0 and trains C2. Both preserve rollout_id; prompt excluded from response mask. -->
+
+```mermaid
+flowchart LR
+    P["初始 prompt P<br/>response mask 之外"] --> A["共享 generated A"]
+    A --> B1["tool B1"]
+    A --> B2["tool B2"]
+    B1 --> C1["generated C1"]
+    B2 --> C2["generated C2"]
+    C1 --> S1["Sample 1: P A B1 C1<br/>response mask: A=1 B1=0 C1=1<br/>认领 A 与 C1"]
+    C2 --> S2["Sample 2: P A B2 C2<br/>response mask: A=0 B2=0 C2=1<br/>A 已被认领，仅训练 C2"]
+    S1 --> R["两行保留同一 rollout_id<br/>共享动作 A 只训练一次"]
+    S2 --> R
+```
+
+图的顺序由 leaf 枚举决定：先处理另一叶时，A 的训练信号会落在另一行，但不得在两行重复计入。linearization 只保留 token/mask/identity，消息树本身不传入 trainer。
+
 ### 5.2 消息分叉与 token 分叉是两层不同判断
 
-`record_turn` 先按 role 与 message dict equality 寻找挂载点，再把新 prompt suffix 和本轮 assistant leaf 接入树。[`slime/agent/trajectory.py:283-305`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L283-L305) 到 linearization 阶段，每个 root-to-leaf chain 才按 token prefix 分成 builder：无 drift 就延伸，短且只落在最近 response 的 drift 可以 realign，较早或较大分歧则开启新 builder；共享 generated node 由 `response_trained` 保证只被首个 leaf claim。[`slime/agent/trajectory.py:456-502`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L456-L502)
+`record_turn` 先按 role 与 message dict equality 寻找挂载点，再把新 prompt suffix 和本轮 assistant leaf 接入树。[`slime/agent/trajectory.py:283-305`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L283-L305) 到 linearization 阶段，每个 root-to-leaf chain 才按 token prefix 分成 builder：无 drift 就延伸；有 drift 时，只有公共 prefix 终点不早于最近 response 起点，且新 turn 的 `len(output_ids) < fork_threshold` 才 realign，否则开启新 builder。threshold 比较的是新 output 长度，不是 drift 后缀长度。realign 从整个最近 response 起点重写为当前 prompt 的尾部，并把该尾部 mask/logprob 全清零，而非只替换分歧后缀；共享 generated node 由 `response_trained` 保证只被首个 leaf claim。[`slime/agent/trajectory.py:456-502`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L456-L502)
+
+沿用上图的 prompt P 与 generated A，若下一轮 prompt 把 A 改写为 A′，就进入 token drift 判断。下图把 threshold 取为 10 个新 output tokens；P/A/A′ 是 span 名，比较点仍由实际 token 的公共 prefix 长度决定。
+
+<!-- Figure spec: Continue shared P/A trace. Drift at or after A start and incoming output2<10 causes entire A-tail rewrite to context, then new output mask1. Incoming output10 or earlier drift forks a new builder. Preserve old builder only if it has trained response. -->
+
+```mermaid
+flowchart LR
+    H["held: P A；incoming prompt: P A′<br/>最近 response 起点是 A 起点"] --> D["公共 prefix 终点不早于 A 起点<br/>且新 output 长度小于 threshold 10？"]
+    D -->|是，例如新 output 长度 2| R["REALIGN：从 A 起点重写整个尾部为 A′<br/>旧 span mask 与 logprob 全置零"]
+    R --> C["在同一 builder 追加新 output<br/>fresh output mask=1"]
+    D -->|否，例如新 output 长度 10 或更早分歧| F["FORK：新 prompt 另开 builder<br/>首个 prompt 不进入 response mask"]
+    F --> O["旧 builder 保留已有训练信号<br/>无可训练 response 的 builder 最终丢弃"]
+```
+
+因此很短的 token drift 也可能因新 output 过长而 fork；realign 又可能清零最近 response 中尚未分歧的前半段。图中的条件与重写范围共同决定哪些旧 token 仍能计入训练。
 
 **由此可推断**，源码并不理解“这个 fork 是 subagent”还是“这是 context compact”。它只看到消息历史分歧与 token provenance 分歧；subagent/compact 是 agent runtime 的语义标签，tree manager 提供的是通用的分支保真与线性化机制。官方文档把 divergence 对应到 subagent 与 auto-compaction，是对该机制的应用解释。[`examples/coding_agent_rl/README.md:5-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/README.md#L5-L15)
 
@@ -145,9 +180,9 @@ $$
 官方 customization 文档把它写成常见 pattern，而非框架自动行为。[`docs/en/get_started/customization.md:87-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L87-L117) 固定提交的 `TrajectoryManager` 实际采用另一种 credit assignment：完整 reward 赋给每个 emitted Sample，因此原始片段 reward 的和是 $KR$。[`slime/agent/trajectory.py:307-344`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L307-L344) 分支测试也显式断言两个 fork/leaf 都各自拿完整 1.0。[`tests/test_agent/test_trajectory_manager_branching.py:769-807`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_trajectory_manager_branching.py#L769-L807)
 
 > [!contradiction] 固定提交内的文档与实现不一致
-> coding-agent README 声称 per-trajectory reward 会按 `reward / K` 分到 chains；但 `generate()` 把完整 reward 传入 `finish_session`，后者再交给上述“每个 Sample 完整赋值”的 manager，没有额外除以 $K$。[`examples/coding_agent_rl/README.md:182-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/README.md#L182-L186) [`examples/coding_agent_rl/generate.py:237-268`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/generate.py#L237-L268) 本页以源码与测试为准：当前默认是“每片段完整 outcome reward”，需要守恒时调用方必须显式除以 $K$。
+> coding-agent README 声称 per-trajectory reward 会按 `reward / K` 分到 chains；但 `generate()` 把完整 reward 传入 `finish_session`，后者再交给上述“每个 Sample 完整赋值”的 manager，没有额外除以 $K$。[`examples/coding_agent_rl/README.md:182-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/README.md#L182-L186) [`examples/coding_agent_rl/generate.py:237-268`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/generate.py#L237-L268) 另有第三方证据：`tests/test_agent/test_agent_rollout_cpu.py::test_generate_produces_trained_samples` 注释仍说 evenly split，并断言所有 samples 的 reward 和等于 1.0；若该 fixture 只产生一片段，它不能区分两种分配规则，多片段时则与完整赋值冲突。当前行为由 `TrajectoryManager.get_trajectory` 与分支测试的逐片段断言确定：每片段完整 outcome reward。需要守恒时调用方必须显式除以 $K$，不能把这条 CPU 测试称为已经覆盖多片段均分。
 
-共享 `rollout_id` 解决的是另一件事：DP schedule 按 rollout id 分组、以 rollout 数而非 fragment 数决定 step 数；converter 又为同 rollout 汇总全部 mask token 数，供 per-rollout reducer 使用。[`slime/utils/dp_schedule.py:82-150`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L82-L150) [`slime/ray/rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814) E2E fanout 测试把完整链固定为 custom generate fanout → nested id validation → rollout-aware step split → rollout denominator。[`tests/test_qwen2.5_0.5B_fanout_short.py:1-39`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_fanout_short.py#L1-L39)
+共享 `rollout_id` 解决的是另一件事：DP schedule 的分组与 step 规则归 [[14_slime_megatron_training_analysis]]；converter 又为同 rollout 汇总全部 mask token 数，供 per-rollout reducer 使用。[`slime/utils/dp_schedule.py:82-150`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L82-L150) [`slime/ray/rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814) E2E fanout 测试把完整链固定为 custom generate fanout → nested id validation → rollout-aware step split → rollout denominator。[`tests/test_qwen2.5_0.5B_fanout_short.py:1-39`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_fanout_short.py#L1-L39)
 
 > **设计分析**：统计去重不会替你选择 credit assignment。共享 `rollout_id` 防止 $K$ 个 fragments 被当成 $K$ 次 execution；`reward / K` 还是完整 $R$ 则决定每个分支看到什么任务信号。前者是 trainer ABI，后者是 agent 算法语义。
 
@@ -169,6 +204,26 @@ $$
 
 CPU-only E2E 测试只替换 tokenizer、sandbox、SGLang 和 agent CLI 四个外部边缘，真实运行 generate orchestration、adapter HTTP、tree building、workspace/diff/eval 与 harness transport；它验证生成 Sample 的 mask/logprob 对齐以及 clean-eval reward。[`tests/test_agent/test_agent_rollout_cpu.py:1-9`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_agent_rollout_cpu.py#L1-L9) [`tests/test_agent/test_agent_rollout_cpu.py:175-194`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_agent_rollout_cpu.py#L175-L194)
 
+### 6.1 Harness 的配置落在哪里
+
+两个 harness 共用 `SLIME_AGENT_NODE_TARBALL` 安装 Node；Claude Code 用 `SLIME_AGENT_CC_TARBALL`，Codex 用 `SLIME_AGENT_CODEX_TARBALL` 安装 CLI。`*_EXTRA_ARGS` 加命令参数，`SLIME_AGENT_CC_EXTRA_ENVS` / `SLIME_AGENT_CODEX_EXTRA_ENVS` 读取 JSON 并最后覆盖环境。Claude Code 将 adapter URL 放到 `ANTHROPIC_BASE_URL`，sid 放到 `ANTHROPIC_AUTH_TOKEN`；Codex 将 sid 放到 `OPENAI_API_KEY`，且在沙箱 TOML 的 `[model_providers.slime]` 内写死当前 adapter `/v1` URL、`env_key="OPENAI_API_KEY"`、`wire_api="chat"`。这些是固定基线的 harness 协议，不是当今 Codex 产品配置指南。
+
+以下是 `examples/coding_agent_rl/generate.py::generate` 的缩减调用形状，省略 workspace 准备和 clean grading；`reward` 必须来自实际评分：
+
+```python
+adapter.open_session(sid, sampling_defaults=sampling_params, max_context_tokens=context_cap)
+try:
+    await harness.run(sb, workdir=workdir, session_id=sid,
+                      adapter_url=adapter_url, time_budget_sec=budget, prompt=task_prompt)
+    samples = await adapter.finish_session(sid, base_sample=base_sample, reward=reward)
+finally:
+    await adapter.drop_session(sid)
+```
+
+HTTP adapter 由 `slime/agent/aiohttp_threaded.py::run_app_in_thread` 放进 daemon thread 的独立事件循环，调用线程等监听完成并取得实际端口。coding example 传 `handler_cancellation=True`，使客户端断连取消 handler 并触发 best-effort abort；`AppHandle.stop` 用 `run_coroutine_threadsafe` 等 runner cleanup，再停 loop、join thread。`FilteredAccessLogger` 跳过 HEAD 和不超过 120 秒的成功请求，所以没有访问日志不证明请求未发生。
+
+紧凑阅读路线：`examples/coding_agent_rl/generate.py::_AdapterService/generate` → `slime/agent/harness/common.py::BaseHarness.run` → `slime/agent/harness/claude_code.py::ClaudeCodeHarness.write_config/launch_and_wait` 或 `slime/agent/harness/codex.py::CodexHarness.write_config/launch_and_wait` → `slime/agent/adapters/common.py::BaseAdapter.open_session/finish_session` → `slime/agent/trajectory.py::TrajectoryManager.get_trajectory`。
+
 ## 7. 官方示例的边界：它们使用的不是同一种 agent 运行时
 
 | 示例 | 执行拓扑与 token 处理 | 它证明什么 | 不应外推什么 |
@@ -177,6 +232,12 @@ CPU-only E2E 测试只替换 tokenizer、sandbox、SGLang 和 agent CLI 四个�
 | ReTool | 单 Sample 内的 code-interpreter loop；每轮按剩余 context clamp generation，tool observation也裁到同一 hard cap并 mask 0 | retry state hygiene、工具注册、context budget 是 rollout 责任 | 明确断言不支持 stock partial rollout；不能把它当成任意中断可续的 agent runtime。[`examples/retool/generate_with_retool.py:215-275`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/retool/generate_with_retool.py#L215-L275) [`examples/retool/generate_with_retool.py:299-374`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/retool/generate_with_retool.py#L299-L374) |
 | Multi-agent | 并发 solver，再并发 rewriter，最后 selector；每次模型调用生成一个独立 Sample，`_emit` 将所有阶段 stamp 为输入 sample index 的同一 rollout id | 一个 execution 可以显式产出许多训练 rows，reward也可按 agent role调整 | 它不维护共享 message tree，也不做共享祖先 token dedup；这些 agent 是独立 prompt 调用，不等同于 adapter 的 subagent branch。[`examples/multi_agent/agent_system.py:198-228`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/multi_agent/agent_system.py#L198-L228) [`examples/multi_agent/agent_system.py:239-296`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/multi_agent/agent_system.py#L239-L296) |
 | Coding-agent RL | CLI 使用 Anthropic/OpenAI adapter，per-session tree 捕获多轮、subagent/compact divergence；真实 sandbox 改代码，第二 clean sandbox评分 | 完整 execution、外部副作用、tree linearization、fanout 与 test reward 的闭环 | 当前固定提交不自动 reward/K；也没有把任意外部副作用持久化成可重放事务 |
+
+`examples/multi_agent/agent_system.py::generate` 中 `reward_adjustment` 的实际操作是乘 `reward_weight`，尽管注释写“bonus/penalty”；selector 成功与否选择 `correct_reward_weight/incorrect_reward_weight`，部分早退失败也对 solver/rewriter 乘失败权重。这是按阶段/结果重加权，不是框架自动均分 reward。
+
+Tau-bench 的 `generate_with_tau.py::generate` 把 `sample.prompt` 解释成 task index，创建带 user simulator 的环境，经 `agent_factory` 调 `asolve`，再由 `res_to_sample` 把 `InteractionResult` 的 tokens、reward、loss_mask 等转成 Sample，显式拒绝 partial rollout。环境规则和用户模拟依赖外部 tau-bench/LiteLLM；本页仅核验 slime 的调用及转换边界，没有把外部环境正确性当成已验证事实。
+
+Strands 示例固定安装声明为 `strands-sglang==0.4.2`。本地 `generate_with_strands.py::generate` 创建 `SGLangModel`、`ToolLimiter(max_tool_iters=5)` 和带 Python 工具的 Agent，调用 `invoke_async`，从 `model.rollout` 取 token_ids、mask、logprobs，按 initial prompt 长度裁出 response；失败标为 TRUNCATED，明确拒绝 partial，不应预先 apply chat template 造成重复包装。TITO 捕获本身是依赖库契约，未在本仓核验内部实现；仓内 Python 工具只是本机子进程，README 明确没有隔离。图片多轮 `geo3k_vlm_multi_turn` 的数据/processor 通路见 [[26_slime_multimodal_vlm_path_analysis]]。
 
 还有一个固定基线边界：list-returning custom generate 与默认 per-sample RM 路径兼容；但 fanout E2E 测试明确记录 `--group-rm` 仍假设 flat group，和 nested fanout 组合会把 `list[list[Sample]]` 传给单 Sample RM 并崩溃。[`tests/test_qwen2.5_0.5B_fanout_short.py:74-87`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_fanout_short.py#L74-L87) **由此可推断**，选择示例不能只看“是否多轮”：还要看它是单 Sample 内手写 loop、显式多 agent fanout，还是有 message-tree ownership 的外部 agent runtime。
 
@@ -191,6 +252,8 @@ adapter 关闭 sid 时先标记 closed，等待 in-flight turns，超时后取�
 ### 8.2 长命令：保存完成标记，不重放非幂等 shell
 
 `exec_and_wait` 不维持一个长 HTTP stream，而是把命令 detached 启动、输出写文件、退出码写 done marker，再通过短的幂等轮询等待；spawn 还用每次调用的 lock dir 去重同一 transport retry。[`slime/agent/sandbox.py:82-145`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/sandbox.py#L82-L145) 对应测试同时验证“同一逻辑 tag 的下一次调用必须真的重跑”和“同一次 spawn RPC 的 transport replay 不得双执行”。[`tests/test_agent/test_sandbox_exec_and_wait.py:125-161`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_sandbox_exec_and_wait.py#L125-L161)
+
+`E2BSandbox` 是对 `e2b.AsyncSandbox` 的适配：默认 lifetime 3600 秒、RPC retries 6、size `md`，由 `SLIME_AGENT_SANDBOX_LIFETIME_SEC`、`SLIME_AGENT_SANDBOX_RPC_RETRIES`、`SLIME_AGENT_E2B_SANDBOX_SIZE` 覆盖；`SLIME_AGENT_SANDBOX_IMAGE_METADATA_KEY` 指明网关用哪项 metadata 选择 image。`__aenter__` 将 image/size 元数据传给外部 SDK 创建服务，退出时 kill。`_rpc_retry` 只对识别出的瞬态传输错误且 `idempotent=True` 的操作重试，指数 backoff 封顶 32 秒；外部 SDK 的创建、路由和隔离实现不属于本仓证据。
 
 ### 8.3 工作区副作用：隔离与评分不等于分布式事务
 

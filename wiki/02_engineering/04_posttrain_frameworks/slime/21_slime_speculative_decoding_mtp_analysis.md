@@ -4,12 +4,14 @@ title: "slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同�
 
 # slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同一版本
 
-> **slime 源码基线**：`THUDM/slime main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（2026-08-12）
-> **SGLang 核验基线**：`sgl-project/sglang v0.5.15.post1@0b3bb0cbe31873994c9f989fddfe2f87ca839fdd`；这是 slime 同一提交声明的当前 stable 组合。[`docker/README.md:3-8`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docker/README.md#L3-L8)
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：在线后训练里的投机解码不是给 rollout engine 多加一个推理开关，而是多引入了一份必须版本化的策略状态。slime 的选择是让 actor 内 MTP 层参加训练、参数转换和权重发布，使 draft 尽量追随不断变化的 target；SGLang 仍负责用 target logits 做验证并返回最终 token 及其 logprob。代价是 MTP checkpoint、模型映射、同步 transport、SGLang 字段版本和调度路径都成为正确性/性能边界；固定独立 draft 只解决启动时的推理配置，不能闭合在线更新回路。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
+> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
+> **主题**：解释 MTP 训练参数、模型映射、发布路径及投机指标之间的耦合。
+> **适用范围**：slime 的 MTP 接入；SGLang 内核与服务内部路径保留原有固定版本引用，明确本轮核验边界。
+> **最近更新**：2026-09-10。纠正 MTP 层号规则，补 PP/VP 元数据来源边界，并收缩重复发布时序。
+
+在线后训练里的投机解码不是给 rollout engine 多加一个推理开关，而是多引入了一份必须版本化的策略状态。slime 的选择是让 actor 内 MTP 层参加训练、参数转换和权重发布，使 draft 尽量追随不断变化的 target；SGLang 仍负责用 target logits 做验证并返回最终 token 及其 logprob。代价是 MTP checkpoint、模型映射、同步 transport、SGLang 字段版本和调度路径都成为正确性/性能边界；固定独立 draft 只解决启动时的推理配置，不能闭合在线更新回路。
+
+> **依赖基线**：既有 SGLang 引用钉在 `sgl-project/sglang@0b3bb0cbe31873994c9f989fddfe2f87ca839fdd`（`v0.5.15.post1`）。本轮只核实 slime 仓库，当前机器缺少该 SGLang checkout；下文依赖内部、draft 更新与 metadata ABI 的跨仓引用保留，但不算本轮重新验证的结论。
 
 本文严格区分两类话语：带 fixed-commit 定位符的是源码或同提交官方文档事实；标为“设计分析”或“跨仓推论”的内容是根据两个锁定仓库的调用链推导出的约束，不代表项目作者原话。
 
@@ -22,7 +24,7 @@ title: "slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同�
 1. **提议状态新鲜度**：$\phi_v$ 应随 $\theta_v$ 训练并进入同一轮发布；否则 draft 逐轮陈旧，接受率下降，额外 draft forward 与 verify 开销不再有收益。
 2. **训练证据归属**：最终 response token、行为 logprob、reward 与版本 metadata 必须描述 target 验证后的轨迹，而不能把“draft 提议过什么”误当成 actor 的行为证据。
 
-第二点不等于声称任意 speculative 配置都严格保持某个抽象 target 分布。锁定的 SGLang EAGLE 路径确实先执行 target verify，再用 target logits 采样/验收，并从被接受位置的 target logits 计算返回 logprob；但它同时暴露 target-only acceptance threshold 与可选 rejection sampling，不同参数走不同 kernel。[`eagle_worker_v2.py:1543-1611`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1543-L1611) [`eagle_utils.py:620-715`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_utils.py#L620-L715) 因而本页只作源码能支持的窄结论：**训练消费的是 target verify 后的 token，并可消费从 target logits 计算的 accepted-token logprob**；不把它推广成所有算法、阈值和采样设置下的通用分布等价定理。[`logprob.py:295-333`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/utils/logprob.py#L295-L333)
+第二点不等于声称任意 speculative 配置都严格保持某个抽象 target 分布。锁定的 SGLang EAGLE 路径确实先执行 target verify，再用 target logits 采样/验收，并从被接受位置的 target logits 计算返回 logprob；但它同时暴露 target-only acceptance threshold 与可选 rejection sampling，不同参数走不同 kernel。[`python/sglang/srt/speculative/eagle_worker_v2.py:1543-1611`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1543-L1611) [`python/sglang/srt/speculative/eagle_utils.py:620-715`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_utils.py#L620-L715) 因而本页只作源码能支持的窄结论：**训练消费的是 target verify 后的 token，并可消费从 target logits 计算的 accepted-token logprob**；不把它推广成所有算法、阈值和采样设置下的通用分布等价定理。[`python/sglang/srt/layers/utils/logprob.py:295-333`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/utils/logprob.py#L295-L333)
 
 ### 1.1 为什么“常驻一个静态草稿模型服务”不够
 
@@ -50,8 +52,9 @@ flowchart LR
     R["target 验证后的 response<br/>token 与行为证据"] --> T["Megatron actor 训练"]
     T --> M["actor 主干与 MTP 参数"]
     M --> C["Megatron 到 HF 名称与张量转换"]
-    C --> P["pause flush 后发布新版本"]
-    P --> S["SGLang target 与内置 draft"]
+    C --> P["按 transport 协议发布新版本"]
+    P --> S["tensor / disk 对应路径<br/>SGLang target 与内置 draft"]
+    P -.-> N["NCCL target-only 缺口<br/>draft 更新未证明，见 6.3"]
     S --> V["target verify 与 accepted-token logprob"]
     V --> R
     S --> O["接受计数与 weight version 观测"]
@@ -65,7 +68,7 @@ flowchart LR
 | 发布 | slime 的 Megatron→HF 转换与 weight updater | 主干和 MTP 都被枚举、转换并送入同一版本窗口 |
 | rollout | SGLang target worker、draft worker 与请求 metadata | draft 提议不取代 target verify；最终 token/logprob/版本可回到 `Sample` |
 
-slime 不实现 EAGLE acceptance kernel。它通过反射 SGLang `ServerArgs`，把 `--sglang-*` 字段转成原生 server 参数；不在当前 SGLang dataclass 中的键会被警告并删除。[`sglang_engine.py:592-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L592-L636) 这解释了职责分界：slime 负责版本闭环和训练数据契约，具体 speculative 算法仍属于锁定的 SGLang 版本。
+slime 不实现 EAGLE acceptance kernel。它通过反射 SGLang `ServerArgs`，把 `--sglang-*` 字段转成原生 server 参数；不在当前 SGLang dataclass 中的键会被警告并删除。[`slime/backends/sglang_utils/sglang_engine.py:592-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L592-L636) 这解释了职责分界：slime 负责版本闭环和训练数据契约，具体 speculative 算法仍属于锁定的 SGLang 版本。
 
 ## 4. Rollout 配置：先区分“启用推测”与“在线训练 MTP”
 
@@ -92,7 +95,7 @@ slime 不实现 EAGLE acceptance kernel。它通过反射 SGLang `ServerArgs`，
 --mtp-loss-scaling-factor 0.2
 ```
 
-`--mtp-num-layers` 决定训练模型是否构造 MTP block；`--enable-mtp-training` 决定 forward 是否传入 MTP labels；后者开启时前者必须非空，scale 默认 0.2。[`arguments.py:1506-1517`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1506-L1517) [`arguments.py:1999-2000`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1999-L2000)
+`--mtp-num-layers` 决定训练模型是否构造 MTP block；`--enable-mtp-training` 决定 forward 是否传入 MTP labels；后者开启时前者必须非空，scale 默认 0.2。[`slime/utils/arguments.py:1506-1517`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1506-L1517) [`slime/utils/arguments.py:1999-2000`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1999-L2000)
 
 三组参数必须同时理解：
 
@@ -109,21 +112,21 @@ slime 不实现 EAGLE acceptance kernel。它通过反射 SGLang `ServerArgs`，
 
 ### 5.1 模型所有权由 `mtp_num_layers` 建立
 
-model provider 在 `mtp_num_layers` 非空时调用 Megatron 的 `get_gpt_mtp_block_spec`，再把 block spec 作为 `GPTModel` 构造参数；因此 MTP 是训练 actor 模型树的一部分，不是 slime 旁挂的另一个 Ray actor。[`model_provider.py:200-232`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L200-L232)
+model provider 在 `mtp_num_layers` 非空时调用 Megatron 的 `get_gpt_mtp_block_spec`，再把 block spec 作为 `GPTModel` 构造参数；因此 MTP 是训练 actor 模型树的一部分，不是 slime 旁挂的另一个 Ray actor。[`slime/backends/megatron_utils/model_provider.py:200-232`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L200-L232)
 
 这个所有权从 checkpoint 开始：官方文档要求 HF→torch-dist 转换时也带 `--mtp-num-layers 1`，否则在线任务没有可加载的 MTP 权重。[`docs/en/advanced/speculative-decoding.md:30-36`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L30-L36) E2E 测试同样先用该参数转换 MiMo checkpoint，再在训练命令中同时启用 EAGLE 和 MTP training。[`tests/test_mimo_7B_mtp_only_grad.py:21-34`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_mimo_7B_mtp_only_grad.py#L21-L34) [`tests/test_mimo_7B_mtp_only_grad.py:90-109`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_mimo_7B_mtp_only_grad.py#L90-L109)
 
 ### 5.2 MTP 是辅助训练目标，不替代策略训练所需的数据
 
-普通训练 forward 仍以 `batch["tokens"]` 驱动 actor；打开 MTP training 时，slime 额外把同一 tokens 作为 `mtp_labels` 传给 GPTModel。optimizer 随后对这一模型执行 step。[`model.py:576-641`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L576-L641) [`model.py:656-680`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L656-L680)
+普通训练 forward 仍以 `batch["tokens"]` 驱动 actor；打开 MTP training 时，slime 额外把同一 tokens 作为 `mtp_labels` 传给 GPTModel。optimizer 随后对这一模型执行 step。[`slime/backends/megatron_utils/model.py:576-641`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L576-L641) [`slime/backends/megatron_utils/model.py:656-680`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L656-L680)
 
-而 rollout 侧请求 `return_logprob=True`，从 SGLang response 的 `output_token_logprobs` 取最终 token id 与 logprob，再作为 trainable response 追加到 `Sample`。[`sglang_rollout.py:175-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L219) converter 把这些值放入 `rollout_log_probs`；训练是否直接把它作为 old-policy evidence 由 `use_rollout_logprobs` 决定，否则使用 Megatron 重算的 `log_probs`。[`rollout.py:828-830`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L828-L830) [`loss.py:729-746`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L729-L746)
+而 rollout 侧请求 `return_logprob=True`，从 SGLang response 的 `output_token_logprobs` 取最终 token id 与 logprob，再作为 trainable response 追加到 `Sample`。[`slime/rollout/sglang_rollout.py:175-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L219) converter 把这些值放入 `rollout_log_probs`；训练是否直接把它作为 old-policy evidence 由 `use_rollout_logprobs` 决定，否则使用 Megatron 重算的 `log_probs`。[`slime/ray/rollout.py:828-830`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L828-L830) [`slime/backends/megatron_utils/loss.py:729-746`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L729-L746)
 
 > **设计分析**：MTP loss 的作用是改善候选器对 actor trajectory 的预测；policy loss/reward 的对象仍是 target verify 后进入 Sample 的 response。把 MTP 训练理解成“让 draft policy 直接产生 RL evidence”，会混淆辅助预测目标与行为策略证据。
 
 ### 5.3 测试证明了什么，又没有证明什么
 
-CI 在全截断场景检查：非 MTP 参数的非零梯度数必须为 0，同时至少一个 MTP 参数必须有非零梯度；这证明 MTP loss 已接上，且主 policy loss 被 mask 后不会污染主干梯度。[`ci_utils.py:11-68`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/ci_utils.py#L11-L68) 它还用默认 1.0 作为 MTP loss smoke gate，但源码没有把它定义为跨模型生产阈值。[`ci_utils.py:71-84`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/ci_utils.py#L71-L84)
+CI 在全截断场景检查：非 MTP 参数的非零梯度数必须为 0，同时至少一个 MTP 参数必须有非零梯度；这证明 MTP loss 已接上，且主 policy loss 被 mask 后不会污染主干梯度。[`slime/backends/megatron_utils/ci_utils.py:11-68`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/ci_utils.py#L11-L68) 它还用默认 1.0 作为 MTP loss smoke gate，但源码没有把它定义为跨模型生产阈值。[`slime/backends/megatron_utils/ci_utils.py:71-84`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/ci_utils.py#L71-L84)
 
 测试没有证明任意权重 transport 都会同时更新 SGLang draft，也没有证明更低 MTP loss 必然带来端到端吞吐提升；这两点需要分别审计同步路径和 wall-clock 指标。
 
@@ -131,38 +134,42 @@ CI 在全截断场景检查：非 MTP 参数的非零梯度数必须为 0，同�
 
 ### 6.1 先把训练参数翻译成 rollout 能加载的名字
 
-训练参数枚举专门识别 `mtp.layers.*`，并在 PP/VP/EP 下修正全局层号与 expert offset；否则同一 MTP expert 在训练 shard 与 rollout shard 中会得到不一致名字。[`common.py:172-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L172-L219)
+`_named_params_and_buffers_global` 对 decoder 层号加 `layer_offset`，但对 `mtp.layers.*` 保留从 0 开始的 MTP 层号；只有 MTP 内 `transformer_layer.mlp.experts` 的 expert index 加 EP offset。不能把 decoder 的 PP/VP 全局层号规则套到 MTP 上。[`slime/backends/megatron_utils/update_weight/common.py:172-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L172-L219)
 
-名字一致还不够，张量布局也可能不同。以 Qwen3-Next 为例，Megatron→HF converter 映射 MTP wrapper、交换 `eh_proj` 的两个半区，并复用普通层映射处理内部 transformer；HF→Megatron loader 做反向映射。[`megatron_to_hf/qwen3_next.py:6-39`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/qwen3_next.py#L6-L39) [`hf_to_megatron/qwen3_next.py:56-77`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L56-L77)
+名字一致还不够，张量布局也可能不同。以 Qwen3-Next 为例，Megatron→HF converter 映射 MTP wrapper、交换 `eh_proj` 的两个半区，并复用普通层映射处理内部 transformer；HF→Megatron loader 做反向映射。[`slime/backends/megatron_utils/megatron_to_hf/qwen3_next.py:6-39`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/qwen3_next.py#L6-L39) [`slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py:56-77`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L56-L77)
 
 > **设计分析**：这就是“模型架构支持”不能退化成一个 MTP flag 的原因。没有双向名称/布局映射，训练侧可以产生梯度，rollout 侧却可能加载不到同一组参数，或加载成错误布局。
 
+PP 下“模型在哪里构造”“名字怎样归一化”“发布由哪个 rank 提供”是三件事。`model_provider.py` 在 `vp_stage` 非 None 时直接把该关键字传给 Megatron 的 `get_gpt_mtp_block_spec`，并把 `mtp_block_spec` 交给 `GPTModel`；这里没有检查该函数签名的兼容探测，依赖必须接受此接口；具体 block 放置由该依赖及模型 provider 决定，不能仅从 slime 的枚举器断言所有模型只在某一 PP rank 构造 MTP。
+
+slime 能直接证明的传输规则是：`hf_weight_iterator_direct.py::_get_megatron_local_param_infos` 收集各 PP rank 的真实参数元数据；当同一 MTP 名字在 virtual PP 中重复时保留较小 `src_rank`，再交换 EP 元数据，校验各 rank 的 name/shape/dtype 一致。`_get_megatron_full_params` 据此向选定 source 取值并广播。换言之，发布来源由实际存在的模型参数与去重结果决定，不是给 MTP 层号强加 decoder offset。双向模型转换文件与是否有 MTP 分支见 [[23_slime_model_architecture_extension_analysis]]。
+
 ### 6.2 发布窗口与版本号
 
-actor 按 transport 选择 updater：disk 使用 disk updater，colocate 使用 tensor updater，非 colocate 的 full+NCCL 使用 distributed updater。[`actor.py:151-179`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L179) tensor 与 distributed 路径都先递增 `weight_version`，再 pause generation、flush cache、发送参数，最后 continue generation；这把更新变成一个禁止新请求穿过半版本的窗口。[`update_weight_from_tensor.py:276-331`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L276-L331) [`update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134)
+MTP 参数与 actor 主干必须进入同一次权重 commit；pause、flush、传输与恢复的完整协议统一见 [[16_slime_weight_sync_analysis]]。本节只继续核对该批 payload 是否到达 draft runner。
 
-锁定的 SGLang tensor 入口会把同一批 named tensors 先交给 draft runner，再交给 target runner；disk 和 IPC 入口也先更新 target、再显式更新 draft worker。[`eagle_worker_v2.py:1752-1785`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1752-L1785) [`weight_updater.py:108-178`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L108-L178) 这为 colocate tensor/disk 路径提供了“同批 payload 覆盖两侧”的源码证据。
+锁定的 SGLang tensor 入口会把同一批 named tensors 先交给 draft runner，再交给 target runner；disk 和 IPC 入口也先更新 target、再显式更新 draft worker。[`python/sglang/srt/speculative/eagle_worker_v2.py:1752-1785`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1752-L1785) [`python/sglang/srt/managers/scheduler_components/weight_updater.py:108-178`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L108-L178) 这为 colocate tensor/disk 路径提供了“同批 payload 覆盖两侧”的源码证据。
 
 ### 6.3 一个必须明确说明的传输能力缺口
 
-锁定的 SGLang distributed 更新入口只调用 `tp_worker.update_weights_from_distributed`，没有调用 `draft_worker`；同一文件的 tensor 入口才会在 draft worker 与 target worker之间选择/转发。[`weight_updater.py:136-164`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L136-L164) 与之对应，slime 非 colocate full+NCCL 正是调用 `/update_weights_from_distributed`。[`update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
+锁定的 SGLang distributed 更新入口只调用 `tp_worker.update_weights_from_distributed`，没有调用 `draft_worker`；同一文件的 tensor 入口才会在 draft worker 与 target worker之间选择/转发。[`python/sglang/srt/managers/scheduler_components/weight_updater.py:136-164`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L136-L164) 与之对应，slime 非 colocate full+NCCL 正是调用 `/update_weights_from_distributed`。[`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
 
 > [!warning] 跨仓推论：非 colocate NCCL 的 online-MTP 覆盖缺口
 > 在这两个锁定提交的组合上，仅凭现有调用链不能证明 distributed/NCCL 发布会刷新 EAGLE draft runner；相反，入口显示 target-only update。项目提供的 MTP-only E2E 命令使用 `--colocate`，没有覆盖这一组合。[`tests/test_mimo_7B_mtp_only_grad.py:111-139`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_mimo_7B_mtp_only_grad.py#L111-L139) 因此部署前应做版本/权重探针或补 E2E 测试，不能从“参数被 converter 枚举”推断“每种 transport 的 draft 都已更新”。
 
 ### 6.4 `post_process_weights` 不是 MTP 同步补丁
 
-slime 的 `post_process_weights` endpoint 用于 compressed-tensors 的 restore-before-load 与 post-load quantization，只在对应 quant method 下于参数发送前后触发。[`update_weight_from_tensor.py:283-291`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L283-L291) [`update_weight_from_tensor.py:322-330`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L322-L330) endpoint 自身的 docstring 也只描述量化 hook。[`sglang_engine.py:454-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L454-L470)
+slime 的 `post_process_weights` endpoint 用于 compressed-tensors 的 restore-before-load 与 post-load quantization，只在对应 quant method 下于参数发送前后触发。[`slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py:283-291`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L283-L291) [`slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py:322-330`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L322-L330) endpoint 自身的 docstring 也只描述量化 hook。[`slime/backends/sglang_utils/sglang_engine.py:454-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L454-L470)
 
-所以 MTP 新鲜度来自“枚举→架构转换→实际更新 draft runner”的完整链，不来自笼统的 postprocess 调用。slime 还固定打开 `enable_draft_weights_cpu_backup`；该标志解决的是 memory-saver release/resume 时保存 draft 权重，不替代每轮在线发布。[`sglang_engine.py:544-570`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L544-L570) [`server_args.py:2587-2592`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/server_args.py#L2587-L2592)
+所以 MTP 新鲜度来自“枚举→架构转换→实际更新 draft runner”的完整链，不来自笼统的 postprocess 调用。slime 还固定打开 `enable_draft_weights_cpu_backup`；该标志解决的是 memory-saver release/resume 时保存 draft 权重，不替代每轮在线发布。[`slime/backends/sglang_utils/sglang_engine.py:544-570`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L544-L570) [`python/sglang/srt/server_args.py:2587-2592`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/server_args.py#L2587-L2592)
 
 ## 7. 请求记录与接受率：最终 token 链可靠，但指标接口已经变化
 
 ### 7.1 target verify 后的证据如何回到训练
 
-SGLang 的 verify 函数执行 target forward，随后 `eagle_sample` 决定 accepted path；请求开启 logprob 时，它调用 `compute_spec_v2_logprobs`。[`eagle_worker_v2.py:1602-1642`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1602-L1642) [`eagle_worker_v2.py:1665-1682`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1665-L1682) tokenizer manager 还把 server 当前 `weight_version` 放进 response metadata。[`tokenizer_manager.py:1888-1895`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L1888-L1895)
+SGLang 的 verify 函数执行 target forward，随后 `eagle_sample` 决定 accepted path；请求开启 logprob 时，它调用 `compute_spec_v2_logprobs`。[`python/sglang/srt/speculative/eagle_worker_v2.py:1602-1642`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1602-L1642) [`python/sglang/srt/speculative/eagle_worker_v2.py:1665-1682`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1665-L1682) tokenizer manager 还把 server 当前 `weight_version` 放进 response metadata。[`python/sglang/srt/managers/tokenizer_manager.py:1888-1895`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L1888-L1895)
 
-slime 的 `Sample.append_response_tokens` 保存 token/logprob，并在 terminal response 时追加 `weight_version`；partial rollout 不是覆盖旧 metadata，而是累加 speculative 计数并保存多个版本边界。[`types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) 这让训练数据至少能回答“这段最终 response 由哪个 rollout target 版本返回”，但当前结构没有独立的 `draft_weight_version` 字段，不能仅靠 Sample 证明 draft 与 target 同版本。
+slime 的 `Sample.append_response_tokens` 保存 token/logprob，并在 terminal response 时追加 `weight_version`；partial rollout 不是覆盖旧 metadata，而是累加 speculative 计数并保存多个版本边界。[`slime/utils/types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) 这让训练数据至少能回答“这段最终 response 由哪个 rollout target 版本返回”，但当前结构没有独立的 `draft_weight_version` 字段，不能仅靠 Sample 证明 draft 与 target 同版本。
 
 > **设计分析**：一个单独的 target `weight_version` 是发布完成的审计证据，不是双模型一致性的充分证明。若 transport 可能只更新一侧，应增加 draft/target 双版本或权重 checksum 探针，而不是只看 request 成功。
 
@@ -179,15 +186,15 @@ r_{\mathrm{accept}}
 \end{aligned}
 $$
 
-实现对分母为 0 的情况返回 0，并在 partial 的多段 response 中累加原始计数。[`types.py:153-188`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L153-L188) rollout 日志再对每个 Sample 的 ratio/length 作等权平均，而不是先把全局计数求和后再算比值。[`rollout.py:1500-1507`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1500-L1507)
+实现对分母为 0 的情况返回 0，并在 partial 的多段 response 中累加原始计数。[`slime/utils/types.py:153-188`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L153-L188) rollout 日志再对每个 Sample 的 ratio/length 作等权平均，而不是先把全局计数求和后再算比值。[`slime/ray/rollout.py:1500-1507`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1500-L1507)
 
-因此 `spec_accept_rate` 是“平均 sample ratio”，长短请求权重相同；它不是全局 token-weighted acceptance。`spec_accept_length` 又包含每次 verify 的 bonus/completion token，不能与“accepted draft tokens per verify”混为一谈。锁定 SGLang 对这两个定义也作了同样区分。[`tokenizer_manager.py:2351-2368`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L2351-L2368)
+因此 `spec_accept_rate` 是“平均 sample ratio”，长短请求权重相同；它不是全局 token-weighted acceptance。`spec_accept_length` 又包含每次 verify 的 bonus/completion token，不能与“accepted draft tokens per verify”混为一谈。锁定 SGLang 对这两个定义也作了同样区分。[`python/sglang/srt/managers/tokenizer_manager.py:2351-2368`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L2351-L2368)
 
 ### 7.3 锁定组合中的 metadata 字段不兼容
 
-slime 读取 `spec_accept_token_num` 与 `spec_draft_token_num`；但锁定的 SGLang v0.5.15.post1 输出 `spec_num_correct_drafts` 与 `spec_num_proposed_drafts`，只保留了另一组 backward aliases `spec_accepted_drafts` / `spec_proposed_drafts`，没有 slime 所读的两个名字。[`types.py:168-172`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L168-L172) [`tokenizer_manager.py:2357-2372`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L2357-L2372)
+slime 读取 `spec_accept_token_num` 与 `spec_draft_token_num`；但锁定的 SGLang v0.5.15.post1 输出 `spec_num_correct_drafts` 与 `spec_num_proposed_drafts`，只保留了另一组 backward aliases `spec_accepted_drafts` / `spec_proposed_drafts`，没有 slime 所读的两个名字。[`slime/utils/types.py:168-172`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L168-L172) [`python/sglang/srt/managers/tokenizer_manager.py:2357-2372`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_manager.py#L2357-L2372)
 
-> [!warning] 已核验的观测缺口
+> [!warning] 既有跨仓观测缺口，SGLang 侧本轮未重核
 > 在未额外打补丁的这组基线上，$N_{\mathrm{accepted\ draft}}$ 与 $N_{\mathrm{proposed\ draft}}$ 会按缺省值累加为 0，因而 slime 的 `spec_accept_rate` 会是 0；`spec_verify_ct` 与 `completion_tokens` 字段仍匹配，所以 accept length 可继续累加。现有 unit test 只用 synthetic old keys 验证 gating，没有覆盖真实 SGLang metadata ABI。[`tests/test_sample.py:265-283`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_sample.py#L265-L283)
 
 这意味着“接受率下降”在当前组合上不能直接作为 draft 漂移诊断，必须先修复/适配字段或直接读取 SGLang 原生指标。即使字段兼容，也应同时观察 rollout wall time、tokens/GPU/s、request latency 和显存；官方只承诺 drift 可能造成负收益，没有给出一个跨模型通用的接受率阈值。[`docs/en/advanced/speculative-decoding.md:24-28`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L24-L28)
@@ -204,12 +211,12 @@ slime 读取 `spec_accept_token_num` 与 `spec_draft_token_num`；但锁定的 S
 | `spec_accept_rate=0` | 可能是 metadata ABI，不一定真是零接受 | 对照 SGLang 原生计数键 |
 | accept rate 高但 rollout 变慢 | rate 不是端到端吞吐 | 同 workload 的 wall-clock、显存与排队 |
 
-combined 1F1B 的 forward path 对 `enable_mtp_training` 有显式断言，因为该 schedule 尚未接入 MTP labels/loss 语义。[`model.py:609-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L609-L636)
+combined 1F1B 的 forward path 对 `enable_mtp_training` 有显式断言，因为该 schedule 尚未接入 MTP labels/loss 语义。[`slime/backends/megatron_utils/model.py:609-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L609-L636)
 
 一个最小而可信的上线验证顺序是：
 
 1. **初始化**：确认 checkpoint 确有 MTP，模型家族的 HF↔Megatron 转换能 round-trip。
-2. **训练**：先用截断 CI gate 证明 MTP 有梯度，再在正常 batch 观察 policy 与 MTP 两类 loss；slime 会按 head 和总和记录 MTP loss。[`model.py:849-887`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L849-L887)
+2. **训练**：先用截断 CI gate 证明 MTP 有梯度，再在正常 batch 观察 policy 与 MTP 两类 loss；slime 会按 head 和总和记录 MTP loss。[`slime/backends/megatron_utils/model.py:849-887`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L849-L887)
 3. **发布**：在所选 transport 上验证 target 与 draft 都变化；不要用 target 的单一 version 字段替代双侧检查。
 4. **证据**：核对 response token/logprob 来自 verify 后路径，并确认 Sample 中版本与 token span 对齐。
 5. **观测**：先修 metadata ABI，再比较 acceptance、accept length 与端到端 wall time；仅在同请求分布和同采样参数下做 A/B。
@@ -221,8 +228,8 @@ combined 1F1B 的 forward path 对 `enable_mtp_training` 有显式断言，因�
 
 两个锚点都指向同一处：**在线闭环目前只对“模型内 MTP”闭合，闭合面之外的两块还写着未完成。**
 
-- **外部草稿模型的在线训练是官方声明的 WIP。** speculative-decoding 文档在给出 `--mtp-num-layers / --enable-mtp-training / --mtp-loss-scaling-factor` 三件套之后，最后一行原文是 “Training external draft models is still a WIP.”。[`speculative-decoding.md:36-38`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L36-L38) 这与第 1.1 节的判断一致：`--sglang-speculative-draft-model-path` 能静态加载一个独立 draft，但没有配套的数据、optimizer、版本提交与恢复协议。**由此可推断**，现在把 SpecForge 之类外部 draft 接入在线 RL，需要使用者自己补齐这条链，而不是等一个已有开关。
-- **发布列表里的 buffer 覆盖面是一个悬而未决的问题。** 处理 `mtp.layers` 全局命名的正是 `_named_params_and_buffers_global`；它对 `named_parameters()` 全量产出，但对 `named_buffers()` 只放行 `expert_bias`，上面写着 “TODO shall we handle (almost) all buffers”。[`common.py:235-238`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L235-L238) 同一门禁在 vanilla 变体里也存在。[`common.py:165-169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L165-L169) 第 6.1 节说“MTP 参数被专门识别并修正层号”对 parameter 成立；对 buffer 只对 `expert_bias` 成立。**由此可推断**：若某个模型家族的 MTP 侧带非 `expert_bias` 的有状态 buffer，当前发布路径不会传它，而这在源码里是被标注为待定、不是被论证为安全。
+- **外部草稿模型的在线训练是官方声明的 WIP。** speculative-decoding 文档在给出 `--mtp-num-layers / --enable-mtp-training / --mtp-loss-scaling-factor` 三件套之后，最后一行原文是 “Training external draft models is still a WIP.”。[`docs/en/advanced/speculative-decoding.md:36-38`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L36-L38) 这与第 1.1 节的判断一致：`--sglang-speculative-draft-model-path` 能静态加载一个独立 draft，但没有配套的数据、optimizer、版本提交与恢复协议。**由此可推断**，现在把 SpecForge 之类外部 draft 接入在线 RL，需要使用者自己补齐这条链，而不是等一个已有开关。
+- **发布列表里的 buffer 覆盖面是一个悬而未决的问题。** 处理 `mtp.layers` 全局命名的正是 `_named_params_and_buffers_global`；它对 `named_parameters()` 全量产出，但对 `named_buffers()` 只放行 `expert_bias`，上面写着 “TODO shall we handle (almost) all buffers”。[`slime/backends/megatron_utils/update_weight/common.py:235-238`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L235-L238) 同一门禁在 vanilla 变体里也存在。[`slime/backends/megatron_utils/update_weight/common.py:165-169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L165-L169) 第 6.1 节的规则是保留 MTP 层号、修正 expert index；对 buffer 的覆盖又仅限 `expert_bias`。**由此可推断**：若某个模型家族的 MTP 侧带非 `expert_bias` 的有状态 buffer，当前发布路径不会传它，而这在源码里是被标注为待定、不是被论证为安全。
 
 必须同时说清楚没有锚点的部分：第 6.3 节的“非 colocate NCCL 不更新 draft runner”与第 7.3 节的 metadata 字段不兼容，在两个锁定提交里**都没有**对应的 TODO、deprecation 或 issue 引用。它们目前只是可核验的现状，不能写成“已在修复中”。
 

@@ -49,9 +49,9 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index|推理框架目录]] | 35 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM知识地图]] | 27 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 49 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 52 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 17 | 活跃 |
-| └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
+| └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 24 | 活跃 |
 | GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |

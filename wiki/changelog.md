@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-10：slime 系列按专家意见核实整改并补齐三条机制路径
+
+- 更新 slime 原有 20 篇，新增 [[02_engineering/04_posttrain_frameworks/slime/26_slime_multimodal_vlm_path_analysis|多模态 VLM]]、[[02_engineering/04_posttrain_frameworks/slime/27_slime_evaluation_path_analysis|评估]]、[[02_engineering/04_posttrain_frameworks/slime/28_slime_sft_path_and_loss_mask_analysis|SFT 与 loss mask]]；slime 基线保持 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，共 23 篇内容页加索引。重算上级后训练目录为 52 个 Markdown 文件。
+- 修正同步更新间隔、full-disk 版本责任、fully-async 叠加、DP/CP 与 mask 归约、MTP/低精度、恢复注入等结论；补齐 TIS/MIS、独立 Megatron teacher server、模型映射与 agent 链路。专家建议逐条以源码为准，保留多模态多轮示例的接口失败、vime 超量 drain 丢组等已发现边界；未修改外部源代码。
+- 索引收敛为单一页面入口表，跨页重复按机制归属收缩；新增数值与布局图并完成独立复审。详细范围、验证证据和未重新验证的依赖见 `docs/research/2026-09-10-slime-series-remediation.md`。
+
 ## 2026-09-09：按 Claude Fable 5.1 提示审计清理约束文本与技能化石
 
 - 用 `/claude-api` 的 prompt-audit 流程审计 `CLAUDE.md`、`AGENTS.md` 与 `skills/` 全部 SKILL.md 及 references：没有旧模型脚手架、压力语言或反格式规则；处理的是七处"历史叙事 / 相对措辞 / 单次事故补丁"。删除 `CLAUDE.md` 课程规则里的 kb-reorg 考古括注和 `check_locators` 段的"used to / now"相对措辞；`skills/README.md`、`AGENTS.md` 去掉已删除目录的来历叙述；`writing-obsidian-math` 两处 2026-08-26 清理日期改为指向宪法基线表。

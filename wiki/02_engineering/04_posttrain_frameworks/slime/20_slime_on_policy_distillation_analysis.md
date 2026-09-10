@@ -4,16 +4,18 @@ title: "slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略�
 
 # slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略训练闭环
 
-> **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **文档/示例/测试基线**：同一提交下 `docs/en/advanced/on-policy-distillation.md`、`examples/on_policy_distillation/` 与 `tests/test_qwen2.5_0.5B_opd_sglang.py`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：OPD 的系统难题不是“再部署一个 teacher”，而是让 teacher 对 actor 刚采出的同一 prefix、同一 action 给出逐 token 信号，同时不复制 prompt 管道、rollout 身份、DP schedule、Megatron trainer 和 optimizer 生命周期。slime 把 teacher 设计成一个只读评分角色：SGLang teacher 在 rollout 侧把 selected-token logprob 写进 `Sample`，Megatron teacher 在 actor worker 内复用同一批 train data 做额外前向；两条路径最终都只向既有训练 ABI 增加 `teacher_log_probs`，再把 sampled reverse-KL 注入基础 advantage。代价是 teacher 延迟或 CPU↔GPU 角色切换进入关键路径，而且“同 token、同 span、固定 teacher”主要靠配置和数据对齐守住，而不是一套完整的版本握手协议。
-> **叙事顺序**：本页按五拍组织——背景（第 1 节）→ 为什么这么设计（第 2 节，含被否掉的四个替代）→ 实现思路与细节（第 3–7 节）→ 约束（第 8 节）→ 发展趋势。本页无可锚定的在途改动，第 5 拍略：固定基线的 `slime/rollout/on_policy_distillation.py`、`slime/utils/tensor_backper.py`、`docs/en/advanced/on-policy-distillation.md` 与 `examples/on_policy_distillation/` 中没有任何 TODO/FIXME/deprecation 或 WIP 声明可作锚点。
-> **最近更新**：2026-08-27。本页章节顺序原已符合五拍，仅补页头叙事说明，未重排章节，机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
+> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
+> **主题**：解释训练内 teacher、SGLang 外部评分以及独立 Megatron teacher server 的接口边界，跟踪逐 token 信号进入 advantage 的路径。
+> **适用范围**：现成 OPD 接入与 teacher server；多模态输入归多模态页，训练角色切换归训练后端页。
+> **最近更新**：2026-09-10。核实 converter 判定，补 teacher server、配置示例及基线后温度变更。
+
+OPD 的系统难题不是“再部署一个 teacher”，而是让 teacher 对 actor 刚采出的同一 prefix、同一 action 给出逐 token 信号，同时不复制 prompt 管道、rollout 身份、DP schedule、Megatron trainer 和 optimizer 生命周期。slime 把 teacher 设计成一个只读评分角色：SGLang teacher 在 rollout 侧把 selected-token logprob 写进 `Sample`，Megatron teacher 在 actor worker 内复用同一批 train data 做额外前向；两条现成 OPD 路径最终都只向既有训练 ABI 增加 `teacher_log_probs`，再把 sampled reverse-KL 注入基础 advantage。代价是 teacher 延迟或 CPU↔GPU 角色切换进入关键路径，而且“同 token、同 span、固定 teacher”主要靠配置和数据对齐守住，而不是一套完整的版本握手协议。
 
 本文只负责 OPD 的接入动机、teacher placement、信号流和版本边界。通用 `Sample`/converter 语义归 [[12_slime_sample_datasource_analysis]]，Megatron 角色切换与训练执行归 [[14_slime_megatron_training_analysis]]，reducer 与并行归一化归 [[15_slime_loss_parallelism_analysis]]。带 fixed-commit 定位符的是源码、官方文档、示例或测试事实；标为“设计分析”的段落是从实现与失败路径作出的推断。
 
 ## 1. 根本矛盾：teacher 必须评价学生访问到的状态，却不应拥有第二套数据系统
+
+本基线的 `--opd-type` 仍只有 `sglang`、`megatron` 两个值。仓内另有独立 Megatron teacher server，但其响应尚未直接接到现成 OPD helper；它是第三种部署形态，不是第三个 CLI 枚举。
 
 OPD 训练的是学生自己生成的 response：在学生访问到的历史 $h_t$ 上，teacher 只评价学生实际采到的 token $a_t$，并不生成另一条轨迹。官方定义明确把学生放在 reverse-KL 的第一项，期望也取在学生分布上。[`docs/en/advanced/on-policy-distillation.md:17-32`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/on-policy-distillation.md#L17-L32)
 
@@ -26,7 +28,7 @@ OPD 训练的是学生自己生成的 response：在学生访问到的历史 $h_
 | 单一训练所有权 | 只有 actor 拥有 policy optimizer；teacher 只前向 | 第二个 trainer 会引入重复 schedule、更新和 checkpoint 语义 |
 | 版本边界 | actor rollout 版本可识别，teacher 在实验中保持固定 | 信号变化无法区分来自学生更新还是 teacher 漂移 |
 
-slime 的接入点正好落在已有边界上：`Sample` 本来就保存 rollout token 与可选行为字段，固定基线只新增一个 response-aligned 的 `teacher_log_probs` 字段；默认 converter 又把它作为条件字段送进既有 train dict。[`slime/utils/types.py:93-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L93-L128) [`slime/ray/rollout.py:749-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L866)
+slime 的接入点正好落在已有边界上：`Sample` 本来就保存 rollout token 与可选行为字段，固定基线只新增一个 response-aligned 的 `teacher_log_probs` 字段；默认 converter 又把它作为条件字段送进既有 train dict。[`slime/utils/types.py:93-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L93-L128) `slime/ray/rollout.py::RolloutManager._convert_samples_to_train_data`
 
 ```mermaid
 flowchart LR
@@ -74,7 +76,7 @@ Megatron teacher 的“加载进训练”也不是多驻留一份 GPU model：`T
 
 学生生成结束后，标准 rollout reward hook 会对尚未有 reward 的 Sample 调用 `async_rm`；若配置 `custom_rm_path`，它动态加载 OPD `reward_func`，把返回 JSON 暂存在 `sample.reward`。[`slime/rollout/sglang_rollout.py:250-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L250-L289) [`slime/rollout/rm_hub/__init__.py:55-64`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/rm_hub/__init__.py#L55-L64)
 
-OPD helper 发送完整 `sample.tokens`，设置 `max_new_tokens=0`、`return_logprob=True` 和 `logprob_start_len=0`；多模态 Sample 还会把 image data 一起编码发送。因此外部 teacher 是 prefill scorer，不是第二个 generator。[`slime/rollout/on_policy_distillation.py:8-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/on_policy_distillation.py#L8-L29)
+OPD helper 发送完整 `sample.tokens`，在本基线固定发送 `temperature=0`，并设置 `max_new_tokens=0`、`return_logprob=True` 和 `logprob_start_len=0`；多模态 Sample 还会把 image data 一起编码发送。因此外部 teacher 是 prefill scorer，不是第二个 generator。[`slime/rollout/on_policy_distillation.py:8-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/on_policy_distillation.py#L8-L29)
 
 RolloutManager 转换训练数据前调用自定义 reward postprocess。它丢掉 SGLang 输入 logprob 的第一个无前驱位置，从尾部裁出每条 response span，写入 `sample.teacher_log_probs`，并为“纯蒸馏”返回全零 scalar reward；若要 RL+OPD，源码注释要求用户在此合入任务 reward。[`slime/rollout/on_policy_distillation.py:32-67`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/on_policy_distillation.py#L32-L67)
 
@@ -96,6 +98,68 @@ Megatron 模式没有在 rollout 阶段生产 `Sample.teacher_log_probs`。actor
 | Megatron teacher | actor advantage 前的 forward-only 阶段 | 同一 `DataIterator` 的 `teacher_log_probs` | actor 的 `rollout_data` |
 
 > **设计分析**：SGLang 选择“远端模型自由度”，把 teacher prefill 和 logprob 运输放到 rollout 关键路径；Megatron 选择“输入与并行路径同构”，以同架构 checkpoint、host memory、参数 restore 和额外 pipeline forward 为代价。两者都没有再实现一遍 Sample identity、DP split 或 optimizer loop。
+
+### 5.1 训练内 teacher 的最小配置
+
+下面摘取 `examples/on_policy_distillation/run-qwen3-8B-opd-megatron.sh` 的 OPD 参数；模型结构、数据路径及并行参数仍需沿用该脚本并换成本地路径。
+
+```bash
+--advantage-estimator grpo
+--use-opd
+--opd-type megatron
+--opd-kl-coef 1.0
+--opd-teacher-load /root/Qwen3-8B_torch_dist
+```
+
+这个示例把原始 Qwen3-8B checkpoint 当 teacher 演示自蒸馏；它不会启动独立 HTTP teacher server。中文文档 `docs/zh/advanced/on-policy-distillation.md` 的“两种教师模式”也指两条现成 OPD 接入路径。
+
+### 5.2 第三种部署形态：独立 Megatron teacher server
+
+如果希望 teacher 使用 Megatron 的 TP/PP/CP 前向而独立占用资源，仓内 `server/megatron_server.py::launch` 会创建 `SampleManager` 与一组 `TeacherLogpRayActor`。配置器强制 `debug_train_only=True`、`use_opd=False`、`use_critic=False`，并用 `only_train_params_name_list=["nothing_to_train"]` 冻结参数；这是复用训练初始化与 forward-only 能力的只读评分组，没有执行学生 optimizer 的训练循环。
+
+一个具体请求 `input_ids=[10,20,30]` 有两个有前驱的位置，对应为 token 20 和 30 评分。HTTP `/generate` 将它变成 response length 为 2、loss mask 为 `[1,1]` 的单条训练数据；`SampleManager.submit` 排入 pending，按 DP worker 取走后进入 inflight。每个 DP worker 向本组 ranks 提交 `compute_logp`，最多保留 `pp_size+1` 个在途 batch；完成后合并 PP/CP/TP 输出并写回结果，HTTP 通过 `get_result` 取走结果后返回。完成前 HTTP 会轮询；任务取消会标记 request，已在计算的结果完成后丢弃，不等于撤销 GPU forward。
+
+| 请求字段 | 返回字段和形状 | 含义 |
+|---|---|---|
+| `input_ids`，长度 T | `request_id`、`log_probs`，长度 T−1 | 对输入中后 T−1 个 token 评分，无首个无前驱占位项 |
+| `sample_n=K`，默认 0 | 可选 `sampled_token_ids` / `sampled_log_probs`，T−1 × K | 在每个已有前缀处分布采样 K 个候选，不是自回归生成 K 步 |
+| `label_token_ids`，T−1 × M | 可选 `label_token_log_probs`，T−1 × M | 对每个位置显式列出的 M 个候选评分 |
+
+`TeacherLogpRayActor.compute_logp` 在有采样或候选评分请求时选择 `_get_log_probs_and_optional_samples`，否则调用已有 `compute_log_prob`。输出只由 PP 末段、CP/TP rank 0 提供；其余 ranks 参与前向或通信。**设计分析**：这使外部服务不必 materialize 每个位置的完整词表再传回客户端，但增加了独立 teacher 资源、排队和接口适配成本。
+
+采样也不 all-gather 完整词表。`sample_from_vocab_parallel_logits_without_full_gather` 先以全局 max/sum 计算各 TP shard 的概率质量，TP rank 0 据此抽“由哪个 shard 提供候选”，再由 owner 从本地词表抽样并通过 all-reduce 合并 token id/logprob。下图用同一位置、两个 shard 的示意质量 1 和 3 说明为什么不能把两个 shard 当作等概率来源；这些是解释输入，不是性能测量。
+
+```mermaid
+flowchart TB
+    A["同一前缀位置<br/>TP0 质量 1；TP1 质量 3"] --> B["归一化 shard 概率<br/>TP0 四分之一；TP1 四分之三"]
+    B --> C["rank 0 抽 owner 并广播<br/>示例此槽分给 TP1"]
+    C --> D["TP1 按本地词表条件概率抽 token<br/>加 vocab_start 得全局 ID"]
+    D --> E["all-reduce 合并槽位<br/>仅传 K 个 ID 与 logprob"]
+```
+
+图中先选 shard、再选 shard 内 token，两级概率相乘恢复该 token 的全局概率；直接均匀选 shard 会改变采样分布。`get_label_token_log_probs_from_vocab_parallel_logits` 则收集指定 token 的 logits，再减去全局归一化项，两者均按 reduction chunk 控制临时计算量。
+
+### 5.3 teacher server 的配置与更新边界
+
+| 参数 | 基线默认值 | 约束或用途 |
+|---|---|---|
+| `--teacher-port` / `--teacher-warmup-port` | 7999 / 7999 | HTTP 服务与私有 warmup 端口；环境变量可覆盖默认值 |
+| `--teacher-warmup-timeout-s` | 3000 | warmup 超时，必须为正 |
+| `--teacher-sample-reduction-chunk-size` / `--teacher-label-reduction-chunk-size` | 4096 / 4096 | TP reduction 的行分块，必须为正 |
+| `--megatron-server-max-length` | 0 | 0 关闭长度限制；超限 `/generate` 返回 413 |
+| `--megatron-server-update-timeout-s` | 3600 | 等待 queued/inflight 清空的超时，必须为正 |
+| `--megatron-server-warmup` / `--no-megatron-server-warmup` | 开启 | serving 前私有 HTTP warmup |
+
+上述 8 个配置字段全部来自 `server/arguments.py::add_megatron_server_arguments`，不是统一以 `--megatron-server-*` 命名。其余模型与并行参数仍由通用解析器负责。
+
+`/update_weights_from_disk` 接收 `model_path`（也兼容 `path`/`load`）。HTTP 层设更新状态，拒绝新生成（503），等待 pending 与 inflight 均为 0，再向所有 teacher ranks 调用 `update_from_disk`；该方法通过 `load_other_checkpoint("actor", model_path)` 换入 teacher 组当前模型。所有 ranks 返回后才更新服务侧 `args.load/ref_load`，解除更新状态。相同路径已经载入时跳过；同路径在途请求合并到同一 future，不同路径并发更新返回 409；等待排空超时返回 503，加载异常返回 500。源码没有实现失败后恢复整组旧参数的回滚，不能把返回错误当成旧 teacher 必然完整可用。
+
+服务还暴露 `/healthz`、`/detect`、`/info`、`/get_loads`；其中 `/healthz` 只返回 HTTP 层存活，不证明每个模型 rank 可成功前向。`/generate` 对候选矩阵长度与行宽做检查，对空 token 等提交异常返回错误。
+
+> [!important] 与现成 OPD helper 的边界
+> `on_policy_distillation.post_process_rewards` 读取 `meta_info.input_token_logprobs` 并丢首项；Megatron server 已直接返回长度 T−1 的 `log_probs`。因此不能只把 `rm_url` 改指这个 server，也不能再次照搬“丢首项”。需要自定义 reward/postprocess 适配响应并按 response span 裁剪，填入 `teacher_log_probs`；tokenizer、温度、teacher checkpoint 固定等约束仍需满足。该适配是接入工作，本基线没有在此 helper 内自动完成。
+
+源码阅读路线：`server/arguments.py::{add_megatron_server_arguments,configure_megatron_server_args,validate_megatron_server_args}` → `server/megatron_server.py::{launch,_build_http_app,SampleManager,run_megatron_dp_models_loop_worker}` → `server/logprob_utils.py::TeacherLogpRayActor.compute_logp` → `sample_from_vocab_parallel_logits_without_full_gather` / `get_label_token_log_probs_from_vocab_parallel_logits`。以上 `server/` 均相对 `slime/backends/megatron_utils/`；协议失败边界位于 `_build_http_app`，接口对照位于 `slime/rollout/on_policy_distillation.py::post_process_rewards`。
 
 ## 6. reverse-KL 如何变成 actor 的目标
 
@@ -140,7 +204,7 @@ helper 直接发送学生 token ids，并只读取 SGLang 返回条目的 logpro
 
 ### 7.3 训练输入接口假设 teacher 字段在整个批次中一致存在
 
-默认 converter 只检查 `samples[0].teacher_log_probs` 是否非空；若首条有值，就把所有 Sample 的字段整体加入 train dict。tensorize 随后会逐项转 tensor，因此混合“有 teacher/无 teacher”的 batch 不是受支持的稀疏表示。[`slime/ray/rollout.py:854-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L854-L866) [`slime/ray/rollout.py:75-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L75-L85)
+默认 converter 只检查 `samples[0].teacher_log_probs` 是否 `is not None`；空列表也会进入该分支。若首条不是 `None`，就把所有 Sample 的字段整体加入 train dict。tensorize 随后会逐项转 tensor，因此混合“有 teacher/无 teacher”的 batch 不是受支持的稀疏表示。[`slime/ray/rollout.py:854-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L854-L866) [`slime/ray/rollout.py:75-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L75-L85)
 
 > **设计分析**：默认 OPD 是 batch-level capability，不是逐 Sample 可选插件。做 per-source teacher routing 或混合蒸馏时，应让所有参与 OPD 的 Sample 都产出等长字段，或接管 converter/advantage 逻辑并显式定义未蒸馏样本的 mask；不能仅给部分 Sample 动态加属性。
 
@@ -166,6 +230,10 @@ helper 直接发送学生 token ids，并只读取 SGLang 返回条目的 logpro
 3. 对比 task reward only、zero-reward OPD、RL+OPD 三条曲线，避免把示例的全零 reward 当成混合目标。
 4. SGLang 模式分别观测 teacher queue/prefill/RPC 长尾；Megatron 模式观测额外 forward、host pinned memory 与 restore 时间。
 5. 对 $\lambda_{\mathrm{OPD}}$ 从小值开始 sweep，同时观察基础 advantage、`opd_reverse_kl`、clip fraction 与 gradient norm；reducer 的统计口径见第 15 页。
+
+## 10. 基线后已知变更
+
+提交 `1da1bb19e96adb1be4ff4b40d08a23b4b6ce3692` 将 SGLang teacher helper 的 `sampling_params.temperature` 从 0 改为 `args.rollout_temperature`。这是本页基线之后的修正；第 4 节仍描述冻结基线的 payload，不据此把整页升级到新版本。
 
 ## Related Pages
 

@@ -4,14 +4,14 @@ title: "slime Rollout 后端扩展：先选对扩展边界，再决定是否替�
 
 # slime Rollout 后端扩展：先选对扩展边界，再决定是否替换引擎
 
-> **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **文档与测试基线**：同一提交下 `README_zh.md`、`docs/zh/get_started/customization.md`、`docs/zh/advanced/external-rollout-engines.md`、`examples/fully_async/` 与 `tests/plugin_contracts/`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：slime 的 rollout 扩展不是一个从“轻量插件”逐级升级到“重型插件”的单一路径，而是四种彼此独立的改动：外部 SGLang 只改变服务由谁部署；自定义生成函数只改变单次请求和 Sample 的生成方式；替换 rollout 函数会改变整轮数据生成流程；真正接入新后端则必须接管推理引擎生命周期、资源拓扑、路由器、权重更新和故障恢复。前两类函数钩子有文档和接口测试支撑；完整后端的启动位置没有抽象成公开 `Protocol` 或注册分发器，只存在一组目前由 SGLang 具体 actor 实现的内部约定。把四者误当成同一层插件，最常见的结果是“文本能生成”，但旧 SGLang 仍被启动，或者权重更新、样本回收、故障恢复在第一次训练迭代后失效。[`README_zh.md:22-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L22-L24) [`rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) [`rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498)
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
+> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
+> **主题**：单样本函数、整轮函数、buffer 插件与 external 部署的区别；新推理后端需要承接的内部接口。
+> **适用范围**：扩展边界；请求机制归 13，恢复归 18，agent 运行时归 24。
+> **最近更新**：2026-09-10。按固定源码核实接口、边界与诊断证据。
 
-本文只判断**应在哪个边界扩展**。请求内容、中止与部分结果状态机归 [[13_slime_sglang_rollout_engine_analysis]]；Ray 对象层级归 [[11_slime_ray_control_plane_analysis]]；权重提交事务归 [[16_slime_weight_sync_analysis]]。
+slime 的 rollout 扩展不是一个从“轻量插件”逐级升级到“重型插件”的单一路径，而是四条主要改动轴及独立 buffer 插件：外部 SGLang 只改变服务由谁部署；自定义生成函数只改变单次请求和 Sample 的生成方式；替换 rollout 函数会改变整轮数据生成流程；真正接入新后端则必须接管推理引擎生命周期、资源拓扑、路由器、权重更新和故障恢复。前两类函数钩子有文档和接口测试支撑；完整后端的启动位置没有抽象成公开 `Protocol` 或注册分发器，只存在一组目前由 SGLang 具体 actor 实现的内部约定。把四者误当成同一层插件，最常见的结果是“文本能生成”，但旧 SGLang 仍被启动，或者权重更新、样本回收、故障恢复在第一次训练迭代后失效。[`README_zh.md:22-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L22-L24) [`slime/ray/rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) [`slime/ray/rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498)
+
+本文只判断**应在哪个边界扩展**。请求内容、中止与部分结果状态机归 [[13_slime_sglang_rollout_engine_analysis]]；Ray 对象层级归 [[11_slime_ray_control_plane_analysis]]；权重发布协议归 [[16_slime_weight_sync_analysis]]。
 
 ## 1. 问题背景：所谓“换 rollout”其实混合了四个问题
 
@@ -39,7 +39,7 @@ flowchart TB
     O --> RF["Rollout function"]
     B --> NB["新 backend 适配"]
     ES --> SP["仍走 SGLang 协议"]
-    CG --> SP
+    CG --> CP["请求协议由插件自定义<br/>默认 outer 生命周期仍管理 SGLang"]
     RF --> MS["Manager 仍先启动 servers"]
     NB --> BC["补齐引擎更新与恢复接口"]
 ```
@@ -57,7 +57,7 @@ SGLang 不是藏在一个纯 `generate(tokens)` 接口后面。固定基线至�
 | session 与行为 metadata | 请求可用 consistent-hashing header，并条件请求 routed experts；返回 token/logprob 写入 Sample | 通用 response 若只含 text/tokens，会丢一致性与重放所需语义 |
 | 内存与热更新控制 | engine 暴露 tagged resume、pause/continue、disk/distributed/tensor update 与 post-process | 通用 lifecycle 若只有 start/stop，无法支持 colocate 与量化热更新 |
 
-证据分别位于 SGLang 参数包装器、server-group 启动分支、默认请求路径和 engine facade。[`arguments.py:100-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L100-L118) [`rollout.py:1214-1258`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1214-L1258) [`sglang_rollout.py:175-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L218) [`sglang_engine.py:337-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L337-L470)
+证据分别位于 SGLang 参数包装器、server-group 启动分支、默认请求路径和 engine facade。[`slime/backends/sglang_utils/arguments.py:100-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L100-L118) [`slime/ray/rollout.py:1214-1258`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1214-L1258) [`slime/rollout/sglang_rollout.py:175-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L218) `slime/backends/sglang_utils/sglang_engine.py::SGLangEngine.pause_generation/continue_generation/release_memory_occupation/resume_memory_occupation`
 
 > **设计分析：只保留公共能力会带来什么问题**
 >
@@ -72,33 +72,49 @@ SGLang 不是藏在一个纯 `generate(tokens)` 接口后面。固定基线至�
 
 ### 3.1 Custom generate：改请求和 Sample 行为
 
-公开参数把 custom generate 定义为仅替换默认 rollout 里的 `generate(args, sample, sampling_params)`，用途是 multi-turn、function calling 等特殊生成逻辑。[`arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483) 文档给出的稳定签名是异步 callable，返回一个 `Sample` 或一次 execution 拆出的 `list[Sample]`；fanout siblings 必须共享 `rollout_id`。[`docs/zh/get_started/customization.md:71-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/customization.md#L71-L91)
+公开参数把 custom generate 定义为仅替换默认 rollout 里的 `generate(args, sample, sampling_params)`，用途是 multi-turn、function calling 等特殊生成逻辑。[`slime/utils/arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483) 文档给出的稳定签名是异步 callable，返回一个 `Sample` 或一次 execution 拆出的 `list[Sample]`；fanout siblings 必须共享 `rollout_id`。[`docs/zh/get_started/customization.md:71-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/customization.md#L71-L91)
 
-源码在默认信号量和单样本 DP 上下文内，选择 Sample 自带的生成路径或全局自定义路径，随后仍执行样本钩子和 reward 计算；因此这个钩子替换的是“如何完成这一条 Sample”，而不是默认准入控制、分组 RM 或整轮收集逻辑。[`sglang_rollout.py:224-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L289) 接口测试固定了前三个参数名，并覆盖默认分支、单样本覆盖、全局覆盖与 list 返回。[`tests/plugin_contracts/test_plugin_generate_contracts.py:90-100`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_generate_contracts.py#L90-L100) [`tests/plugin_contracts/test_plugin_generate_contracts.py:126-190`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_generate_contracts.py#L126-L190)
+源码在默认信号量和单样本 DP 上下文内，选择 Sample 自带的生成路径或全局自定义路径，随后仍执行样本钩子和 reward 计算；因此这个钩子替换的是“如何完成这一条 Sample”，而不是默认分组收集与过滤、分组 RM 或整轮收集逻辑。[`slime/rollout/sglang_rollout.py:224-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L289) 接口测试固定了前三个参数名，并覆盖默认分支、单样本覆盖、全局覆盖与 list 返回。[`tests/plugin_contracts/test_plugin_generate_contracts.py:90-100`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_generate_contracts.py#L90-L100) [`tests/plugin_contracts/test_plugin_generate_contracts.py:126-190`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_generate_contracts.py#L126-L190)
 
-**能力边界**：custom generate 可以在 callable 内请求另一服务，这是 Python 可编程性带来的能力；但源码并未因此把该服务纳入 rollout backend。默认 outer loop 的 abort 仍查询 SGLang router 的 `/workers` 并调用 SGLang server abort，再等待 pending tasks。[`sglang_rollout.py:339-371`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L339-L371)
+**能力边界**：custom generate 可以在 callable 内请求另一服务，这是 Python 可编程性带来的能力；但源码并未因此把该服务纳入 rollout backend。默认 outer loop 的 abort 仍查询 SGLang router 的 `/workers` 并调用 SGLang server abort，再等待 pending tasks。[`slime/rollout/sglang_rollout.py:339-371`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L339-L371)
 
 > **设计分析**：若 custom generate 把请求发给自研服务，必须自行定义取消与超时；默认 abort 只能停止 SGLang workers，不能证明自研服务已经停止计算。若这一差异会破坏 partial、资源回收或版本边界，就已越过 custom-generate 的安全适用范围。
 
 ### 3.2 Rollout function：改整轮数据编排
 
-`--rollout-function-path` 的公开接口参数是 `args / rollout_id / data_source / evaluation`，训练输出 Sample 至少要设置 `tokens`、`response_length`、`reward` 和 `status`。[`arguments.py:328-340`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L328-L340) 返回包装器把训练和评估分别表示为 `RolloutFnTrainOutput` 与 `RolloutFnEvalOutput`，并兼容旧式裸返回值。[`base_types.py:7-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/base_types.py#L7-L25)
+`--rollout-function-path` 的公开接口参数是 `args / rollout_id / data_source / evaluation`，训练输出 Sample 至少要设置 `tokens`、`response_length`、`reward` 和 `status`。[`slime/utils/arguments.py:328-340`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L328-L340) 返回包装器把训练和评估分别表示为 `RolloutFnTrainOutput` 与 `RolloutFnEvalOutput`，并兼容旧式裸返回值。[`slime/rollout/base_types.py:7-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/base_types.py#L7-L25)
 
 对应 contract test 不只比较签名，还检查训练 group 大小、Sample 基本字段和评估字典结构，并显式拒绝缺 reward 的实现。[`tests/plugin_contracts/test_plugin_rollout_contracts.py:97-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_rollout_contracts.py#L97-L146) [`tests/plugin_contracts/test_plugin_rollout_contracts.py:149-185`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_rollout_contracts.py#L149-L185)
 
-官方 fully-async 实例展示了这层真正能改什么：后台线程跨 rollout 保持固定在途池，完成 group 进入队列，abort group 回到 DataSource；它仍复用默认 `generate_and_rm_group`，且明确不支持 evaluation、只有 best-effort 的跨轮次顺序和未接通的 partial resume。[`fully_async_rollout.py:1-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L1-L23) [`examples/fully_async/README.md:42-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L42-L83)
+官方 fully-async 实例展示了这层真正能改什么：后台线程跨 rollout 保持固定在途池，完成 group 进入队列，abort group 回到 DataSource；官方要求在 `train_async.py` 上叠加该函数；它仍复用默认 `generate_and_rm_group`，入口拒绝 evaluation，跨轮次顺序为 best effort；README 的 partial 限制及原对象回填边界见 [[13_slime_sglang_rollout_engine_analysis]]。[`slime/rollout/fully_async_rollout.py:1-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L1-L23) [`examples/fully_async/README.md:42-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L42-L83)
 
-**能力边界**：rollout function 可以重排“何时取数据、何时提交、何时返回”，但 `RolloutManager.__init__` 先调用 `start_rollout_servers`，之后才加载 rollout function；server 初始化 handle 也在 Manager 完成构造前等待。[`rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498) 因而它不是关闭或替换默认 backend 的生命周期 hook。
+**能力边界**：rollout function 可以重排“何时取数据、何时提交、何时返回”，但 `RolloutManager.__init__` 先调用 `start_rollout_servers`，之后才加载 rollout function；server 初始化 handle 也在 Manager 完成构造前等待。[`slime/ray/rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498) 因而它不是关闭或替换默认 backend 的生命周期 hook。
+
+### 3.3 Forge、sleep 和 Sample hooks 是三种不同的替换
+
+`slime.rollout.forge_load.generate_rollout` 读 `--load-forge-rollout-data` 指定的 `.pt`，把 dict 恢复为 Sample，保留原 `sample.rollout_id`。字面路径每轮复用同一文件，eval 返回空；模板路径 `{rollout_id}` 在训练文件缺失时回退到 0，eval 查 `eval_<id>` 且不回退训练样本。训练找不到文件时抛 RuntimeError。它不设置 debug-train-only，适合保留真实 SGLang、权重更新和显存切换的内存实验。
+
+`slime.rollout.sleep_rollout.sleep` 每小时 sleep 并日志计数，永不返回训练 batch。因为 Manager 已先启动服务，可在此时人工压测/profile；它不是 engine 的显存 sleep API，使用过程归 [[18_slime_fault_tolerance_observability_analysis]]。
+
+`--rollout-sample-hook-path` 更窄：它不替换 generation，而是在 generation 后、RM 前逐 Sample 叶子执行 hook。支持同步/异步、原地改写返回 None 或返回替换 Sample，保持嵌套 list；其他返回类型显式报错。签名可接 `evaluation`、当前 round `rollout_id`，不接收的关键字会被过滤。生成与完整 RM 分派归 [[13_slime_sglang_rollout_engine_analysis]]。
+
+### 3.4 Rollout buffer 插件：把生产者移到独立服务
+
+`slime_plugins/rollout_buffer` 是仓内另一种组合：FastAPI buffer 服务持有按 `instance_id` 分组的数据，`discover_generators` 扫 `generator/*.py` 的 `TASK_TYPE/run_rollout`，可附加 `transform_group/is_valid_group/get_group_data_meta_info`。`/start_rollout` 启动生产者，`/buffer/write` 写入，`/get_rollout_data` 取走有效组；调用侧 `rollout_buffer_example.py::generate_rollout_async` 轮询、校验 `uid/instance_id/messages/reward/extra_info`，用 `MultiTurnLossMaskGenerator` 从 messages 构造 token/mask，再把 groups 放入 data buffer。
+
+这改变的是外部生产队列与整轮函数，仍把 SGLang router 地址交给 generator；不会替换 Manager 的 engine 生命周期。它也不是 `fully_async_rollout.AsyncRolloutWorker` 的输出队列：后者在同一进程保留真实 Sample，前者经 HTTP 传消息记录并重新构造训练数据。示例明确拒绝 eval，且不能从“插件目录存在”推导出与最新 Sample、partial、logprob 接口全覆盖；接入需运行对应契约验证。
+
+紧凑阅读路线：`slime/ray/rollout.py::RolloutManager.__init__`（同时加载 data-source、rollout、eval、reward-post-process、convert-samples-to-train-data 函数）→ `slime/rollout/forge_load.py::_resolve_path/generate_rollout`、`slime/rollout/sleep_rollout.py::sleep`、`slime/rollout/sample_hooks.py::apply_rollout_sample_hooks` → `slime_plugins/rollout_buffer/buffer.py::discover_generators/BufferQueue.get/RolloutBuffer.read` 与 `rollout_buffer_example.py::generate_rollout_async`。SFT 替换例见 [[28_slime_sft_path_and_loss_mask_analysis]]，eval 配置归 [[27_slime_evaluation_path_analysis]]。
 
 ## 4. 外部 SGLang：改变服务由谁部署，不改变通信协议
 
-external 路径会发现 `/server_info` 或 `/get_server_info`，推断 GPU 数、并行信息与 regular/prefill/decode worker 类型，并把 workers 注册到 router；它与 `--sglang-config` 互斥，因为前者由外部系统管理 engine 生命周期，后者由 slime 启动 engine。[`docs/zh/advanced/external-rollout-engines.md:20-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L20-L48)
+参数解析校验阶段通过 `apply_external_engine_info_to_args` 完成发现，而不是等首个 rollout 请求才连接。external 路径会发现 `/server_info` 或 `/get_server_info`，推断 GPU 数、并行信息与 regular/prefill/decode/encoder worker 类型，并把 workers 注册到 router；它与 `--sglang-config` 互斥，因为前者由外部系统管理 engine 生命周期，后者由 slime 启动 engine。[`docs/zh/advanced/external-rollout-engines.md:20-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L20-L48)
 
-源码中的 external adapter 仍导入并创建零 GPU 的 `SGLangEngine` Ray proxy，调用其 `init` 完成参数校验和 router 注册，再把默认 router 写回 `args.sglang_model_routers`。[`external.py:195-250`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L195-L250) [`sglang_engine.py:169-187`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L169-L187) 发现测试也要求 server info 能还原 TP/PP/EP/MoE-DP topology，而不是只检查一个通用 `/health`。[`tests/test_external_sglang_engines.py:36-65`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_external_sglang_engines.py#L36-L65)
+源码中的 external adapter 仍导入并创建零 GPU 的 `SGLangEngine` Ray proxy，调用其 `init` 完成参数校验和 router 注册，再把默认 router 写回 `args.sglang_model_routers`。[`slime/backends/sglang_utils/external.py:195-250`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L195-L250) [`slime/backends/sglang_utils/sglang_engine.py:169-187`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L169-L187) 发现测试也要求 server info 能还原 TP/PP/EP/MoE-DP topology，而不是只检查一个通用 `/health`。[`tests/test_external_sglang_engines.py:36-65`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_external_sglang_engines.py#L36-L65)
 
-external 的资源边界确实移动了：placement group 不为外部 rollout GPU 预留本地 bundle，proxy actor 本身申请零 GPU；实际 serving GPU 由外部系统拥有。[`placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117) [`external.py:206-227`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L206-L227)
+external 的资源边界确实移动了：placement group 不为外部 rollout GPU 预留本地 bundle，proxy actor 本身申请零 GPU；实际 serving GPU 由外部系统拥有。[`slime/ray/placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117) [`slime/backends/sglang_utils/external.py:206-227`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L206-L227)
 
-但是协议边界没有移动：external 文档仍要求 SGLang HTTP endpoint、server info 和选定的权重通信路径；disk transport 继续调用 SGLang 的 `update_weights_from_disk`。[`docs/zh/advanced/external-rollout-engines.md:50-72`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L50-L72) external server 的 `recover` 只是告警并跳过，官方部署清单也明确说 fault-tolerance 恢复不覆盖它。[`external.py:150-180`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L150-L180) [`docs/zh/advanced/external-rollout-engines.md:95-103`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L95-L103)
+但是协议边界没有移动：external 文档仍要求 SGLang HTTP endpoint、server info 和选定的权重通信路径；disk transport 继续调用 SGLang 的 `update_weights_from_disk`。[`docs/zh/advanced/external-rollout-engines.md:50-72`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L50-L72) external server 的 `offload/onload/onload_weights/onload_kv` 返回空列表，不管理外部显存；`recover` 只是告警并跳过，官方部署清单也明确说 fault-tolerance 恢复不覆盖它。[`slime/backends/sglang_utils/external.py:150-180`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/external.py#L150-L180) [`docs/zh/advanced/external-rollout-engines.md:95-103`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L95-L103)
 
 > **设计分析**：external 是“同一种 backend 的远程部署模式”。若把任意生成服务伪装成 external SGLang，就必须模仿 server-info、router worker、热更新、pause/flush/version 等 SGLang 语义；这已经是协议重实现，不是地址配置。
 
@@ -131,33 +147,29 @@ sequenceDiagram
 
 这张图刻意保留了默认 rollout 循环：custom generate 只替换单 Sample 的生成叶子，不接管 DataSource、并发收集、准入、中止、训练转换或权重更新。
 
-1. CLI 用 `--custom-generate-function-path` 指向异步函数；参数层只承诺替换单 Sample 的生成步骤。[`arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483)
-2. `RolloutManager` 先创建默认 servers 与 DataSource，再加载默认 rollout function；custom generate 本身要到单 Sample 执行时才动态加载。[`rollout.py:474-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L474-L498) [`sglang_rollout.py:250-260`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L250-L260)
-3. 默认 `generate_rollout` 从 DataSource 取 group，进入现有的并发收集、动态过滤、abort 与 partial 回填逻辑。[`sglang_rollout.py:400-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L470) [`sglang_rollout.py:627-649`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L627-L649)
-4. `generate_and_rm` 在 semaphore 内调用自研函数；返回后仍由默认路径补 reward、执行 hooks，并允许 fanout list。[`sglang_rollout.py:242-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L242-L289)
-5. Manager 接收 `RolloutFnTrainOutput`，在 flatten 前验证 compact siblings 的 `rollout_id`，随后进入既有 Sample→train-data 边界。[`rollout.py:671-701`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L701)
+1. CLI 用 `--custom-generate-function-path` 指向异步函数；参数层只承诺替换单 Sample 的生成步骤。[`slime/utils/arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483)
+2. `RolloutManager` 先创建默认 servers 与 DataSource，再加载默认 rollout function；custom generate 本身要到单 Sample 执行时才动态加载。[`slime/ray/rollout.py:474-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L474-L498) [`slime/rollout/sglang_rollout.py:250-260`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L250-L260)
+3. 默认 `generate_rollout` 从 DataSource 取 group，进入现有的并发收集、动态过滤、abort 与 partial 回填逻辑。[`slime/rollout/sglang_rollout.py:400-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L470) [`slime/rollout/sglang_rollout.py:627-649`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L627-L649)
+4. `generate_and_rm` 在 semaphore 内调用自研函数；返回后仍由默认路径补 reward、执行 hooks，并允许 fanout list。[`slime/rollout/sglang_rollout.py:242-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L242-L289)
+5. Manager 接收 `RolloutFnTrainOutput`，在 flatten 前验证 compact siblings 的 `rollout_id`，随后进入既有 Sample→train-data 边界。[`slime/ray/rollout.py:671-701`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L701)
 
 这条路径验证的是 **token/Sample/奖励/训练兼容性**，不是 backend 完成度。它有三个明确停止条件：默认 SGLang 的额外资源已不可接受；自研服务需要自己的 cancel/session/router 语义；训练权重必须热更新到自研服务。一旦命中任一条件，就应升级为 backend 适配，而不是继续在 custom generate 内堆控制面旁路。
 
 ## 6. 接入全新后端需要满足的内部约定：远不止 `generate`
 
-固定基线的服务启动点不是后端分发器：文件直接导入 `SGLangEngine`，`ServerGroup.start_engines` 也直接构造该具体 actor。[`rollout.py:17-19`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L17-L19) [`rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) 因此下表不是公开稳定 API，而是**根据调用点反推出的最小内部接口要求**：
+固定基线的服务启动点不是后端分发器：文件直接导入 `SGLangEngine`，`ServerGroup.start_engines` 也直接构造该具体 actor。[`slime/ray/rollout.py:17-19`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L17-L19) [`slime/ray/rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) 因此下表不是公开稳定 API，而是**根据调用点反推出的最小内部接口要求**：
 
-| 适配面 | 最小义务 | 漏掉后的典型失败 |
+| 适配面 | 方法与调用点 | 缺失后的边界 |
 |---|---|---|
-| 参数与能力发现 | 解析 backend 参数；校验模型、精度和可用能力；不能继续无条件依赖 SGLang `ServerArgs` | CLI 接受参数但启动时才发现 topology 或 endpoint 不匹配 |
-| engine 生命周期 | init、ready/health、shutdown；managed 与 external 两种所有权要分开 | 启动成功但 health monitor 误杀，或 external 进程被错误回收 |
-| 请求与取消 | token-in/token-out、logprob、session affinity、abort；保持 Sample 所需 metadata | 文本可用但重分词后 token/logprob/mask 错位，或 abort 后请求仍在执行 |
-| 服务拓扑 | 描述每 engine 的 GPU 数、offset、并行配置及 worker role | Ray 放置与实际 GPU 不一致；MoE/PD 更新发错 rank |
-| 内存生命周期 | 在 colocate 时支持可等待的 offload/onload，或明确拒绝该模式 | trainer 与 serving 同时占 HBM，或恢复过早读到未就绪 engine |
-| 权重提交 | 与所选 transport 配套的 connect、pause、flush、transfer/reload、version、resume | 在途请求跨版本、旧 KV 未清、部分 rank 停留在旧权重 |
-| 恢复 | 发现故障、界定多节点 engine 故障单元、重建、重新接入 updater 并恢复权重 | 新进程能响应请求但仍持初始 checkpoint |
+| 参数与发现 | `parse_args/slime_validate_args` → `apply_external_engine_info_to_args`；managed 读取 `ServerArgs` | 地址可达不代表 topology、worker role 兼容 |
+| 生命周期 | `ServerGroup.start_engines` → `SGLangEngine.init`；monitor → `health_generate`；清理 → `shutdown` | ready、停止和进程所有权必须明确 |
+| 请求与取消 | `generate` → HTTP `/generate`；`abort` → `abort_servers_until_idle` → `/abort_request` | 不等同于 Python `generate` 单函数接口 |
+| 拓扑 | `RolloutManager.get_updatable_engines_and_lock` 返回 GPU counts/offsets/parallel configs | updater 必须看到与服务一致的 rank 布局 |
+| 显存生命周期 | `ServerGroup.offload/onload` → `release_memory_occupation/resume_memory_occupation` | 无法支持则显式拒绝 colocate/offload |
+| 权重发布 | updater → `pause_generation/flush_cache/update_weights_from_tensor/update_weights_from_distributed/update_weights_from_disk/continue_generation`，按 transport 选择 | 完整顺序和 commit 边界归 [[16_slime_weight_sync_analysis]] |
+| 恢复 | `RolloutManager.recover_updatable_engines` → `RolloutServer.recover`；trainer → `connect_rollout_engines/update_weights` | 规范恢复链归 [[18_slime_fault_tolerance_observability_analysis#3. 推理引擎的局部恢复：检测、清理、重建、重新加载当前版本|引擎恢复]] |
 
-这些义务都有具体调用者。Manager 向 updater 暴露 updatable engines、每 engine GPU 数/offset/parallel config 与 `num_new_engines`；恢复后的 engine 会在下一次更新前重新 connect。[`rollout.py:555-584`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L584) [`actor.py:592-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L592-L636)
-
-权重侧根据 delta/disk、full/disk、colocate tensor IPC 和 full/NCCL 选择不同 updater，而这些 updater 最终都面向 concrete engine handles。[`actor.py:151-181`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L181) full/NCCL 和 colocate updater 都显式执行 pause→flush→transfer→continue；disk reload 还可查询 version 并在 CI 中拒绝部分 engine 版本不一致。[`update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) [`update_weight_from_tensor.py:276-331`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L276-L331) [`actor_group.py:227-269`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L227-L269)
-
-恢复侧同样不是一个 `restart()`：health monitor 调 concrete `health_generate`，失败时按 `nodes_per_engine` 杀掉整个多节点 engine 并把 handles 标成 `None`；下一次权重更新前才由 server 重建并重新覆盖权重。[`health_monitor.py:137-177`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L137-L177) [`rollout.py:384-425`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L384-L425)
+以上是固定调用点反推的内部义务，不是已发布的 backend Protocol。完整方法外观读 `slime/backends/sglang_utils/sglang_engine.py::SGLangEngine`，生命周期调用者读 `slime/ray/rollout.py::ServerGroup/RolloutServer/RolloutManager`。
 
 > **设计分析**：新后端可以选择实现同名的引擎适配外观，也可以连同服务、更新器和监控一起替换；但只替换请求函数无法满足上述接口要求。前者改动小，却会继承为 SGLang 设计的接口；后者边界更清楚，但会形成派生实现，而不是一个配置插件。
 
@@ -172,12 +184,12 @@ sequenceDiagram
 
 验收新扩展时，至少主动触发以下失败路径：
 
-1. **资源重复**：custom hook 已请求外部服务，但默认 SGLang 是否仍被 Manager 启动并占 GPU？启动顺序见 [`rollout.py:474-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L474-L498)。
-2. **取消悬空**：动态采样结束或权重更新触发 abort 时，非 SGLang 请求是否真的停止，而不是只在本地把 Sample 标为 aborted？默认外层只控制 SGLang workers。[`sglang_rollout.py:339-371`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L339-L371)
+1. **资源重复**：custom hook 已请求外部服务，但默认 SGLang 是否仍被 Manager 启动并占 GPU？启动顺序见 [`slime/ray/rollout.py:474-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L474-L498)。
+2. **取消悬空**：动态采样结束或权重更新触发 abort 时，非 SGLang 请求是否真的停止，而不是只在本地把 Sample 标为 aborted？默认外层只控制 SGLang workers。[`slime/rollout/sglang_rollout.py:339-371`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L339-L371)
 3. **数据悄悄错位**：返回值是否满足接口测试要求的字段，并继续保证 token、mask、logprob 与扇出标识的训练语义完整？基本要求见 [`tests/plugin_contracts/test_plugin_rollout_contracts.py:97-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/plugin_contracts/test_plugin_rollout_contracts.py#L97-L146)，完整数据语义见 [[12_slime_sample_datasource_analysis]]。
-4. **半版本服务**：每个 serving rank 是否在 resume 前完成更新、清掉旧 cache 并报告同一 version？现有 disk 路径会在 CI 中逐 engine 核验 version。[`actor_group.py:244-269`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L244-L269)
-5. **恢复到初始权重**：engine 重建后是否重新连接 updater 并覆盖到当前 actor 版本？现有流程以 `num_new_engines` 触发 reconnect。[`actor.py:596-632`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L596-L632)
-6. **能力假兼容**：不支持 PD、routing replay、colocate offload、量化 post-process 或某种 transport 时，是否在配置期 fail fast，而不是运行中静默降级？SGLang 参数校验本身就在解析后执行 topology 约束与互斥检查。[`arguments.py:144-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L144-L186)
+4. **半版本服务**：每个 serving rank 是否在 resume 前完成更新、清掉旧 cache 并报告同一 version？现有 disk 路径会在 CI 中逐 engine 核验 version。[`slime/ray/actor_group.py:244-269`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L244-L269)
+5. **恢复到初始权重**：engine 重建后是否重新连接 updater 并覆盖到当前 actor 版本？现有流程以 `num_new_engines` 触发 reconnect。[`slime/backends/megatron_utils/actor.py:596-632`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L596-L632)
+6. **能力假兼容**：不支持 PD、routing replay、colocate offload、量化 post-process 或某种 transport 时，是否在配置期 fail fast，而不是运行中静默降级？SGLang 参数校验本身就在解析后执行 topology 约束与互斥检查。[`slime/backends/sglang_utils/arguments.py:144-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L144-L186)
 
 最终判断标准不是“能否返回一段文本”，而是**改动是否停在它声称的职责边界内**。只改变数据行为，就使用稳定的函数接口；一旦负责资源、版本或故障恢复，就应明确自己正在实现新的后端。
 
@@ -188,9 +200,9 @@ sequenceDiagram
 
 三个锚点都落在**扩展边界本身**上，而不是落在“会不会支持某个新引擎”上：
 
-- **router 参数面还没有统一到 `--sglang-` 前缀约定。** `add_sglang_router_arguments` 顶上写着 “TODO: use all sglang router arguments with `--sglang-router` prefix”；当前实现是三个手写 `--sglang-router-*` 参数加一次 `RouterArgs.add_cli_args(parser, use_router_prefix=True, exclude_host_port=True)`。[`sglang_utils/arguments.py:8-35`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L8-L35) 第 2 节说“全量上游参数被前缀包装后暴露”对 `ServerArgs` 成立，对 router 只是部分成立；**由此可推断**，依赖具体 router flag 名的外部部署脚本要预期这层命名还会动。
-- **多模型/多 server 的权重更新是已声明的未完成项。** `_get_updatable_server` 的 docstring 直接写 “multi-model weight update is not yet supported”，因此第 6 节表格里的“权重提交”义务目前只对单一可更新 server 成立。[`rollout.py:555-559`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L559) 想在一个作业里同时在线更新两套 serving 模型的扩展，现在没有可复用的上游路径。
-- **rollout-function 层的 partial resume 仍未接通。** 官方 fully-async 示例的 Limitations 一节写明 “TODO: partial-rollout-style resume for `ABORTED` trajectories is not yet wired; for now the trajectory is re-queued and starts over”。[`examples/fully_async/README.md:77-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L77-L83) 这说明第 3.2 节所说“rollout function 可以重排何时取数据、何时提交、何时返回”的能力上限，当前止于整条轨迹重做，而不是续跑。
+- **router 参数面还没有统一到 `--sglang-` 前缀约定。** `add_sglang_router_arguments` 顶上写着 “TODO: use all sglang router arguments with `--sglang-router` prefix”；当前实现是三个手写 `--sglang-router-*` 参数加一次 `RouterArgs.add_cli_args(parser, use_router_prefix=True, exclude_host_port=True)`。[`slime/backends/sglang_utils/arguments.py:8-35`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L8-L35) 第 2 节说“全量上游参数被前缀包装后暴露”对 `ServerArgs` 成立，对 router 只是部分成立；**由此可推断**，依赖具体 router flag 名的外部部署脚本要预期这层命名还会动。
+- **多模型/多 server 的权重更新是已声明的未完成项。** `_get_updatable_server` 的 docstring 直接写 “multi-model weight update is not yet supported”，因此第 6 节表格里的“权重提交”义务目前只对单一可更新 server 成立。[`slime/ray/rollout.py:555-559`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L559) 想在一个作业里同时在线更新两套 serving 模型的扩展，现在没有可复用的上游路径。
+- **rollout-function 层的 partial resume 仍未接通。** 官方 fully-async 示例的 Limitations 一节写明 “TODO: partial-rollout-style resume for `ABORTED` trajectories is not yet wired; for now the trajectory is re-queued and starts over”。[`examples/fully_async/README.md:77-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L77-L83) 这是示例声明的支持范围；源码实际回填原 Sample 对象，没有统一清空 token，不能据此断言所有 custom generate 都必定从零重做。具体边界由 [[13_slime_sglang_rollout_engine_analysis]] 维护。
 
 固定基线里**没有**任何注释或文档提到要把 engine 启动点抽象成 `Protocol`、注册表或后端分发器。第 6 节所说“内部约定不是公开 API”因此是当前的稳定状态，而不是一个即将被替换的过渡形态——把它当成“等官方出插件接口”来规划，在这个基线上没有依据。
 

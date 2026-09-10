@@ -4,9 +4,12 @@ title: "slime 快速上手与配置指南——把 CLI 看作跨组件配置入�
 
 # slime 快速上手与配置指南——把 CLI 看作跨组件配置入口
 
-> **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-18 · **类型**：Quickstart / Configuration Guide
-> **结论先行**：slime 的参数不是彼此独立的“选项表”，而是 Ray、Megatron 与 SGLang 共同使用的一套系统配置。参数首先由三个解析器合并到同一个命名空间，再按资源、模型、批次与生命周期约束进行归一化；但角色 YAML、SGLang 拓扑和 Ray 实际可用资源要到对象创建时才完全展开。因此，CLI 能通过解析，不代表资源一定放得下、各角色一定能初始化、生命周期组合也一定可执行。
+> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
+> **主题**：本页从官方启动脚本介绍配置入口，再解释 namespace 合并、角色与服务 YAML、组合约束及失败定位。
+> **适用范围**：固定基线的 Megatron 与 SGLang 配置；算法和运行机制见专题页。
+> **最近更新**：2026-09-10。核实控制面、配置与运行边界。
+
+slime 的参数不是彼此独立的“选项表”，而是 Ray、Megatron 与 SGLang 共同使用的一套系统配置。参数首先由三个解析器合并到同一个命名空间，再按资源、模型、批次与生命周期约束进行归一化；但角色 YAML、SGLang 拓扑和 Ray 实际可用资源要到对象创建时才完全展开。因此，CLI 能通过解析，不代表资源一定放得下、各角色一定能初始化、生命周期组合也一定可执行。
 
 本页保留一条最短可运行路径，但重点是说明哪些配置必须成组核对：先确认模型定义、GPU 数量、并行拓扑、批次大小和生命周期彼此一致，再调整单个推理引擎的性能参数。
 
@@ -116,11 +119,12 @@ rollout 总卡数为 $R$。本地分离部署申请 $A+R$ 个 Ray bundles；colo
 - `rollout_num_gpus` 的 parser 默认值是 `None`；只有 colocate 且未显式设置时，slime 才把它派生为 $A$。[`slime/utils/arguments.py:44-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L44-L53) [`slime/utils/arguments.py:1931-1946`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1931-L1946)
 - `--rollout-num-gpus 0` 不是“自动选择”，而是只保留 router、不启动本地 engine；代码为它生成空 server group 配置。[`slime/ray/rollout.py:1274-1298`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1298)
 - colocate 默认把 train 与 rollout offload 都打开；`release_train` 则关闭 train offload、保留 rollout offload。[`slime/utils/arguments.py:1929-1951`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1951)
-- `train_async.py` 直到进入 `train()` 才断言禁止 colocate，因此这组 CLI 可以完成解析与前置校验，随后才失败。[`train_async.py:9-20`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L20)
 
 > **设计分析**：非共置模式应把 `rollout_num_gpus` 当作必填项，尽管 argparse 没有设置 `required=True`。否则资源计算最终会执行 `A + None`；这是“参数解析成功、系统组装失败”的最小例子。
 
 若 Ray 集群实际 GPU 不足，placement group 会一直等待，但每 30 秒记录已注册和可用的 GPU 数；“一直卡住”可能只是资源需求无法满足，不一定是代码死锁。[`slime/ray/placement_group.py:42-67`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L42-L67)
+
+`--offload` 是组合别名：归一化时把 `offload_train/offload_rollout` 都置 True，再删除 `args.offload`；后续 colocate、debug、release-train 规则仍可能改写这些值。PPO 派生的 `use_critic=True` 最终强制 `offload_train=True`，因为 actor/critic 共享训练 GPU；不是两个角色同时常驻。证据：`slime/utils/arguments.py::slime_validate_args`。
 
 ### 4.2 HF、Megatron checkpoint 与默认值必须同源
 
@@ -149,19 +153,39 @@ $$
 
 `load_debug_rollout_data` 在预解析阶段就会让 SGLang parser 被跳过，并在归一化时强制 `debug_train_only=True`；`debug_rollout_only` 与 `debug_train_only` 互斥。[`slime/utils/arguments.py:1604-1613`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1604-L1613) [`slime/utils/arguments.py:1889-1927`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1889-L1927)
 
-权重同步也有组合约束：磁盘传输需要共享目录；release-train 只支持 Megatron，不能同时使用 critic 或 old actor，并且要求配置保存目录、全量模式和磁盘传输；增量模式只支持磁盘传输、禁止共置，还要求 rollout 主机上存在本地 checkpoint 目录。[`slime/utils/arguments.py:2032-2067`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L2032-L2067)
+权重同步也有组合约束：磁盘传输需要共享目录；release-train 只支持 Megatron，不能同时使用 critic 或 old actor，并且要求配置保存目录、全量模式和磁盘传输；未设置 `save_interval` 时补为 1，但逐轮强制保存由 driver 的 `release_train or ...` 分支保证；增量模式只支持磁盘传输、禁止共置，还要求 rollout 主机上存在本地 checkpoint 目录。[`slime/utils/arguments.py:2032-2067`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L2032-L2067)
+
+### 4.5 长度、评估与发布频率
+
+设置 `rollout_max_context_len` 后，未指定的 `rollout_max_prompt_len` 派生为前者减一；显式值也必须小于 context 上限，保证至少有一个生成 token 可用于 loss。`eval_interval` 非 None 时必须有解析后的 `eval_datasets`，这个属性由 `--eval-config` 或 `--eval-prompt-data` 生成，并不存在 `--eval-datasets` CLI。评估采样与 YAML 契约见 [[27_slime_evaluation_path_analysis|评估路径]]。
+
+`--update-weights-interval` 类型 int、默认 1，由 slime parser 读取。它在异步入口控制发布周期，在同步入口仍可能影响 `keep_old_actor` 备份分支；各入口和 `release_train` 的实际条件统一见 [[10_slime_end_to_end_iteration_analysis|端到端迭代]]。证据：`slime/utils/arguments.py::get_slime_extra_args_provider / slime_validate_args`。
 
 ## 5. 两种 YAML 只做有范围限制的延迟配置，不是另一套总配置
 
 ### 5.1 Megatron role YAML：只覆盖角色差异
 
-`--megatron-config-path` 对公共 args 做 deepcopy，再应用 actor/critic overrides；`num_nodes` 与 `num_gpus_per_node` 被忽略，未知 key 只告警后仍写入，critic 还会强制关闭 actor-only 的 KL、OPD 和 custom advantage 行为。[`slime/utils/arguments.py:1646-1678`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1646-L1678)
+`--megatron-config-path` 对公共 args 做 deepcopy，再应用 actor/critic overrides；`num_nodes` 与 `num_gpus_per_node` 被忽略，未知 key 只告警后仍写入，critic 强制 `kl_coef=0`、`use_opd=False`、`custom_advantage_function_path=None`、`untie_embeddings_and_output_weights=True`；仅在 YAML 未覆盖时置 `disable_param_buffers_cpu_backup=False`。这里没有强制清除 `use_kl_loss`。[`slime/utils/arguments.py:1646-1678`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1646-L1678)
 
 每个 role 最多一个条目，缺失 role 继承公共 args；但这些 override 是在 placement group 建好、全局 Megatron 校验结束后才应用。[`slime/utils/arguments.py:1681-1721`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1681-L1721) [`slime/ray/placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137) [`slime/ray/placement_group.py:163-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L163-L208)
 
 官方文档因此要求 actor/critic 保持相同 Megatron 并行拓扑，并警告不同拓扑可能在初始化或训练时失败；推荐 YAML 只放 lr、load/save 与 optimizer/scheduler 差异。[`docs/zh/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/megatron-config.md#L111-L118)
 
 > **设计分析**：role YAML 的正确心智模型是“角色参数补丁”，不是“第二个 Megatron launcher”。把 TP/PP/CP/EP 放进去，可能绕过公共阶段已经完成的拓扑校验。
+
+最小 role YAML 如下，通过 `--megatron-config-path roles.yaml` 读取；目录为用户填写值，两个角色仍继承公共 CLI 的并行拓扑。官方 `docs/zh/advanced/megatron-config.md` 将该用法限定于 PPO 场景；实现只有 `use_critic` 时才实际创建 critic。
+
+```yaml
+megatron:
+  - role: actor
+    overrides:
+      lr: 0.000001
+      save: /checkpoints/actor
+  - role: critic
+    overrides:
+      lr: 0.00001
+      save: /checkpoints/critic
+```
 
 ### 5.2 SGLang YAML：只展开推理服务拓扑
 
@@ -172,6 +196,20 @@ YAML 顶层结构、worker type 和正 GPU 数在加载时检查；所有 model/
 server group 真正映射到 reordered GPU ids 时还有一次边界检查，错误消息会报告 offset、engine size、engine 数与可用 slots。[`slime/ray/rollout.py:200-217`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L200-L217) [`slime/ray/rollout_validation.py:1-32`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout_validation.py#L1-L32)
 
 > **设计分析**：SGLang YAML 描述“rollout GPU 内部如何长成服务”，Ray CLI 描述“先向集群拿多少卡”。两者必须对账，不能相互替代。
+
+最小单模型服务 YAML 如下，通过 `--sglang-config serving.yaml --rollout-num-gpus 8` 使用；两台 4-GPU engines 的模型路径继承 `--hf-checkpoint`。
+
+```yaml
+sglang:
+  - name: policy
+    update_weights: true
+    server_groups:
+      - worker_type: regular
+        num_gpus: 8
+        num_gpus_per_engine: 4
+```
+
+`ModelConfig.resolve` 把 group/model/CLI 的 engine 大小与模型路径逐级补齐，并推断 `update_weights`；`_compute_server_args` 才注入 host/port、base GPU、node rank、TP/PP、memory saver 与有效 overrides。YAML 并没有提前决定 Ray 的物理 GPU 编号。证据：`slime/backends/sglang_utils/sglang_config.py::ModelConfig.resolve`、`slime/backends/sglang_utils/sglang_engine.py::_compute_server_args`。
 
 ### 5.3 `custom_config_path`：留给插件私有参数
 
@@ -202,12 +240,26 @@ SGLang adapter 直接调用当前安装版本的 `ServerArgs.add_cli_args`，自
 
 前六类失败分别对应本页已核验的 parser、HF validator、Ray wait、SGLang validator、YAML total check 和 placement check；最后两类由 async 入口断言与官方 role-config 限制直接给出。[`slime/backends/megatron_utils/arguments.py:93-144`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L93-L144) [`slime/ray/placement_group.py:42-67`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L42-L67) [`slime/backends/sglang_utils/arguments.py:159-170`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L159-L170) [`slime/ray/rollout.py:1274-1282`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1282) [`train_async.py:9-20`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L20) [`docs/zh/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/megatron-config.md#L111-L118)
 
+### 7.1 从 flag 定位解析与失败边界
+
+| flag | 解析者 | 校验时机 | 失败信息或可观察行为 |
+|---|---|---|---|
+| `--eval-interval` | slime extra args | `slime_validate_args` | `Evaluation datasets must be configured when eval_interval is set.` |
+| `--rollout-max-prompt-len` | slime | 归一化末尾 | `must be smaller than args.rollout_max_context_len` |
+| `--release-train` | slime | 归一化末尾 | `requires --save`；或 `requires --update-weight-mode=full and --update-weight-transport=disk` |
+| `--sglang-config` | slime + YAML schema | RolloutManager 创建服务 | `sglang_config total GPUs (...) != rollout_num_gpus (...)` |
+| `--colocate` + `train_async.py` | slime | 进入 async `train` | `Colocation is not supported for async training.` |
+| `--megatron-config-path` | slime + role YAML | 训练对象创建 | 重复 role 报错；未知 key 告警但仍写入，不保证拼写错误被拒绝 |
+| `--sglang-*` | SGLang 包装 parser | namespace 合并后原生校验 | 透传安装版本的 ServerArgs 校验结果；slime 不承诺统一错误文案 |
+
+这张表描述本页涉及的组合，不是完整参数清单；稳定读取路径为 `slime/utils/arguments.py::parse_args / slime_validate_args / parse_megatron_role_args`、`slime/ray/rollout.py::_resolve_sglang_config`、`train_async.py::train`。
+
 ## 8. 提交作业前的配置检查
 
 1. 固定 HF model、Megatron `torch_dist`、MODEL_ARGS 三者的同源版本。
 2. 写出 $A$ 与 $R$；分离模式确认集群至少有 $A+R$ 张可用卡，colocate 确认至少有 $\max(A,R)$ 张。
 3. 用 actor 总卡数验证 Megatron TP/PP/CP/EP；独立用每 engine 卡数验证 SGLang PP/TP。
-4. 验证普通 rollout 的批次数量关系；带扇出或 agent 轨迹的数据改按逻辑 rollout id 检查，细节交给 [[12_slime_sample_datasource_analysis]]。
+4. 验证普通 rollout 的批次数量关系；带扇出或 agent 轨迹的数据改按 `Sample.rollout_id` 标记的逻辑执行检查，细节交给 [[12_slime_sample_datasource_analysis]]。
 5. 只选一种 serving 生命周期：内部默认、SGLang YAML、external engines；`sglang_config`、external 和 legacy prefill 配置有互斥断言。[`slime/backends/sglang_utils/arguments.py:175-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L175-L186)
 6. role YAML 只放角色差异；custom config 只放插件私有 key。
 7. 首次运行先缩短 `num_rollout`、response length 并减小数据规模，但不要改变并行拓扑和生命周期组合；这样冒烟测试覆盖的仍是最终系统形态。
