@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="fig-3" role="img" aria-labelledby="caption-3" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fafbfb"/>
+  <style>
+    #fig-3 .t   {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;fill:#1b2a33}
+    #fig-3 .tb  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;font-weight:650;fill:#1b2a33}
+    #fig-3 .t2  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12px;fill:#54666f}
+    #fig-3 .m   {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11px;fill:#54666f}
+    #fig-3 .mb  {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11.5px;font-weight:600;fill:#1b2a33}
+    #fig-3 .mA  {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11px;fill:#2d6e9e}
+    #fig-3 .mB  {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11px;fill:#547f5f}
+    #fig-3 .pnl {fill:#fafbfb;stroke:#c5d0d4;stroke-width:1}
+    #fig-3 .cell{fill:#e6ebed;stroke:#c5d0d4;stroke-width:1}
+    #fig-3 .cB  {fill:#d3e4f0;stroke:#2d6e9e;stroke-width:1.6}
+    #fig-3 .cS  {fill:#d5e5d9;stroke:#547f5f;stroke-width:1.6}
+    #fig-3 .ar  {stroke:#8c9ba1;stroke-width:1.4;fill:none;marker-end:url(#h3)}
+  </style>
+  <defs>
+    <marker id="h3" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#8c9ba1"/>
+    </marker>
+  </defs>
+
+  <rect class="pnl" x="24" y="40" width="290" height="196" rx="2"/>
+  <text class="tb" x="42" y="66">① 本 step 新算出的 K/V</text>
+  <text class="m"  x="42" y="86">key, value: [T, Hkv_local, D]</text>
+  <rect class="cB" x="42" y="100" width="254" height="52"/>
+  <text class="t"  x="56" y="122">batch 位置 0 · 请求 A</text>
+  <text class="mA" x="56" y="141">decode, pos = 40（从 0 计数）</text>
+  <rect class="cS" x="42" y="162" width="254" height="52"/>
+  <text class="t"  x="56" y="184">batch 位置 1 · 请求 B</text>
+  <text class="mB" x="56" y="203">chunked prefill, pos = 33（独立快照）</text>
+
+  <path class="ar" d="M318,138 L342,138"/>
+
+  <rect class="pnl" x="346" y="40" width="332" height="196" rx="2"/>
+  <text class="tb" x="364" y="66">② 输入准备：按请求 / 组算 slot</text>
+  <text class="mb" x="364" y="90">blk = pos // block_size</text>
+  <text class="mb" x="364" y="108">slot = block_table[req][blk] * block_size</text>
+  <text class="mb" x="404" y="126">+ pos % block_size</text>
+  <line x1="364" y1="142" x2="660" y2="142" stroke="#dde4e6"/>
+  <text class="mA" x="364" y="166">A: 40//16=2 → bt[A][2]=7  → 7*16+8  = 120</text>
+  <text class="mB" x="364" y="190">B: 33//16=2 → bt[B][2]=11 → 11*16+1 = 177</text>
+  <text class="t2" x="364" y="216">block_size = 16</text>
+
+  <path class="ar" d="M682,138 L706,138"/>
+
+  <rect class="pnl" x="710" y="40" width="266" height="196" rx="2"/>
+  <text class="tb" x="728" y="66">③ slot_mapping</text>
+  <text class="mb" x="728" y="92">tensor([120, 177])</text>
+  <text class="m"  x="728" y="110">dtype=int64, device=cuda</text>
+  <line x1="728" y1="128" x2="958" y2="128" stroke="#dde4e6"/>
+  <text class="t2" x="728" y="154">这一组的 slot_mapping 可被</text>
+  <text class="t2" x="728" y="174">组内布局兼容的各层复用。</text>
+  <text class="t2" x="728" y="202">CUDA Graph 下是固定</text>
+  <text class="t2" x="728" y="222">buffer 原地更新。</text>
+
+  <text class="tb" x="24" y="288">④ reshape_and_cache_flash 按扁平 slot 号散写 —— kernel 不关心这两个 token 属于谁</text>
+
+  <rect class="pnl" x="24" y="304" width="460" height="164" rx="2"/>
+  <text class="tb" x="42" y="330">物理块 7  ·  请求 A 的 logical 2</text>
+  <g>
+    <rect class="cell" x="42"  y="348" width="22" height="44"/>
+    <rect class="cell" x="68"  y="348" width="22" height="44"/>
+    <rect class="cell" x="94"  y="348" width="22" height="44"/>
+    <rect class="cell" x="120" y="348" width="22" height="44"/>
+    <rect class="cell" x="146" y="348" width="22" height="44"/>
+    <rect class="cell" x="172" y="348" width="22" height="44"/>
+    <rect class="cell" x="198" y="348" width="22" height="44"/>
+    <rect class="cell" x="224" y="348" width="22" height="44"/>
+    <rect class="cB"   x="250" y="348" width="22" height="44"/>
+    <rect class="cell" x="276" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="302" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="328" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="354" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="380" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="406" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="432" y="348" width="22" height="44" opacity=".45"/>
+  </g>
+  <text class="mA" x="261" y="408" text-anchor="middle">offset 8</text>
+  <text class="mA" x="42"  y="440">slot 120 = 7 × 16 + 8</text>
+
+  <rect class="pnl" x="516" y="304" width="460" height="164" rx="2"/>
+  <text class="tb" x="534" y="330">物理块 11  ·  请求 B 的 logical 2</text>
+  <g>
+    <rect class="cell" x="534" y="348" width="22" height="44"/>
+    <rect class="cS"   x="560" y="348" width="22" height="44"/>
+    <rect class="cell" x="586" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="612" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="638" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="664" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="690" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="716" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="742" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="768" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="794" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="820" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="846" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="872" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="898" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="924" y="348" width="22" height="44" opacity=".45"/>
+  </g>
+  <text class="mB" x="571" y="408" text-anchor="middle">offset 1</text>
+  <text class="mB" x="534" y="440">slot 177 = 11 × 16 + 1</text>
+</svg>

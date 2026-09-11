@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="fig-0" viewBox="0 0 1000 378" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同一 token 在各层同号块中分别占一个槽位，单层页为8 KiB，80层合计640 KiB"><rect width="100%" height="100%" fill="#fafbfb"/>
+<style>#fig-0 .ztitle{font:650 15px "Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;fill:#1b2a33}#fig-0 .ztext{font:13px "Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;fill:#54666f}#fig-0 .zmono{font:12px "JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;fill:#2d6e9e}#fig-0 .zbox{fill:#d3e4f0;stroke:#2d6e9e}#fig-0 .zpanel{fill:#fafbfb;stroke:#c5d0d4}</style>
+<text class="ztitle" x="24" y="34">一个 token：一个块表编号，L 份分层存储</text>
+<rect class="zpanel" x="24" y="58" width="280" height="184" rx="3"/>
+<text class="ztitle" x="44" y="89">请求 A · position = 40</text>
+<text class="zmono" x="44" y="122">logical_block = 40 // 16 = 2</text>
+<text class="zmono" x="44" y="153">block_table[A][2] = 7</text>
+<text class="zmono" x="44" y="184">offset = 40 % 16 = 8</text>
+<text class="ztext" x="44" y="218">只登记 #7，不登记 80 个层编号</text>
+<path d="M310 150 H352 M345 144 L353 150 L345 156" fill="none" stroke="#2d6e9e" stroke-width="2"/>
+<rect class="zbox" x="370" y="58" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="81">layer 0 · block #7 · offset 8</text><text class="zmono" x="388" y="101">kv_cache[0][7,:,8,:]</text>
+<rect class="zbox" x="370" y="126" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="149">layer 1 · block #7 · offset 8</text><text class="zmono" x="388" y="169">kv_cache[1][7,:,8,:]</text>
+<text class="ztext" x="540" y="200">⋮</text>
+<rect class="zbox" x="370" y="216" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="239">layer 79 · block #7 · offset 8</text><text class="zmono" x="388" y="259">kv_cache[79][7,:,8,:]</text>
+<path d="M754 58 H766 V268 H754" fill="none" stroke="#2d6e9e"/>
+<text class="ztitle" x="790" y="104">每行只画一个槽</text><text class="ztext" x="790" y="132">本例 512 B / 层</text><text class="ztext" x="790" y="161">每层整块有 16 槽</text><text class="zmono" x="790" y="190">P = 8 KiB</text><text class="zmono" x="790" y="220">C = 80 × P</text><text class="zmono" x="790" y="247">  = 640 KiB</text>
+<rect x="24" y="292" width="952" height="62" fill="#e2e8ea"/>
+<text class="ztext" x="42" y="316">图中先取该层 view；下标为 [block, head, state, content]。content 前 D 个是 K，后 D 个是 V。</text>
+<text class="ztext" x="42" y="340">一个 token 横跨 L 个单层 page 的同一槽位；不是把 L 层串接后，按字节填满一个 page 再溢出到下一页。</text>
+</svg>

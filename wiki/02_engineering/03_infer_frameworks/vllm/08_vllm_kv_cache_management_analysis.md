@@ -7,7 +7,7 @@ title: "vLLM KV Cache 管理：请求怎样分块、共享前缀并安全归还�
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（main 快照，2026-09-07 UTC）。
 > **主题**：一个请求的 token 怎样找到物理 KV 块；前缀共享、部分命中、state 密度、混合布局和 CPU offload 怎样改变分配与回收。
 > **适用范围**：V1 单 Engine 的 BlockPool、prefix cache、hybrid group、partial CoW 与 native CPU tier；请求调度策略见 07，设备执行见 11/12，跨 Engine 传输见 22。
-> **最近更新**：2026-09-08。补充 `tokens_per_state` 与 DeepSeek V4 多类缓存模块的规划边界。
+> **最近更新**：2026-09-11。补充容量、索引与实际缓存布局的基础解释。
 
 ## 1. 十个 token 为什么不需要一段连续显存
 
@@ -46,6 +46,54 @@ sequenceDiagram
 | 每种 hybrid group 一套池 | 难以让不同历史长度的 group 共享容量 | 所有组联合预测，使用同一 id 空间 |
 | partial tail 命中后原地续写 | 改变仍由旧 hash 标识的内容 | 新块与 copy-on-write |
 | CPU tier 直接用 GPU id 标识内容 | GPU id 复用后会指向另一份内容 | 独立内容 key、host slot 和完成状态 |
+
+### 1.1 先算容量：slot、token block 与 page 各是什么单位
+
+上面的块号只说明所有权，还没有说明显存占多少。先固定最普通的情形：单个 worker、一个全注意力 group、无 KV 量化与 page padding、K/V head 维度相同，`tokens_per_state=1`。这里一个物理 slot 对应一个 token 的存储位置；它本身是索引，字节数由该层 spec 决定。一个 manager block 覆盖连续的若干 token；`page_size_bytes` 则是该层这一块的字节容量，page 不是再容纳若干 manager block 的上级容器。
+
+| 量 | 单位与范围 | 怎样解释 |
+|---|---|---|
+| `block_size` | token / manager block | 用户配置经平台、模型与 backend 约束确定的分配粒度 |
+| `slot` | 扁平位置编号 | 普通路径可拆回执行块号和块内位置，不是字节地址 |
+| `page_size_bytes` | 字节 / 层 / manager block | 已包含该 spec 要求的 page padding；不等于系统内存的 4 KiB 页 |
+| pool block 的字节跨度 | 字节 / pool id / worker | 本地各组页总量决定；均匀单组才退化为层数乘单层 page |
+| `num_blocks` | pool id 数 | 引擎的共享池容量，含 null 等保留位置，不能全算成请求可用块 |
+
+令 $H$ 为本 rank 的 KV head 数，$D$ 为每个 K/V head 的维度，$e$ 为每元素字节数，$B_{\mathrm{m}}$ 为 manager block 的 token 数，$L$ 为本 rank 该组实际持有的层数。普通模型、无 padding 时：
+
+$$
+\begin{aligned}
+S &= 2HDe, \\
+P &= B_{\mathrm{m}}S, \\
+C &= LP.
+\end{aligned}
+$$
+
+$S$ 是单层单 token 的 K 与 V 合计，$P$ 是单层 page，$C$ 是均匀单组下一个 pool id 对应的跨层总量。不能用 Query head 数代替 $H$，也不能用权重量化位数代替 KV dtype。跨层求和只算本 PP stage 的层；TP 可能复制少量 KV heads，不能无条件把全局 KV heads 除以 TP。
+
+以 80 层、8 KV heads、D=128、TP8、PP1、BF16 的教学配置为例，本 rank 有 H=1，得到 **512 B / token / 层**、**40 KiB / token / rank**。B=16 时单层 page 为 **8 KiB**，同号块跨 80 层合计 **640 KiB / rank**；八个 rank 合计 5 MiB。1 KiB=1024 B，这些是容量推导，不是实测分配日志。
+
+| 分配块长 | 单层 page | 80 层 / rank / pool id | 无共享的 40-token 请求 | 尾块空槽对应的容量 |
+|---|---|---|---|---|
+| 16 tokens | 8 KiB | 640 KiB | 3 块，预留 1.875 MiB | 8 token，320 KiB / rank |
+| 32 tokens | 16 KiB | 1.25 MiB | 2 块，预留 2.5 MiB | 24 token，960 KiB / rank |
+
+已保存 T 个 token 时，普通独占请求需要 $\lceil T/B_{\mathrm{m}}\rceil$ 块；尾块空槽为 $\lceil T/B_{\mathrm{m}}\rceil B_{\mathrm{m}}-T$。继续生成可以填掉这些槽。若余数近似均匀，平均空槽才是 $(B_{\mathrm{m}}-1)/2$，不是每个块固定浪费半块。较小分配块减小尾部浪费，较大分配块减少管理项；真正 kernel 粒度还需协商，不能从这个表推导吞吐高低。
+
+### 1.2 先申请 backing，再让请求消费块编号
+
+当前 `allocate_kv_cache()` 申请一份共享 backing，并由配置的 offset、layer stride、block stride 建立各层 view。请求运行时领取的是池编号及相应容量，通常不会每生成一个 token 就调用一次 GPU 显存分配。释放引用后块回池，也不等于 backing 被释放给驱动；`nvidia-smi` 显存用量不必下降。
+
+均匀单组可以用 KV 预算除以 C 求块数。一般组先把本组各层 `page_size_bytes` 相加，普通共享池取最大的组总量作为一个 pool id 的字节跨度；GLM5-Next 等专用 alias 规划见第 5 节。不同 group 对同一范围提供不同解释，不能把所有 view 的 `numel` 当成彼此独立的分配再次求和。
+
+`GPUWorker.determine_available_memory()` 的 profile 路径从执行器预算扣除非 KV 开销，CUDA Graph 估算还受相应开关控制；显式 `kv_cache_memory_bytes` 是另一条预算路径，并仍可能扣除多模态 IPC 预留。`gpu_memory_utilization` 不是“显存中全部拿来存 KV 的比例”。最终各 worker 对齐可共同使用的块数，空闲池还保留 null block；普通容量公式并不覆盖所有启动期预留。
+
+> [!contradiction] 旧图解的层存储与 page 口径
+> 归档的 v0.10.2 图解用每层独立 buffer、K/V 大半区解释特定旧实现。当前基线的公共 allocator 使用共享 backing，各层 view 的连续性由布局与 stride 决定，不能沿用“层间一定分散”或“一个 page 总是某段 K/V 半区”的说法。普通容量主项仍可按上式算；实际元素布局和 K/V 下标见 [[10_vllm_attention_backends_analysis|Attention Backend]] 的具体寻址解释。
+
+这里使用的 `page_size_bytes` 已包含 spec 的 page padding。若 `tokens_per_state` 不为 1、`num_head_slots` 或 `state_content_bytes` 被 backend 改写，S 与 P 的简单公式就应退回 `KVCacheSpec.get_num_kernel_states()`、`AttentionSpec.unpadded_page_size_bytes` 的真实几何；第 5 节展开这些变化。数据的字节布局与分配粒度是不同问题，不应仅因一个 block id 跨多层使用，就把它想象成“一个 token 的所有层依次塞入同一小块”。
+
+源码：`vllm/v1/kv_cache_interface.py::AttentionSpec.state_content_size_bytes`、`unpadded_page_size_bytes`、`page_size_bytes`；`vllm/v1/core/kv_cache_utils.py::_get_kv_cache_bytes_per_block`、`get_kv_cache_config_from_groups`、`get_kv_cache_configs`；`vllm/v1/worker/utils.py::allocate_kv_cache`；`vllm/v1/worker/gpu_worker.py::GPUWorker.determine_available_memory`。
 
 ## 2. 一个块怎样同时“空闲”又“可命中”
 
@@ -315,6 +363,8 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 8. `vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.add_requests`、`update_requests`、`prepare_attn`：请求表到设备 slot 的交付链。
 9. `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py::MooncakeStoreScheduler.register_finished_partial_tail`、`update_connector_output`：结束请求的精确边界块如何由保存任务继续持有。
 10. `vllm/v1/kv_offload/cpu/manager.py::CPUOffloadingManager.prepare_store`、`complete_store`、`prepare_load`、`complete_load`；`vllm/v1/kv_offload/cpu/gpu_worker.py::SingleDirectionOffloadingHandler.get_finished`：host 内容状态与设备完成。
+
+图解源材料归档：`raw/02_engineering/03_infer_frameworks/vllm/kv_cache_diagram_20260911/`。其中保存旧版 HTML 原件、对齐本页基线后的 HTML / Markdown 和六幅 SVG；本文维护容量与所有权解释，具体元素地址由 Attention Backend 页维护。
 
 ## Related Pages
 

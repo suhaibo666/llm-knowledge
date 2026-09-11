@@ -12,6 +12,13 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-11：归档并吸收用户 KV Cache 图解
+
+- 在 `raw/02_engineering/03_infer_frameworks/vllm/kv_cache_diagram_20260911/` 保留原 v0.10.2 HTML 快照，另存对齐 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 的 HTML、完整 Markdown 转换件与六幅独立 SVG；原快照 SHA256 校验不变，知识库源码基线未改变。
+- 将独有内容分配到既有正文：[[08_vllm_kv_cache_management_analysis|08 KV Cache]] 增加 slot/page/block 容量、单 rank/TP 口径、尾块浪费与初始化/运行时分配边界；[[10_vllm_attention_backends_analysis|10 Attention Backend]] 增加四维索引、K/V 切片、字节 stride 寻址与 LBNHC/BLNHC 布局图；[[11_vllm_model_runner_v1_analysis|11 Model Runner V1]] 增加请求行、展平 token 行、position、CPU token-store 与 KV slot 的索引对照。同步更新 vLLM 域索引，不增加主分析页。
+- 修正网页中已不适用的分层独立分配、外层 K/V 二分布局、block 粒度混用、CPU slot 计算、KV 写入依赖和空闲队列表述；补充 manager/kernel block 换算、partial-hit 可写性与 CoW、压缩 state/padding/异构 group 的适用边界。保留原六图阅读主线。
+- 新增段落与布局图独立源码复审 PASS（08/10/11 各抽查 3/3），布局图经修订后目视通过；HTML 六图无文字重叠、越界或失效内部锚，390 px 移动视口无横向溢出。T0 链接、公式、Markdown、资源检查均通过；三篇页面独立 MkDocs 构建通过，浏览器 MathJax 实际渲染 20 处公式通过；全库构建被已有 slime/01 指向 slime/11 的失效章节锚阻断，未修改无关正文。
+
 ## 2026-09-10：slime 系列按专家意见核实整改并补齐三条机制路径
 
 - 更新 slime 原有 20 篇，新增 [[02_engineering/04_posttrain_frameworks/slime/26_slime_multimodal_vlm_path_analysis|多模态 VLM]]、[[02_engineering/04_posttrain_frameworks/slime/27_slime_evaluation_path_analysis|评估]]、[[02_engineering/04_posttrain_frameworks/slime/28_slime_sft_path_and_loss_mask_analysis|SFT 与 loss mask]]；slime 基线保持 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，共 23 篇内容页加索引。重算上级后训练目录为 52 个 Markdown 文件。

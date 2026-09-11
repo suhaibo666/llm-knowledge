@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vLLM KV Cache 图解:存储布局、分配与数据流</title>
+<style>
+  :root{
+    --ink:#1b2a33;
+    --ink-2:#54666f;
+    --ink-3:#8c9ba1;
+    --paper:#eceff0;
+    --panel:#fafbfb;
+    --rule:#c5d0d4;
+    --rule-soft:#dde4e6;
+    --blue:#2d6e9e;
+    --blue-fill:#d3e4f0;
+    --gold:#95701a;
+    --gold-fill:#f0e4c2;
+    --sage:#547f5f;
+    --sage-fill:#d5e5d9;
+    --rust:#9e433a;
+    --rust-fill:#f1d7d3;
+    --sans:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 32px 96px}
+
+  header{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:14px}
+  h1{font-size:30px;line-height:1.25;font-weight:650;letter-spacing:-.015em;margin:0 0 10px}
+  .lede{max-width:66ch;color:var(--ink-2);margin:0}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:14px}
+
+  figure{margin:52px 0 0;padding:0}
+  figcaption{
+    display:flex;gap:14px;align-items:baseline;
+    border-top:1px solid var(--rule);padding-top:10px;margin-top:14px;
+  }
+  .fignum{font-family:var(--mono);font-size:12px;color:var(--blue);flex:none;padding-top:2px}
+  .figtext{color:var(--ink-2);font-size:14px;line-height:1.7;max-width:78ch}
+  .figtitle{font-weight:650;font-size:16px;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
+  svg{display:block;width:100%;height:auto;background:var(--panel);border:1px solid var(--rule-soft)}
+
+  h2{font-size:20px;font-weight:650;letter-spacing:-.01em;margin:64px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+  p{max-width:74ch}
+  code{font-family:var(--mono);font-size:.87em;background:#e2e8ea;padding:1px 5px;border-radius:2px}
+  .key{max-width:74ch;margin:22px 0 0;padding:18px 22px;background:var(--panel);border-left:3px solid var(--blue)}
+  .key p{margin:0}
+  .key p + p{margin-top:10px}
+  ul{max-width:74ch;padding-left:20px}
+  li{margin:6px 0}
+
+  a{color:var(--blue);text-underline-offset:3px}
+  .meta{max-width:none}
+  .scope{font-size:13px;color:var(--ink-2);max-width:none}
+  .contents{display:flex;gap:10px 20px;flex-wrap:wrap;font-size:13px;margin:22px 0}
+  .answers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:26px 0}
+  .answer{padding:20px;background:var(--panel);border-top:3px solid var(--blue)}
+  .answer b{display:block;font-size:16px;margin-bottom:10px}
+  .answer p{margin:0;font-size:14px}
+  .formula{padding:20px 24px;background:var(--panel);border:1px solid var(--rule-soft);margin:20px 0}
+  .formula p{max-width:none;margin:6px 0}
+  .formula .eq{font-family:var(--mono);font-size:16px;color:var(--blue);overflow-wrap:anywhere}
+  .table-scroll,.diagram-scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel)}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+  th{font-weight:650;background:#e2e8ea}
+  .small{font-size:13px;color:var(--ink-2)}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0}
+  .step{padding:18px;border:1px solid var(--rule);background:var(--panel)}
+  .step strong{display:block;color:var(--blue);margin-bottom:8px}
+  .step p{margin:0;font-size:14px}
+  .index-code{margin:14px 0;padding:18px 20px;background:#e2e8ea;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.85;border:1px solid var(--rule-soft)}
+  .index-code code{font:inherit;background:none;padding:0}
+  .sources{font-size:13px}.sources li{margin:10px 0}
+  @media(max-width:700px){.wrap{padding:28px 18px 56px}h1{font-size:25px}.answers,.steps{grid-template-columns:1fr}h2{margin-top:40px}figure{margin-top:32px}.diagram-scroll svg{min-width:900px}.table-scroll table{min-width:650px}figcaption{gap:10px}.eq{font-size:14px!important}}
+  @media print{body{background:white}.wrap{padding:0}.contents{display:none}figure,.formula,.step,.answer{break-inside:avoid}a{color:inherit}.diagram-scroll{overflow:visible}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>vLLM 的 KV Cache 怎么存、怎么分、怎么流</h1>
+  <p class="lede">先讲清 block / page 的单位、大小和显存预算，再用六张图串起跨层布局、块表、写入寻址、推理 step 与回收。</p>
+  <p class="meta">核对基线：vLLM v0.10.2 · V1 · FlashAttention / NHD · 普通全注意力模型 · 示例 B = 16</p>
+</header>
+
+
+<p class="scope">适用范围：单个 worker / GPU rank 上的布局；L 表示该 rank 实际持有的 attention 层数。主图假设一个 KV cache group、K/V 维度相同、无跨层 KV 共享、无投机解码，且使用普通 BF16/FP16 缓存。各图是独立示意快照，position 从 0 计数。版本和后端改变时，shape、stride、分组与支持的块大小需要重新核对。<a href="#sources">源码依据在文末</a>。</p>
+<nav class="contents" aria-label="章节导航"><a href="#sizes">大小与单位</a><a href="#allocation">显存申请与消费</a><a href="#fig-0">一个 token 跨几层、几块</a><a href="#indices">下标与索引详解</a><a href="#fig-1">物理布局</a><a href="#fig-2">块表</a><a href="#fig-3">寻址</a><a href="#fig-4">推理 step</a><a href="#fig-5">回收</a></nav>
+<div class="answers">
+ <div class="answer"><b>block 多大，谁决定？</b><p><code>block_size = B</code> 的单位是 <strong>token</strong>。由配置、平台和后端约束共同确定；B 确定后，再用模型结构与 KV dtype 算字节数。B 在池初始化后固定。</p></div>
+ <div class="answer"><b>一个 page 放几个 block？</b><p>在这里，page 是块对应的存储单位，<strong>不是再装若干 block 的上一级容器</strong>。代码的单层 page 对应该层一个 block 的 B 个 token；整层 buffer 才容纳 N 份。</p></div>
+ <div class="answer"><b>一个 token 的所有层连续吗？</b><p><strong>共用一个 block_id + offset，逐层分开存。</strong>它在 L 层的同号块中各占一个 token 槽，不会把所有层拼进一个连续小块；也不需要在块表里登记 L 个编号。</p></div>
+</div>
+<h2 id="sizes">先分清 token 数、单层字节数和跨层总量</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>名称</th><th>单位 / 范围</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td><code>block_size = B</code></td><td>token / block</td><td>一个逻辑块覆盖的序列位置数，例如 B = 16 覆盖连续 16 个位置。</td></tr>
+<tr><td><code>page_size_bytes = P</code></td><td>字节 / 层 / block / rank</td><td><code>KVCacheSpec</code> 的单层大小：B 个 token 的 K 与 V 合计。该计量单位并不保证 K 与 V 在地址上相邻。</td></tr>
+<tr><td>一个 block_id 对应的总量 C</td><td>字节 / block / rank</td><td>主图单组、均匀 L 层时，<code>C = L × P</code>。分配一个编号，就为这 L 层一起保留对应槽位。</td></tr>
+<tr><td><code>num_blocks = N</code></td><td>块编号数</td><td>池的容量，每层 buffer 有 N 份单层 page 的容量；不是每个请求独享 N 块。</td></tr>
+</tbody></table></div>
+<p class="small"><strong>page 的两种口径：</strong>v0.10.2 的 Hybrid KV Cache Manager 设计文档把一组层合计的块字节数也称作 page size，并明确说它不同于代码的 <code>KVCacheSpec.page_size_bytes</code>。本文统一用 P 指单层，C 指跨层合计。它们都不是操作系统 / CUDA 虚拟内存的硬件页；不能用“4 KiB 页”推导 KV block 大小。<a href="https://docs.vllm.ai/en/v0.10.2/design/hybrid_kv_cache_manager.html#definitions">[1：术语]</a></p>
+<div class="formula">
+<p><strong>普通 MHA / GQA / MQA，K/V 维度相同：</strong></p>
+<p class="eq">每层每 token：S = 2 × Hkv_local × D × e</p>
+<p class="eq">单层一页：P = B × S</p>
+<p class="eq">同号块跨 L 层：C = L × P</p>
+<p class="small">2 是 K + V；Hkv_local 是本 rank 的 KV head 数，<strong>不是 Q head 数</strong>；D 是 head_size；e 是每个 KV 元素的字节数（BF16 / FP16 为 2）。权重的量化位数不等于 KV dtype。公式只计 KV 数据，不含额外元数据、量化 scale 或布局 padding。<a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/kv_cache_interface.py">[2：AttentionSpec]</a></p>
+</div>
+<p><strong>沿用原图的 Llama-3-70B 示例：</strong>80 层、8 个 KV heads、D = 128、TP = 8、PP = 1、BF16。每个 rank 有 Hkv_local = 1，得到 S = 512 B；单 token 跨 80 层合计 40 KiB。B = 16 时，P = 8 KiB，C = 640 KiB。八个 TP rank 合计为 5 MiB / block。</p>
+<p class="small">这里 TP 恰好把 8 个 KV heads 分给 8 个 rank。不能对所有模型直接用 heads ÷ TP：KV heads 少于 TP 时可能复制；有 PP 时 L 只取本 stage 的层。1 KiB = 1024 B，1 MiB = 1024 KiB。</p>
+<div class="table-scroll"><table>
+<thead><tr><th>B（tokens）</th><th>单层 P</th><th>80 层 C / rank</th><th>40 个已写 KV 的 token</th><th>尾块空槽</th></tr></thead>
+<tbody><tr><td>16（主图）</td><td>8 KiB</td><td>640 KiB</td><td>3 个 block_id；预留 1.875 MiB</td><td>8 个；320 KiB / rank</td></tr><tr><td>32（对照）</td><td>16 KiB</td><td>1.25 MiB</td><td>2 个 block_id；预留 2.5 MiB</td><td>24 个；960 KiB / rank</td></tr></tbody>
+</table></div>
+<p><strong>B 怎么选：</strong>可通过 <code>--block-size</code> 指定；未指定时由平台补默认值，不能把 16 当作所有版本、后端的固定值。此版本 FlashAttention 要求 B 是 16 的倍数，还要满足平台与配置限制；这里用 16 / 32 对照。较小的 B 通常减少尾块浪费、让前缀复用更细；较大的 B 减少块表项和分配管理次数，但会改变 kernel 效率。最终用目标工作负载测吞吐、延迟与命中率。<a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/config/cache.py">[3：配置]</a> <a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/attention/backends/flash_attn.py">[4：后端]</a></p>
+
+<h2 id="allocation">显存先建池，请求再按块消费</h2>
+<div class="steps">
+<div class="step"><strong>01 · 启动：确定 KV 预算 M</strong><p>加载权重并做 profile，从执行器显存预算中扣除非 KV 开销。<code>gpu_memory_utilization</code> 覆盖执行器整体，不是全部给 KV；也可显式配置 <code>kv_cache_memory_bytes</code>。</p></div>
+<div class="step"><strong>02 · 初始化：申请各层 buffer</strong><p>均匀单组模型按 <code>N = floor(M / C)</code> 算块数，每层申请 <code>N × P</code> 字节。多个 worker 的配置会对齐到可共同使用的块数。</p></div>
+<div class="step"><strong>03 · 运行：分配与回收编号</strong><p>请求从 block pool 领取编号并填块表；GPU 逐层写 KV。结束后减少引用计数，空闲编号回池。正常运行中不会每来一个 token 就新申请一段 GPU 显存。</p></div>
+</div>
+<p class="small">以上 N 为不使用块数 override 时的容量公式。池还有 null / 保留块，实际请求容量需扣除它们；混合组、padding、额外预留与共享会改变记账。池内 free 增加，也不代表显存会归还给驱动或让 <code>nvidia-smi</code> 用量下降。<a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/core/kv_cache_utils.py">[5：块数与分组]</a> <a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/worker/gpu_worker.py">[6：显存预算]</a> <a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/worker/gpu_model_runner.py">[7：buffer 初始化]</a></p>
+<div class="formula"><p><strong>请求需要几块？</strong>无前缀共享、无 lookahead 的单组全注意力模型，覆盖 T 个 KV token 需要 <code>ceil(T / B)</code> 块。</p><p>B = 16：已写 40 个 token → 3 块；写 position 40（第 41 个 token）继续用尾块 offset 8。写完 position 47 时第三块才满；<strong>处理 position 48 之前</strong>需要第 4 块。一次 prefill chunk 也可能同时申请多块。</p><p class="small">有前缀命中时，块表里的条目数不等于新分配的物理块数；共享块只能在全池显存统计中算一次。请求预留空间和已写入的有效 KV 也应分别统计。</p></div>
+
+<figure id="fig-0">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg viewBox="0 0 1000 378" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同一 token 在各层同号块中分别占一个槽位，单层页为8 KiB，80层合计640 KiB">
+<style>#fig-0 .ztitle{font:650 15px var(--sans);fill:var(--ink)}#fig-0 .ztext{font:13px var(--sans);fill:var(--ink-2)}#fig-0 .zmono{font:12px var(--mono);fill:var(--blue)}#fig-0 .zbox{fill:var(--blue-fill);stroke:var(--blue)}#fig-0 .zpanel{fill:var(--panel);stroke:var(--rule)}</style>
+<text class="ztitle" x="24" y="34">一个 token：一个块表编号，L 份分层存储</text>
+<rect class="zpanel" x="24" y="58" width="280" height="184" rx="3"/>
+<text class="ztitle" x="44" y="89">请求 A · position = 40</text>
+<text class="zmono" x="44" y="122">logical_block = 40 // 16 = 2</text>
+<text class="zmono" x="44" y="153">block_table[A][2] = 7</text>
+<text class="zmono" x="44" y="184">offset = 40 % 16 = 8</text>
+<text class="ztext" x="44" y="218">只登记 #7，不登记 80 个层编号</text>
+<path d="M310 150 H352 M345 144 L353 150 L345 156" fill="none" stroke="var(--blue)" stroke-width="2"/>
+<rect class="zbox" x="370" y="58" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="81">layer 0 · block #7 · offset 8</text><text class="zmono" x="388" y="101">kv_cache[0][kv,7,8,:,:]</text>
+<rect class="zbox" x="370" y="126" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="149">layer 1 · block #7 · offset 8</text><text class="zmono" x="388" y="169">kv_cache[1][kv,7,8,:,:]</text>
+<text class="ztext" x="540" y="200">⋮</text>
+<rect class="zbox" x="370" y="216" width="364" height="52" rx="3"/>
+<text class="ztitle" x="388" y="239">layer 79 · block #7 · offset 8</text><text class="zmono" x="388" y="259">kv_cache[79][kv,7,8,:,:]</text>
+<path d="M754 58 H766 V268 H754" fill="none" stroke="var(--blue)"/>
+<text class="ztitle" x="790" y="104">每行只画一个槽</text><text class="ztext" x="790" y="132">本例 512 B / 层</text><text class="ztext" x="790" y="161">每层整块有 16 槽</text><text class="zmono" x="790" y="190">P = 8 KiB</text><text class="zmono" x="790" y="220">C = 80 × P</text><text class="zmono" x="790" y="247">  = 640 KiB</text>
+<rect x="24" y="292" width="952" height="62" fill="#e2e8ea"/>
+<text class="ztext" x="42" y="316">图中先用 kv_cache[layer] 选择该层 buffer；再以 kv = 0 选择 K，kv = 1 选择 V；冒号表示全部。</text>
+<text class="ztext" x="42" y="340">一个 token 横跨 L 个单层 page 的同一槽位；不是把 L 层串接后，按字节填满一个 page 再溢出到下一页。</text>
+</svg></div>
+<figcaption id="caption-0"><span class="fignum">图 0 · 新增</span><div class="figtext"><p class="figtitle">“一块”要带上观察范围</p>从块表看是同一个 block_id；从数据布局看，它对应每层各一份存储。同层 NHD 布局里，一个 token 的全部 KV heads 的 K 向量连续，V 向量另存；K 与 V 两区、不同层之间都不应假定相邻。</div></figcaption>
+</figure>
+
+<section id="indices" aria-labelledby="indices-title">
+<h2 id="indices-title">这些下标是什么意思？从请求定位到具体 K / V</h2>
+<p>图 0 包含两部分：先用块表把请求中的位置映射为物理槽位，再在各层复用这个槽位。<strong>slot mapping 只确定“哪个块、哪个槽”，不包含层号、K/V 选择和 head。</strong>下面仍以请求 A 的 position = 40、B = 16 为例，定位它在 layer 1 的缓存。所有下标均从 0 开始。</p>
+
+<div class="formula">
+<p><strong>① 请求内的位置 → 逻辑块号与块内 offset</strong></p>
+<pre class="index-code"><code>position = 40                 # 请求 A 的第 41 个 token
+B = 16                        # 一个 block 有 16 个 token 槽
+logical_block = 40 // 16 = 2   # 第 3 个逻辑块，覆盖 position 32–47
+offset        = 40 % 16  = 8   # 块内第 9 个槽位</code></pre>
+<p class="small"><code>//</code> 是整数除法，<code>%</code> 是取余。position 是请求内的位置；offset 是块内的位置，两者不是同一个索引。</p>
+</div>
+
+<div class="formula">
+<p><strong>② 查 block_table → 实际分配的物理块</strong></p>
+<pre class="index-code"><code>block_table[A][2] = 7
+            │  │   └─ 物理块编号 block_id = 7
+            │  └──── 请求 A 的逻辑块编号 2
+            └─────── 请求 A（此处是概念写法）</code></pre>
+<p>逻辑块号 2 描述请求内的顺序；物理块号 7 指向池中的存储位置。不同请求的 position = 40 可以映射到不同物理块。GPU 块表通常以本批次的<strong>请求行号</strong>索引，而不是直接拿字符串 A 当数组下标；主图省略了单个 KV group 的选择。</p>
+</div>
+
+<div class="formula">
+<p><strong>③ block_id + offset → 扁平 slot 编号</strong></p>
+<pre class="index-code"><code>slot = block_id × B + offset = 7 × 16 + 8 = 120
+
+# 从 slot 可以还原物理块与块内位置
+block_id = 120 // 16 = 7
+offset   = 120 % 16  = 8
+
+# 假设此 token 在本 step 的输入 token 列表中排第 0 位
+slot_mapping[0] = 120</code></pre>
+<p><code>slot_mapping[i]</code> 的 i 是<strong>本 step 展平后的输入 token 序号</strong>，不是 layer，也不是请求内 position，通常也不等于请求行号。一个 prefill 请求可以在这个列表里占多个位置；各位置的新 K/V 按对应 slot 写入缓存。</p>
+<p class="small">120 是槽位编号，<strong>不是 120 字节，也不是显存指针</strong>。分配了槽位也不代表已经写入有效 KV。批处理 padding 还可能使用负值表示跳过写入，此例只展示有效 token。</p>
+</div>
+
+<p><strong>④ 选择 layer、K/V、head 和向量元素</strong></p>
+<p>先取当前层的缓存 buffer，再按五个维度索引。沿用本文的 FlashAttention / NHD 布局：</p>
+<pre class="index-code"><code>cache = kv_cache[layer]
+cache.shape = (2, N, B, Hkv_local, D)
+
+cache[kv, block_id, offset, h, d]</code></pre>
+<div class="table-scroll"><table>
+<thead><tr><th>索引</th><th>含义</th><th>本例</th></tr></thead>
+<tbody>
+<tr><td><code>layer</code></td><td>先选择该层的独立 cache buffer；它不在上面五维 shape 内</td><td>1，即 layer 1</td></tr>
+<tr><td><code>kv</code></td><td>选择 K 区或 V 区；第一维长度为 2</td><td>0 = K，1 = V</td></tr>
+<tr><td><code>block_id</code></td><td>物理块号，范围 0…N−1</td><td>7</td></tr>
+<tr><td><code>offset</code></td><td>块内 token 槽，范围 0…B−1</td><td>8</td></tr>
+<tr><td><code>h</code></td><td>本 rank 上的 KV head 编号，范围 0…Hkv_local−1</td><td>TP8 示例只有一个本地 KV head，所以取 0</td></tr>
+<tr><td><code>d</code></td><td>该 head 向量内的元素编号，范围 0…D−1</td><td>例如 5，表示第 6 个数值</td></tr>
+<tr><td><code>:</code></td><td>取该维度的全部内容</td><td><code>[:, :]</code> 取全部 KV heads 的完整向量</td></tr>
+</tbody></table></div>
+<p class="small"><code>kv_cache[layer]</code> 是便于解释的按层访问写法；实际程序可能用 layer name 查字典或由 attention 模块持有张量，不要求存在一个连续的六维大 tensor。</p>
+
+<div class="formula">
+<p><strong>从整份 K/V，一直定位到单个数值</strong></p>
+<pre class="index-code"><code># 请求 A 的 position 40，在 layer 1 的全部 K / V
+kv_cache[1][0, 7, 8, :, :]    # K，形状 (Hkv_local, D)
+kv_cache[1][1, 7, 8, :, :]    # V，形状 (Hkv_local, D)
+
+# 第 0 个 KV head 的完整 K 向量
+kv_cache[1][0, 7, 8, 0, :]    # 形状 (D,)
+
+# 这个 K 向量中，下标为 5 的单个数值
+kv_cache[1][0, 7, 8, 0, 5]    # 一个标量</code></pre>
+<p class="small">本例 Hkv_local = 1、D = 128、BF16：整份 K 为 256 B，整份 V 为 256 B，两份合计 512 B / token / 层 / rank。</p>
+</div>
+
+<div class="key"><p><strong>和原图简写的对应关系</strong></p>
+<p><code>K[1,7,8,:,:]</code> 对应 <code>kv_cache[1][0,7,8,:,:]</code>；<code>V[1,7,8,:,:]</code> 对应 <code>kv_cache[1][1,7,8,:,:]</code>。原写法的第一维是 layer，新写法先选 layer，再用 0 / 1 选 K / V。</p>
+<p>原图的 <code>K[...] + V[...]</code> 只是表示“两份数据合起来构成 KV cache”，不是数值相加。图 0 现在改用 <code>kv_cache[layer][kv,7,8,:,:]</code>，其中 kv = 0 / 1。</p></div>
+
+<div class="formula">
+<p class="eq">请求 + position → 查块表 → (block_id, offset) ↔ slot</p>
+<p class="eq">再选择 layer、K/V、head、向量元素 → 具体缓存数值</p>
+<p>实际 kernel 再结合该层 buffer 的基地址、dtype 和各维度 stride，算出显存地址。<a href="#byte-address">文末给出了 NHD 的完整字节地址公式</a>。写入常用 slot_mapping，attention 读取则结合 block_table、有效序列长度与 mask 访问缓存。</p>
+</div>
+</section>
+
+<!-- ============ FIG 1 ============ -->
+<figure id="fig-1">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg role="img" aria-labelledby="caption-1" viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    #fig-1 .t   {font-family:var(--sans);font-size:13px;fill:var(--ink)}
+    #fig-1 .tb  {font-family:var(--sans);font-size:13px;font-weight:650;fill:var(--ink)}
+    #fig-1 .t2  {font-family:var(--sans);font-size:12px;fill:var(--ink-2)}
+    #fig-1 .m   {font-family:var(--mono);font-size:11px;fill:var(--ink-2)}
+    #fig-1 .mb  {font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--ink)}
+    #fig-1 .mblue{font-family:var(--mono);font-size:11px;fill:var(--blue)}
+    #fig-1 .cell{fill:#e6ebed;stroke:var(--rule);stroke-width:1}
+    #fig-1 .cB  {fill:var(--blue-fill);stroke:var(--blue);stroke-width:1.5}
+    #fig-1 .cG  {fill:var(--gold-fill);stroke:var(--gold);stroke-width:1.5}
+    #fig-1 .pnl {fill:none;stroke:var(--rule);stroke-width:1}
+    #fig-1 .tie {stroke:var(--blue);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  </style>
+
+  <!-- ruler -->
+  <text class="m" x="24" y="40">block_id</text>
+  <g>
+    <text class="m" x="175" y="40" text-anchor="middle">0</text>
+    <text class="m" x="233" y="40" text-anchor="middle">1</text>
+    <text class="m" x="291" y="40" text-anchor="middle">2</text>
+    <text class="m" x="349" y="40" text-anchor="middle">3</text>
+    <text class="m" x="407" y="40" text-anchor="middle">4</text>
+    <text class="m" x="465" y="40" text-anchor="middle">5</text>
+    <text class="m" x="523" y="40" text-anchor="middle">6</text>
+    <text class="mb" x="581" y="40" text-anchor="middle">7</text>
+    <text class="m" x="639" y="40" text-anchor="middle">8</text>
+    <text class="m" x="697" y="40" text-anchor="middle">…</text>
+  </g>
+
+  <!-- layer 0 -->
+  <text class="tb" x="24" y="70">layer 0</text>
+  <text class="m"  x="24" y="86">KVCacheTensor</text>
+  <rect class="cell" x="150" y="52" width="50" height="30"/>
+  <rect class="cell" x="208" y="52" width="50" height="30"/>
+  <rect class="cell" x="266" y="52" width="50" height="30"/>
+  <rect class="cG"   x="324" y="52" width="50" height="30"/>
+  <rect class="cell" x="382" y="52" width="50" height="30"/>
+  <rect class="cell" x="440" y="52" width="50" height="30"/>
+  <rect class="cell" x="498" y="52" width="50" height="30"/>
+  <rect class="cB"   x="556" y="52" width="50" height="30"/>
+  <rect class="cell" x="614" y="52" width="50" height="30"/>
+  <rect class="cell" x="672" y="52" width="50" height="30" opacity=".4"/>
+
+  <!-- layer 1 -->
+  <text class="tb" x="24" y="112">layer 1</text>
+  <text class="m"  x="24" y="128">KVCacheTensor</text>
+  <rect class="cell" x="150" y="94" width="50" height="30"/>
+  <rect class="cell" x="208" y="94" width="50" height="30"/>
+  <rect class="cell" x="266" y="94" width="50" height="30"/>
+  <rect class="cG"   x="324" y="94" width="50" height="30"/>
+  <rect class="cell" x="382" y="94" width="50" height="30"/>
+  <rect class="cell" x="440" y="94" width="50" height="30"/>
+  <rect class="cell" x="498" y="94" width="50" height="30"/>
+  <rect class="cB"   x="556" y="94" width="50" height="30"/>
+  <rect class="cell" x="614" y="94" width="50" height="30"/>
+  <rect class="cell" x="672" y="94" width="50" height="30" opacity=".4"/>
+
+  <text class="t2" x="24"  y="156">⋮</text>
+  <text class="t2" x="430" y="156" text-anchor="middle">⋮</text>
+
+  <!-- layer L-1 -->
+  <text class="tb" x="24" y="188">layer L−1</text>
+  <text class="m"  x="24" y="204">KVCacheTensor</text>
+  <rect class="cell" x="150" y="170" width="50" height="30"/>
+  <rect class="cell" x="208" y="170" width="50" height="30"/>
+  <rect class="cell" x="266" y="170" width="50" height="30"/>
+  <rect class="cG"   x="324" y="170" width="50" height="30"/>
+  <rect class="cell" x="382" y="170" width="50" height="30"/>
+  <rect class="cell" x="440" y="170" width="50" height="30"/>
+  <rect class="cell" x="498" y="170" width="50" height="30"/>
+  <rect class="cB"   x="556" y="170" width="50" height="30"/>
+  <rect class="cell" x="614" y="170" width="50" height="30"/>
+  <rect class="cell" x="672" y="170" width="50" height="30" opacity=".4"/>
+
+  <path class="tie" d="M581 52 L581 200"/>
+
+  <rect class="pnl" x="752" y="52" width="224" height="148" rx="2"/>
+  <text class="tb"    x="768" y="76">同一个 block_id</text>
+  <text class="t2"    x="768" y="98">在每一层都指向第 7 格,</text>
+  <text class="t2"    x="768" y="118">但各层有独立的 buffer。</text>
+  <text class="t2"    x="768" y="146">block_table 按请求、组管理，</text>
+  <text class="t2"    x="768" y="166">同组层复用编号；管理器</text>
+  <text class="t2"    x="768" y="186">仍知道各层的规格与分组。</text>
+
+  <!-- divider -->
+  <line x1="24" y1="236" x2="976" y2="236" stroke="var(--rule-soft)" stroke-width="1"/>
+
+  <!-- zoom -->
+  <text class="tb" x="24" y="266">放大 layer 1 的 block #7:page_size_bytes = 2 · block_size · num_kv_heads · head_size · sizeof(dtype)</text>
+
+  <rect class="pnl" x="24" y="284" width="460" height="172" rx="2"/>
+  <text class="tb" x="42" y="308">K 半区</text>
+  <text class="mb" x="100" y="308">kv_cache[layer1][0, 7]</text>
+  <text class="m"  x="42" y="328">shape = (block_size, num_kv_heads, head_size)</text>
+  <g>
+    <rect class="cB" x="42"  y="344" width="22" height="46"/>
+    <rect class="cB" x="68"  y="344" width="22" height="46"/>
+    <rect class="cB" x="94"  y="344" width="22" height="46"/>
+    <rect class="cB" x="120" y="344" width="22" height="46"/>
+    <rect class="cell" x="146" y="344" width="22" height="46"/>
+    <rect class="cell" x="172" y="344" width="22" height="46"/>
+    <rect class="cell" x="198" y="344" width="22" height="46"/>
+    <rect class="cell" x="224" y="344" width="22" height="46"/>
+    <rect class="cell" x="250" y="344" width="22" height="46"/>
+    <rect class="cell" x="276" y="344" width="22" height="46"/>
+    <rect class="cell" x="302" y="344" width="22" height="46"/>
+    <rect class="cell" x="328" y="344" width="22" height="46"/>
+    <rect class="cell" x="354" y="344" width="22" height="46"/>
+    <rect class="cell" x="380" y="344" width="22" height="46"/>
+    <rect class="cell" x="406" y="344" width="22" height="46"/>
+    <rect class="cell" x="432" y="344" width="22" height="46"/>
+  </g>
+  <text class="m" x="53"  y="406" text-anchor="middle">0</text>
+  <text class="m" x="443" y="406" text-anchor="middle">15</text>
+  <text class="m" x="42"  y="432">block_offset —— 一格 = 一个 token 的 K</text>
+
+  <rect class="pnl" x="516" y="284" width="460" height="172" rx="2"/>
+  <text class="tb" x="534" y="308">V 半区</text>
+  <text class="mb" x="592" y="308">kv_cache[layer1][1, 7]</text>
+  <text class="m"  x="534" y="328">与 K 相距 num_blocks·block_size·H·D 个元素</text>
+  <g>
+    <rect class="cB" x="534" y="344" width="22" height="46"/>
+    <rect class="cB" x="560" y="344" width="22" height="46"/>
+    <rect class="cB" x="586" y="344" width="22" height="46"/>
+    <rect class="cB" x="612" y="344" width="22" height="46"/>
+    <rect class="cell" x="638" y="344" width="22" height="46"/>
+    <rect class="cell" x="664" y="344" width="22" height="46"/>
+    <rect class="cell" x="690" y="344" width="22" height="46"/>
+    <rect class="cell" x="716" y="344" width="22" height="46"/>
+    <rect class="cell" x="742" y="344" width="22" height="46"/>
+    <rect class="cell" x="768" y="344" width="22" height="46"/>
+    <rect class="cell" x="794" y="344" width="22" height="46"/>
+    <rect class="cell" x="820" y="344" width="22" height="46"/>
+    <rect class="cell" x="846" y="344" width="22" height="46"/>
+    <rect class="cell" x="872" y="344" width="22" height="46"/>
+    <rect class="cell" x="898" y="344" width="22" height="46"/>
+    <rect class="cell" x="924" y="344" width="22" height="46"/>
+  </g>
+  <text class="m" x="534" y="432">已写 4 个 token，余下 12 格是可继续填充的预留空槽</text>
+
+  <rect x="24" y="480" width="952" height="58" rx="2" fill="#e6ebed" stroke="var(--rule-soft)"/>
+  <text class="mb" x="42" y="504">Llama-3-70B · 80 层 · 8 KV heads · head_size 128 · TP8 · bf16</text>
+  <text class="m"  x="42" y="524">每层每 token = 2×1×128×2 = 512 B   →   全 80 层 = 40 KiB / token / rank   →   同号 block 跨层合计 = 640 KiB / rank</text>
+</svg></div>
+<figcaption id="caption-1">
+  <span class="fignum">图 1</span>
+  <div class="figtext">
+    <p class="figtitle">物理布局：单组 L 层，各自 buffer，复用一套 block 编号</p>
+    每层一个 <code>KVCacheTensor</code>，NHD 连续布局为 <code>(2, N, B, Hkv_local, D)</code>。同一个 <code>block_id</code> 在各层索引同号位置，但各层独立分配，不保证相邻。K 与 V 分别位于该层 buffer 的两大半区；单层 page 的 P 字节是两处数据的合计，不是一段 K/V 紧邻的连续切片。
+  </div>
+</figcaption>
+</figure>
+
+<!-- ============ FIG 2 ============ -->
+<figure id="fig-2">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg role="img" aria-labelledby="caption-2" viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    #fig-2 .t   {font-family:var(--sans);font-size:13px;fill:var(--ink)}
+    #fig-2 .tb  {font-family:var(--sans);font-size:13px;font-weight:650;fill:var(--ink)}
+    #fig-2 .t2  {font-family:var(--sans);font-size:12px;fill:var(--ink-2)}
+    #fig-2 .m   {font-family:var(--mono);font-size:11px;fill:var(--ink-2)}
+    #fig-2 .mb  {font-family:var(--mono);font-size:12px;font-weight:600;fill:var(--ink)}
+    #fig-2 .lbox{fill:#e6ebed;stroke:var(--rule);stroke-width:1}
+    #fig-2 .gbox{fill:var(--gold-fill);stroke:var(--gold);stroke-width:1.5}
+    #fig-2 .bbox{fill:var(--blue-fill);stroke:var(--blue);stroke-width:1.5}
+    #fig-2 .sbox{fill:var(--sage-fill);stroke:var(--sage);stroke-width:1.5}
+    #fig-2 .free{fill:var(--panel);stroke:var(--rule-soft);stroke-width:1;stroke-dasharray:3 3}
+    #fig-2 .aA  {stroke:var(--blue);stroke-width:1.4;fill:none;marker-end:url(#hA)}
+    #fig-2 .aB  {stroke:var(--sage);stroke-width:1.4;fill:none;marker-end:url(#hB)}
+  </style>
+  <defs>
+    <marker id="hA" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--blue)"/>
+    </marker>
+    <marker id="hB" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--sage)"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="24" y="34">逻辑视图 —— 每个请求看到的是一串连续的块</text>
+
+  <text class="tb" x="24" y="76">请求 A</text>
+  <text class="m"  x="24" y="94">40 tokens</text>
+  <rect class="gbox" x="150" y="52" width="120" height="46"/>
+  <text class="t"  x="210" y="72" text-anchor="middle">logical 0</text>
+  <text class="m"  x="210" y="88" text-anchor="middle">tok 0–15</text>
+  <rect class="gbox" x="290" y="52" width="120" height="46"/>
+  <text class="t"  x="350" y="72" text-anchor="middle">logical 1</text>
+  <text class="m"  x="350" y="88" text-anchor="middle">tok 16–31</text>
+  <rect class="bbox" x="430" y="52" width="120" height="46"/>
+  <text class="t"  x="490" y="72" text-anchor="middle">logical 2</text>
+  <text class="m"  x="490" y="88" text-anchor="middle">tok 32–39</text>
+
+  <text class="tb" x="24" y="140">请求 B</text>
+  <text class="m"  x="24" y="158">35 tokens</text>
+  <rect class="gbox" x="150" y="116" width="120" height="46"/>
+  <text class="t"  x="210" y="136" text-anchor="middle">logical 0</text>
+  <text class="m"  x="210" y="152" text-anchor="middle">tok 0–15</text>
+  <rect class="gbox" x="290" y="116" width="120" height="46"/>
+  <text class="t"  x="350" y="136" text-anchor="middle">logical 1</text>
+  <text class="m"  x="350" y="152" text-anchor="middle">tok 16–31</text>
+  <rect class="sbox" x="430" y="116" width="120" height="46"/>
+  <text class="t"  x="490" y="136" text-anchor="middle">logical 2</text>
+  <text class="m"  x="490" y="152" text-anchor="middle">tok 32–34</text>
+
+  <text class="t2" x="580" y="80">A 与 B 的前 32 个 token 完全相同</text>
+  <text class="t2" x="580" y="100">且 LoRA / 多模态 / salt 等缓存键一致</text>
+  <text class="t2" x="580" y="136">→ 已计算的前两个完整块缓存键一致</text>
+  <text class="t2" x="580" y="156">→ 开启 prefix caching 时可复用同一份</text>
+
+  <line x1="24" y1="188" x2="976" y2="188" stroke="var(--rule-soft)"/>
+  <text class="tb" x="24" y="216">块表 —— 逻辑块号到物理块号的翻译层(每请求每 KV group 一份)</text>
+
+  <text class="mb" x="24" y="256">block_table[A]</text>
+  <rect class="gbox" x="150" y="234" width="120" height="32"/><text class="mb" x="210" y="255" text-anchor="middle">12</text>
+  <rect class="gbox" x="290" y="234" width="120" height="32"/><text class="mb" x="350" y="255" text-anchor="middle">3</text>
+  <rect class="bbox" x="430" y="234" width="120" height="32"/><text class="mb" x="490" y="255" text-anchor="middle">7</text>
+
+  <text class="mb" x="24" y="306">block_table[B]</text>
+  <rect class="gbox" x="150" y="284" width="120" height="32"/><text class="mb" x="210" y="305" text-anchor="middle">12</text>
+  <rect class="gbox" x="290" y="284" width="120" height="32"/><text class="mb" x="350" y="305" text-anchor="middle">3</text>
+  <rect class="sbox" x="430" y="284" width="120" height="32"/><text class="mb" x="490" y="305" text-anchor="middle">11</text>
+
+  <!-- arrows -->
+  <path class="aA" d="M210,266 C210,330 796,340 796,422"/>
+  <path class="aB" d="M212,316 C212,350 792,352 792,422"/>
+  <path class="aA" d="M350,266 C350,320 328,336 328,422"/>
+  <path class="aB" d="M354,316 C354,344 332,356 332,422"/>
+  <path class="aA" d="M490,266 C490,320 536,336 536,422"/>
+  <path class="aB" d="M490,316 C490,346 744,352 744,422"/>
+
+  <text class="tb" x="24" y="408">物理块池</text>
+
+  <g>
+    <rect class="free" x="150" y="424" width="44" height="40"/><text class="m" x="172" y="480" text-anchor="middle">0</text>
+    <rect class="free" x="202" y="424" width="44" height="40"/><text class="m" x="224" y="480" text-anchor="middle">1</text>
+    <rect class="free" x="254" y="424" width="44" height="40"/><text class="m" x="276" y="480" text-anchor="middle">2</text>
+    <rect class="gbox" x="306" y="424" width="44" height="40"/><text class="m" x="328" y="480" text-anchor="middle">3</text>
+    <rect class="free" x="358" y="424" width="44" height="40"/><text class="m" x="380" y="480" text-anchor="middle">4</text>
+    <rect class="free" x="410" y="424" width="44" height="40"/><text class="m" x="432" y="480" text-anchor="middle">5</text>
+    <rect class="free" x="462" y="424" width="44" height="40"/><text class="m" x="484" y="480" text-anchor="middle">6</text>
+    <rect class="bbox" x="514" y="424" width="44" height="40"/><text class="m" x="536" y="480" text-anchor="middle">7</text>
+    <rect class="free" x="566" y="424" width="44" height="40"/><text class="m" x="588" y="480" text-anchor="middle">8</text>
+    <rect class="free" x="618" y="424" width="44" height="40"/><text class="m" x="640" y="480" text-anchor="middle">9</text>
+    <rect class="free" x="670" y="424" width="44" height="40"/><text class="m" x="692" y="480" text-anchor="middle">10</text>
+    <rect class="sbox" x="722" y="424" width="44" height="40"/><text class="m" x="744" y="480" text-anchor="middle">11</text>
+    <rect class="gbox" x="774" y="424" width="44" height="40"/><text class="m" x="796" y="480" text-anchor="middle">12</text>
+    <rect class="free" x="826" y="424" width="44" height="40"/><text class="m" x="848" y="480" text-anchor="middle">13</text>
+    <rect class="free" x="878" y="424" width="44" height="40"/><text class="m" x="900" y="480" text-anchor="middle">14</text>
+    <rect class="free" x="930" y="424" width="44" height="40"/><text class="m" x="952" y="480" text-anchor="middle">15</text>
+  </g>
+  <text class="m" x="328" y="449" text-anchor="middle" font-weight="600" fill="var(--gold)">ref 2</text>
+  <text class="m" x="796" y="449" text-anchor="middle" font-weight="600" fill="var(--gold)">ref 2</text>
+  <text class="m" x="536" y="449" text-anchor="middle" font-weight="600" fill="var(--blue)">ref 1</text>
+  <text class="m" x="744" y="449" text-anchor="middle" font-weight="600" fill="var(--sage)">ref 1</text>
+  <text class="m" x="24" y="449">虚线 = 空闲</text>
+
+  <rect x="24" y="506" width="952" height="72" rx="2" fill="#e6ebed" stroke="var(--rule-soft)"/>
+  <text class="t2" x="42" y="530">块 3 和块 12 在本例被两个请求同时引用；prefix cache 命中可复用已有块，但并不保证相同内容全局只存一份。</text>
+  <text class="t2" x="42" y="552">注意 A 的逻辑块 0/1/2 落在物理 12/3/7,顺序完全打乱。kernel 每次访问都要过一次 block_table 间接寻址,</text>
+  <text class="t2" x="42" y="570">这是 paging 的间接寻址开销；固定块池内避免可变长外部碎片，尾块仍有空槽；图中省略 null / 保留块。</text>
+</svg></div>
+<figcaption id="caption-2">
+  <span class="fignum">图 2</span>
+  <div class="figtext">
+    <p class="figtitle">逻辑块 → 物理块:block_table 是唯一的翻译层</p>
+    此处开启前缀缓存：完整块按 <code>block_hash(parent_hash, token_ids, extra_keys)</code> 建索引，具体注册时机由调度器控制。<strong>半满的尾块是私有、可继续写的</strong>；已完成并被复用的满块在引用期间只读。尾块用尽后才申请下一块。V1 可能存在内容相同的重复块，不等于做了全局去重。
+  </div>
+</figcaption>
+</figure>
+
+<!-- ============ FIG 3 ============ -->
+<figure id="fig-3">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg role="img" aria-labelledby="caption-3" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    #fig-3 .t   {font-family:var(--sans);font-size:13px;fill:var(--ink)}
+    #fig-3 .tb  {font-family:var(--sans);font-size:13px;font-weight:650;fill:var(--ink)}
+    #fig-3 .t2  {font-family:var(--sans);font-size:12px;fill:var(--ink-2)}
+    #fig-3 .m   {font-family:var(--mono);font-size:11px;fill:var(--ink-2)}
+    #fig-3 .mb  {font-family:var(--mono);font-size:11.5px;font-weight:600;fill:var(--ink)}
+    #fig-3 .mA  {font-family:var(--mono);font-size:11px;fill:var(--blue)}
+    #fig-3 .mB  {font-family:var(--mono);font-size:11px;fill:var(--sage)}
+    #fig-3 .pnl {fill:var(--panel);stroke:var(--rule);stroke-width:1}
+    #fig-3 .cell{fill:#e6ebed;stroke:var(--rule);stroke-width:1}
+    #fig-3 .cB  {fill:var(--blue-fill);stroke:var(--blue);stroke-width:1.6}
+    #fig-3 .cS  {fill:var(--sage-fill);stroke:var(--sage);stroke-width:1.6}
+    #fig-3 .ar  {stroke:var(--ink-3);stroke-width:1.4;fill:none;marker-end:url(#h3)}
+  </style>
+  <defs>
+    <marker id="h3" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
+    </marker>
+  </defs>
+
+  <rect class="pnl" x="24" y="40" width="290" height="196" rx="2"/>
+  <text class="tb" x="42" y="66">① 本 step 新算出的 K/V</text>
+  <text class="m"  x="42" y="86">key, value: [T, Hkv_local, D]</text>
+  <rect class="cB" x="42" y="100" width="254" height="52"/>
+  <text class="t"  x="56" y="122">batch 位置 0 · 请求 A</text>
+  <text class="mA" x="56" y="141">decode, pos = 40（从 0 计数）</text>
+  <rect class="cS" x="42" y="162" width="254" height="52"/>
+  <text class="t"  x="56" y="184">batch 位置 1 · 请求 B</text>
+  <text class="mB" x="56" y="203">chunked prefill, pos = 33（独立快照）</text>
+
+  <path class="ar" d="M318,138 L342,138"/>
+
+  <rect class="pnl" x="346" y="40" width="332" height="196" rx="2"/>
+  <text class="tb" x="364" y="66">② 输入准备：按请求 / 组算 slot</text>
+  <text class="mb" x="364" y="90">blk = pos // block_size</text>
+  <text class="mb" x="364" y="108">slot = block_table[req][blk] * block_size</text>
+  <text class="mb" x="404" y="126">+ pos % block_size</text>
+  <line x1="364" y1="142" x2="660" y2="142" stroke="var(--rule-soft)"/>
+  <text class="mA" x="364" y="166">A: 40//16=2 → bt[A][2]=7  → 7*16+8  = 120</text>
+  <text class="mB" x="364" y="190">B: 33//16=2 → bt[B][2]=11 → 11*16+1 = 177</text>
+  <text class="t2" x="364" y="216">block_size = 16</text>
+
+  <path class="ar" d="M682,138 L706,138"/>
+
+  <rect class="pnl" x="710" y="40" width="266" height="196" rx="2"/>
+  <text class="tb" x="728" y="66">③ slot_mapping</text>
+  <text class="mb" x="728" y="92">tensor([120, 177])</text>
+  <text class="m"  x="728" y="110">dtype=int64, device=cuda</text>
+  <line x1="728" y1="128" x2="958" y2="128" stroke="var(--rule-soft)"/>
+  <text class="t2" x="728" y="154">这一组的 slot_mapping 可被</text>
+  <text class="t2" x="728" y="174">组内布局兼容的各层复用。</text>
+  <text class="t2" x="728" y="202">CUDA Graph 下是固定</text>
+  <text class="t2" x="728" y="222">buffer 原地更新。</text>
+
+  <text class="tb" x="24" y="288">④ reshape_and_cache_flash 按扁平 slot 号散写 —— kernel 不关心这两个 token 属于谁</text>
+
+  <rect class="pnl" x="24" y="304" width="460" height="164" rx="2"/>
+  <text class="tb" x="42" y="330">物理块 7  ·  请求 A 的 logical 2</text>
+  <g>
+    <rect class="cell" x="42"  y="348" width="22" height="44"/>
+    <rect class="cell" x="68"  y="348" width="22" height="44"/>
+    <rect class="cell" x="94"  y="348" width="22" height="44"/>
+    <rect class="cell" x="120" y="348" width="22" height="44"/>
+    <rect class="cell" x="146" y="348" width="22" height="44"/>
+    <rect class="cell" x="172" y="348" width="22" height="44"/>
+    <rect class="cell" x="198" y="348" width="22" height="44"/>
+    <rect class="cell" x="224" y="348" width="22" height="44"/>
+    <rect class="cB"   x="250" y="348" width="22" height="44"/>
+    <rect class="cell" x="276" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="302" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="328" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="354" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="380" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="406" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="432" y="348" width="22" height="44" opacity=".45"/>
+  </g>
+  <text class="mA" x="261" y="408" text-anchor="middle">offset 8</text>
+  <text class="mA" x="42"  y="440">slot 120 = 7 × 16 + 8</text>
+
+  <rect class="pnl" x="516" y="304" width="460" height="164" rx="2"/>
+  <text class="tb" x="534" y="330">物理块 11  ·  请求 B 的 logical 2</text>
+  <g>
+    <rect class="cell" x="534" y="348" width="22" height="44"/>
+    <rect class="cS"   x="560" y="348" width="22" height="44"/>
+    <rect class="cell" x="586" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="612" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="638" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="664" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="690" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="716" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="742" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="768" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="794" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="820" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="846" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="872" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="898" y="348" width="22" height="44" opacity=".45"/>
+    <rect class="cell" x="924" y="348" width="22" height="44" opacity=".45"/>
+  </g>
+  <text class="mB" x="571" y="408" text-anchor="middle">offset 1</text>
+  <text class="mB" x="534" y="440">slot 177 = 11 × 16 + 1</text>
+</svg></div>
+<figcaption id="caption-3">
+  <span class="fignum">图 3</span>
+  <div class="figtext">
+    <p class="figtitle">写入路径:一个 token 落到哪一格</p>
+    <code>slot_mapping</code> 把 <code>(num_blocks, block_size)</code> 两维压平成一个整数索引,写 kernel 按 <code>slot → (slot//B, slot%B)</code> 定位块与槽，再结合 head、dtype 和 stride 计算真实地址。同组 token 在 L 层用同一个 slot 号，每层写进各自的 buffer。图 3 是独立于图 2 的调度快照，不要求请求 B 的进度与图 2 相同。支持的 FP8 配置可在缓存写入时量化。
+  </div>
+</figcaption>
+</figure>
+
+<!-- ============ FIG 4 ============ -->
+<figure id="fig-4">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg role="img" aria-labelledby="caption-4" viewBox="0 0 1000 664" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    #fig-4 .t   {font-family:var(--sans);font-size:12.5px;fill:var(--ink)}
+    #fig-4 .tb  {font-family:var(--sans);font-size:13px;font-weight:650;fill:var(--ink)}
+    #fig-4 .band{font-family:var(--sans);font-size:12px;font-weight:650;fill:var(--blue);letter-spacing:.04em}
+    #fig-4 .t2  {font-family:var(--sans);font-size:11.5px;fill:var(--ink-2)}
+    #fig-4 .m   {font-family:var(--mono);font-size:10.5px;fill:var(--ink-2)}
+    #fig-4 .mb  {font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--ink)}
+    #fig-4 .pnl {fill:var(--panel);stroke:var(--rule);stroke-width:1}
+    #fig-4 .pW  {fill:var(--blue-fill);stroke:var(--blue);stroke-width:1.6}
+    #fig-4 .pR  {fill:var(--gold-fill);stroke:var(--gold);stroke-width:1.6}
+    #fig-4 .dash{fill:none;stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:5 4}
+    #fig-4 .ar  {stroke:var(--ink-3);stroke-width:1.4;fill:none;marker-end:url(#h4)}
+    #fig-4 .arR {stroke:var(--rust);stroke-width:1.4;fill:none;marker-end:url(#h4r)}
+  </style>
+  <defs>
+    <marker id="h4" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
+    </marker>
+    <marker id="h4r" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--rust)"/>
+    </marker>
+  </defs>
+
+  <text class="band" x="24" y="30">主机调度与输入准备 · 每个 step（示意）</text>
+
+  <rect class="pnl" x="24" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="40" y="68">Scheduler</text>
+  <text class="t2" x="40" y="90">决定本 step 跑哪些请求、</text>
+  <text class="t2" x="40" y="108">每个请求调度几个 token</text>
+  <text class="m"  x="40" y="134">token_budget 内混排</text>
+  <text class="m"  x="40" y="152">prefill 与 decode</text>
+
+  <path class="ar" d="M256,110 L282,110"/>
+
+  <rect class="pnl" x="286" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="302" y="68">KVCacheManager</text>
+  <text class="t2" x="302" y="90">新请求查 prefix cache，</text>
+  <text class="t2" x="302" y="108">命中则 ref++ 复用；</text>
+  <text class="t2" x="302" y="126">容量不足才从 free queue 取块</text>
+  <text class="m"  x="302" y="152">返回 block_ids</text>
+
+  <path class="ar" d="M518,110 L544,110"/>
+
+  <rect class="pnl" x="548" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="564" y="68">_prepare_inputs</text>
+  <text class="t2" x="564" y="90">更新本组输入与元数据：</text>
+  <text class="m"  x="564" y="112">block_table (R, maxB)</text>
+  <text class="m"  x="564" y="130">slot_mapping (T,)</text>
+  <text class="m"  x="564" y="148">seq_lens, query_start_loc</text>
+
+  <path class="ar" d="M780,110 L806,110"/>
+
+  <rect class="pnl" x="810" y="44" width="166" height="130" rx="2"/>
+  <text class="tb" x="826" y="68">H2D</text>
+  <text class="t2" x="826" y="90">复制 / 更新 GPU</text>
+  <text class="t2" x="826" y="108">输入与元数据；</text>
+  <text class="t2" x="826" y="126">满足捕获条件时</text>
+  <text class="t2" x="826" y="144">可 replay 图</text>
+
+  <path class="ar" d="M500,178 L500,204"/>
+
+  <text class="band" x="24" y="222">前向上下文（主机设置）→ GPU 逐层执行</text>
+
+  <rect class="pW" x="24" y="234" width="952" height="46" rx="2"/>
+  <text class="mb" x="42" y="253">set_forward_context(attn_metadata)</text>
+  <text class="t2" x="42" y="271">主机将 attention metadata 放入 forward context，供 attention 调用读取；其中的张量供 GPU kernel 使用。</text>
+
+  <path class="ar" d="M500,284 L500,306"/>
+
+  <rect class="dash" x="24" y="312" width="952" height="238" rx="3"/>
+  <text class="tb" x="42" y="338">for layer in 0 … L−1</text>
+  <text class="t2" x="176" y="338">—— 逐层读写自己的 KV；兼容层复用元数据。主图没有跨层 KV 拷贝。</text>
+
+  <rect class="pnl" x="44" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="60" y="380">QKV 投影 / 位置变换</text>
+  <text class="t2" x="60" y="402">算出本 step 这几个</text>
+  <text class="t2" x="60" y="420">token 的 q, k, v</text>
+  <text class="m"  x="60" y="446">Q: Hq；K/V: Hkv_local</text>
+
+  <path class="ar" d="M264,440 L292,440"/>
+
+  <rect class="pW" x="296" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="312" y="380">写:reshape_and_cache</text>
+  <text class="t2" x="312" y="402">按 slot_mapping 把 k, v</text>
+  <text class="t2" x="312" y="420">散写进本层 kv_cache</text>
+  <text class="m"  x="312" y="446">同一 stream 有序：先写后读</text>
+  <text class="m"  x="312" y="466">支持的 fp8 写入在此量化</text>
+  <text class="m"  x="312" y="500" fill="var(--blue)">kv_cache[layer]</text>
+
+  <path class="ar" d="M516,440 L544,440"/>
+
+  <rect class="pR" x="548" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="564" y="380">读:paged attention</text>
+  <text class="t2" x="564" y="402">flash_attn_varlen_func</text>
+  <text class="t2" x="564" y="420">按块表访问有效 KV</text>
+  <text class="t2" x="564" y="438">由 seq_lens + causal mask 限定</text>
+  <text class="m"  x="564" y="466">刚写进去的新 token</text>
+  <text class="m"  x="564" y="486">也在这一步被读到</text>
+
+  <path class="ar" d="M768,440 L796,440"/>
+
+  <rect class="pnl" x="800" y="356" width="176" height="168" rx="2"/>
+  <text class="tb" x="816" y="380">o_proj + MLP</text>
+  <text class="t2" x="816" y="402">输出 hidden state,</text>
+  <text class="t2" x="816" y="420">交给下一层</text>
+  <text class="m"  x="816" y="450">KV 不再参与</text>
+
+  <path class="ar" d="M500,554 L500,578"/>
+  <rect class="pnl" x="24" y="582" width="952" height="60" rx="2"/>
+  <text class="tb" x="42" y="606">最后一层 → logits → sampler → 完成相应前向的请求采样新 token</text>
+  <text class="t2" x="42" y="628">采样只产生 token ID；该 token 下次作为输入跑前向时才写它的 KV。未完成的 prefill chunk 不一定产生输出 token。</text>
+  <path class="arR" d="M976,642 H988 V18 H262"/>
+  <text class="m" x="700" y="14" fill="var(--rust)">下一个 step</text>
+</svg></div>
+<figcaption id="caption-4">
+  <span class="fignum">图 4</span>
+  <div class="figtext">
+    <p class="figtitle">一个 step 的完整数据通路</p>
+    块分配按请求 / KV group 处理，兼容的层可复用块表和输入元数据；KV 读写仍是逐层执行。图中省略 norm、residual 等细节；使用 RoPE 的模型在相应位置变换后缓存 K。不能把整个 CPU step 概括为 O(1)：它仍依赖请求数、token 数、块数和 group / backend 数量。写入和 attention 读取有执行顺序依赖，通常由同一 CUDA stream 保证，无需每步做主机全设备同步。
+  </div>
+</figcaption>
+</figure>
+
+<!-- ============ FIG 5 ============ -->
+<figure id="fig-5">
+<div class="diagram-scroll" tabindex="0" aria-label="图示，可横向滚动"><svg role="img" aria-labelledby="caption-5" viewBox="0 0 1000 452" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    #fig-5 .t2  {font-family:var(--sans);font-size:11.5px;fill:var(--ink-2)}
+    #fig-5 .tb  {font-family:var(--sans);font-size:13px;font-weight:650;fill:var(--ink)}
+    #fig-5 .m   {font-family:var(--mono);font-size:10.5px;fill:var(--ink-2)}
+    #fig-5 .pnl {fill:var(--panel);stroke:var(--rule);stroke-width:1}
+    #fig-5 .p1  {fill:var(--panel);stroke:var(--rule);stroke-width:1;stroke-dasharray:3 3}
+    #fig-5 .p2  {fill:var(--blue-fill);stroke:var(--blue);stroke-width:1.6}
+    #fig-5 .p3  {fill:var(--gold-fill);stroke:var(--gold);stroke-width:1.6}
+    #fig-5 .ar  {stroke:var(--ink-3);stroke-width:1.4;fill:none;marker-end:url(#h5)}
+    #fig-5 .arB {stroke:var(--blue);stroke-width:1.4;fill:none;marker-end:url(#h5b)}
+  </style>
+  <defs>
+    <marker id="h5" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
+    </marker>
+    <marker id="h5b" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--blue)"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="24" y="32">一个物理块的一生</text>
+
+  <rect class="p1" x="24" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="40" y="72">空闲</text>
+  <text class="t2" x="40" y="94">在 free block queue 里,</text>
+  <text class="t2" x="40" y="112">双向链表,队头出、队尾进</text>
+  <text class="m"  x="40" y="140">ref_cnt = 0</text>
+  <text class="m"  x="40" y="158">内容可能还留着旧 KV</text>
+
+  <path class="ar" d="M252,112 L280,112"/>
+
+  <rect class="p2" x="284" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="300" y="72">已分配 · 可写</text>
+  <text class="t2" x="300" y="94">逐 token 或按 chunk 写入，</text>
+  <text class="t2" x="300" y="112">半满块不作前缀共享</text>
+  <text class="m"  x="300" y="140">ref_cnt = 1</text>
+  <text class="m"  x="300" y="158">私有,可写</text>
+
+  <path class="ar" d="M512,112 L540,112"/>
+
+  <rect class="p3" x="544" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="560" y="72">完整缓存块 · 已注册</text>
+  <text class="t2" x="560" y="94">算 block_hash(parent_hash,</text>
+  <text class="t2" x="560" y="112">token_ids, extra_keys)</text>
+  <text class="t2" x="560" y="130">写进 hash → block 映射</text>
+  <text class="m"  x="560" y="158">引用期间保留内容，只读复用</text>
+
+  <path class="ar" d="M772,112 L800,112"/>
+
+  <rect class="p3" x="804" y="48" width="172" height="128" rx="2"/>
+  <text class="tb" x="820" y="72">被复用</text>
+  <text class="t2" x="820" y="94">新请求前缀哈希</text>
+  <text class="t2" x="820" y="112">命中,直接挂上</text>
+  <text class="m"  x="820" y="140">ref_cnt++</text>
+  <text class="m"  x="820" y="158">零拷贝</text>
+
+  <path class="ar" d="M890,180 C890,224 890,232 560,232 L140,232 L140,182"/>
+  <text class="t2" x="516" y="226" text-anchor="middle">请求结束 → 各块 ref_cnt--；归零的块 → free queue <tspan font-weight="650">队尾</tspan>,内容和哈希都保留</text>
+
+  <rect class="pnl" x="24" y="268" width="468" height="156" rx="2"/>
+  <text class="tb" x="42" y="294">为什么回队尾而不是队头</text>
+  <text class="t2" x="42" y="318">因为它还带着哈希,在被真正复写之前,后来的</text>
+  <text class="t2" x="42" y="338">请求仍可能命中它 —— 相当于一次"复活"。</text>
+  <text class="t2" x="42" y="358">采用 LRU 式空闲队列；同一请求释放时通常</text>
+  <text class="t2" x="42" y="378">从后往前入队，较长前缀的尾块先被淘汰。</text>
+  <text class="t2" x="42" y="398">重新分配作写入时，先移除旧哈希再复写。</text>
+
+  <rect class="pnl" x="516" y="268" width="460" height="156" rx="2"/>
+  <text class="tb" x="534" y="294">显存不够时会发生什么</text>
+  <text class="t2" x="534" y="318">本 step 需要更多块，空闲池不足 → 可能抢占：</text>
+  <text class="t2" x="534" y="338">调度器按 FCFS / priority 等策略选受害请求，</text>
+  <text class="t2" x="534" y="358">释放它的块引用，将请求放回 waiting 队列。</text>
+  <text class="t2" x="534" y="382">恢复时重算未命中的前缀；如果缓存仍有效，</text>
+  <text class="t2" x="534" y="402">可以命中复用，但不能保证恢复成本很低。</text>
+</svg></div>
+<figcaption id="caption-5">
+  <span class="fignum">图 5</span>
+  <div class="figtext">
+    <p class="figtitle">分配与回收:块的生命周期</p>
+    引用计数决定块能否回到空闲池；哈希索引决定已有内容能否作为前缀复用。请求释放的是引用，其他请求仍持有的共享块不会因此变成空闲。没有哈希的块也能回池；关闭前缀缓存时仍可复用内存，但不能复用旧 KV 计算结果。
+  </div>
+</figcaption>
+</figure>
+
+<h2>把容量、编号、地址和时间串起来</h2>
+<ul>
+<li><strong>容量：</strong>B 决定一个块覆盖多少 token；P 决定单层所占字节；C 是同号块跨本组各层的总量。启动时申请池，运行时按块分配。</li>
+<li><strong>编号：</strong>请求的 logical block 经 block_table 映射为物理 block_id；兼容的同组层复用编号。它不是 GPU 指针，也不是 CUDA thread block。</li>
+<li><strong>地址：</strong>定位一个元素仍需 layer / group、K 或 V、block_id、offset、head 与维度，以及真实 stride。</li>
+<li><strong>时间：</strong>先分配槽位，再逐层计算并写 KV，attention 读取有效内容；最后采样得到的 token，要等它自己的前向才拥有 KV。</li>
+<li><strong>回收：</strong>释放引用 → 块归池；缓存命中 → 复用内容。它们不等于每次 cudaMalloc / cudaFree，也不保证所有重复内容都去重。</li>
+</ul>
+<div class="formula" id="byte-address"><p><strong>NHD 主图的字节寻址展开</strong>（忽略额外 padding，索引从 0 开始）</p>
+<p class="eq">K 地址 = base_layer + ((b × B + o) × H + h) × D × e + d × e</p>
+<p class="eq">V 地址 = K 地址 + N × B × H × D × e</p>
+<p class="small">H = Hkv_local；b 为 block_id，o 为块内 token offset，h 为 KV head，d 为 head 内维度。跨层首先换 base_layer；换后端 / HND 布局则应按实际 stride 计算，不能照抄这条公式。只算 <code>base + block_id × P</code> 会误以为 K/V 紧挨在一整页内。</p></div>
+<div class="key"><p><strong>尾块空槽何时算浪费？</strong></p><p>独占请求覆盖 T 个 KV token 时，空槽数为 <code>ceil(T/B) × B − T</code>，范围是 0 到 B−1；仍在生成时这些槽可以继续填。只有假设尾部余数近似均匀，平均空槽才约为 <code>(B−1)/2</code>，不能直接宣称每块固定浪费 B/2。共享前缀、lookahead 和滑动窗口需要另外记账。</p></div>
+<div class="key"><p><strong>迁移 / offload 要看实际布局</strong></p><p>本例一个 token 的跨层 KV，以及同一层的 K/V，都不是单段相邻数据。迁移时可逐层或批量收集多段地址，也可先打包再传；具体由 connector、后端和传输接口决定。不能由这张图推出“必须逐层流水传输”或“所有 connector 都必须携带同一套 stride 字段”。</p></div>
+<div class="key"><p><strong>哪些情形需要重画？</strong></p>
+<p><strong>MLA：</strong>缓存压缩表示与所需的 RoPE key 等数据，不能套用普通 K/V 的 <code>2 × Hkv × D</code> 公式；页字节数和 B 需按具体模型、dtype、后端核对。“MLA 一律 B = 64”不是通用规则。</p>
+<p><strong>混合注意力 / Mamba：</strong>按 KV cache group 管理块表，各组可有不同块编号与保留策略；同组共享映射，但管理器仍知道层规格和分组。不同组的层可能复用底层 buffer 的不同块位置，页对齐可能产生 padding 或调整 B。Mamba 状态也不是普通的逐 token K/V 数组。</p>
+<p><strong>跨层 KV 共享：</strong>指定 <code>kv_sharing_target_layer_name</code> 时，某些层复用目标层缓存并跳过重复写入，物理缓存份数不再等于模型层数。</p>
+<p><strong>其他布局与执行模式：</strong>HND、其他 attention backend、FP8/其他量化、滑动窗口、投机解码、上下文并行或特殊 connector，都可能改变 stride、预留槽位、元数据与执行顺序。</p></div>
+<h2 id="sources">核对依据与本次修订</h2>
+<p class="small">为避免把不同版本的实现混在一起，本文固定核对 vLLM <strong>v0.10.2</strong> 的源码，作为原图布局的明确基线；这不是“最新版布局”的承诺。以下均为官方仓库 / 文档。</p>
+<ol class="sources">
+<li><a href="https://docs.vllm.ai/en/v0.10.2/design/hybrid_kv_cache_manager.html">Hybrid KV Cache Manager</a>：page 两种口径、分组、共享 buffer 与混合模型。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/kv_cache_interface.py">kv_cache_interface.py</a>：KVCacheSpec 与单层 page_size_bytes。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/config/cache.py">config/cache.py</a>：block_size、KV dtype 和显存相关配置。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/attention/backends/flash_attn.py">FlashAttention backend</a>：shape、NHD / HND stride、缓存写入与读取、跨层共享。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/core/kv_cache_utils.py">kv_cache_utils.py</a>：池容量计算、层分组和 buffer 配置。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/worker/gpu_worker.py">gpu_worker.py</a>：profile 与可用 KV 显存预算。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/worker/gpu_model_runner.py">gpu_model_runner.py</a>：缓存 tensor 申请与 reshape、输入准备。</li>
+<li><a href="https://docs.vllm.ai/en/v0.10.2/design/prefix_caching.html">Automatic Prefix Caching</a> / <a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/core/block_pool.py">block_pool.py</a>：完整块缓存、重复块、引用计数与逆序释放。</li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/v1/core/sched/scheduler.py">scheduler.py</a>：按需分配、抢占策略、waiting 队列与重算。</li>
+</ol>
+<p class="small">本次新增：术语、容量公式、大小对比、预分配流程、跨层示意图、下标与索引逐步解释、具体 K/V 访问例子、字节地址展开。修正：半满块可写、采样与 KV 写入时序、执行依赖、Q/KV head 区分、前缀缓存不保证全局去重、管理器的分组范围、回收与显存释放的区别，以及 KiB / MiB 单位。</p>
+</div>
+</body>
+</html>

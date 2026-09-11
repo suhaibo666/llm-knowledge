@@ -1,0 +1,318 @@
+---
+title: "vLLM KV Cache 图解：容量、索引、布局与回收（归档转换件）"
+source_baseline: "vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae"
+archived: 2026-09-11
+---
+
+> 本文为用户图解的 Markdown 归档转换件，保留完整说明与六幅矢量图。持续维护的知识正文分别归属 wiki 的 08 KV Cache、10 Attention Backend、11 Model Runner V1。
+> [原始 v0.10.2 HTML 快照](kv_cache_v0102_snapshot.html) · [修正后的 HTML](kv_cache_explained_199cb9b.html)
+
+# vLLM 的 KV Cache 怎么存、怎么分、怎么流
+
+先讲清 block / page 的单位、大小和显存预算，再用六张图串起跨层布局、块表、写入寻址、推理 step 与回收。
+
+核对基线：vLLM @ 199cb9b96482（2026-09-07）· FlashAttention · LBNHC · B = 16
+
+适用范围：单个 worker / GPU rank 上的布局；L 表示该 rank 实际持有的 attention 层数。主图假设一个 KV cache group、manager/kernel block 均为 16、tokens_per_state = 1、K/V 维度相同、无 page padding、无跨层 KV 共享与投机解码，使用普通 BF16/FP16 缓存。各图是独立示意快照，position 从 0 计数。版本和后端改变时，shape、stride、分组与支持的块大小需要重新核对。[源码依据在文末](#sources)。
+
+**2026-09-11 · 已对齐知识库基线**
+
+普通容量例子继续成立；旧版每层独立 buffer、K/V 大半区、物理满块才可缓存和所有释放块回队尾的描述已纠正。图中的具体 shape 与字节地址按当前普通 FlashAttention 解释。
+
+**block 多大，谁决定？**
+
+`block_size = B` 的单位是 **token**。配置、平台、模型与后端共同确定 manager block；kernel block 还需协商。再用 spec 算字节数；主图恰好两者都是 16。
+
+**一个 page 放几个 block？**
+
+在这里，page 是块对应的存储单位，**不是再装若干 block 的上一级容器**。单层 manager page 对应该层一个分配块的 B 个 token。若执行粒度更小，它可在合法布局下拆成多个 kernel block；主图两种粒度相同。
+
+**一个 token 的所有层连续吗？**
+
+**共用一个 block_id + offset，各层通过自己的 view 访问。**它在 L 层的同号块中各占一个 token 槽；层页是否相邻由 layout / stride 决定。块表不必登记 L 个层编号，一个 token 的跨层数据也不自动紧密连续。
+
+<a id="sizes"></a>
+
+## 先分清 token 数、单层字节数和跨层总量
+
+| 名称 | 单位 / 范围 | 含义 |
+| --- | --- | --- |
+| `block_size = B` | token / block | 一个逻辑块覆盖的序列位置数，例如 B = 16 覆盖连续 16 个位置。 |
+| `page_size_bytes = P` | 字节 / 层 / block / rank | `KVCacheSpec` 的单层大小：B 个 token 的 K 与 V 合计，包含该 spec 要求的 page padding。具体连续性由布局决定。 |
+| 一个 block_id 对应的总量 C | 字节 / block / rank | 主图单组、均匀 L 层时，`C = L × P`。分配一个编号，就为这 L 层一起保留对应槽位。 |
+| `num_blocks = N` | 块编号数 | 池的容量；各层 view 解释对应页，共享 backing。不能把各 view 容量重复相加，也不是每个请求独享 N 块。 |
+
+**page 的两种口径：**v0.10.2 的 Hybrid KV Cache Manager 设计文档把一组层合计的块字节数也称作 page size，并明确说它不同于代码的 `KVCacheSpec.page_size_bytes`。本文统一用 P 指单层，C 指跨层合计。当前源码还区分 manager block 与 kernel block：一份 manager page 在合法布局下可虚拟拆成多个 kernel block。因此“page 对一个 block”必须先说清是哪种 block。它们也不是操作系统的硬件页。[1：术语](https://docs.vllm.ai/en/v0.10.2/design/hybrid_kv_cache_manager.html#definitions)
+
+**普通 MHA / GQA / MQA，K/V 维度相同：**
+
+每层每 token：S = 2 × Hkv_local × D × e
+
+单层一页：P = B × S
+
+同号块跨 L 层：C = L × P
+
+2 是 K + V；Hkv_local 是本 rank 的 KV head 数，**不是 Q head 数**；D 是 head_size；e 是每个 KV 元素的字节数（BF16 / FP16 为 2）。权重的量化位数不等于 KV dtype。公式只计 KV 数据，不含额外元数据、量化 scale 或布局 padding。[2：AttentionSpec](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/kv_cache_interface.py)
+
+**沿用原图的 Llama-3-70B 示例：**80 层、8 个 KV heads、D = 128、TP = 8、PP = 1、BF16。每个 rank 有 Hkv_local = 1，得到 S = 512 B；单 token 跨 80 层合计 40 KiB。B = 16 时，P = 8 KiB，C = 640 KiB。八个 TP rank 合计为 5 MiB / block。
+
+这里 TP 恰好把 8 个 KV heads 分给 8 个 rank。不能对所有模型直接用 heads ÷ TP：KV heads 少于 TP 时可能复制；有 PP 时 L 只取本 stage 的层。1 KiB = 1024 B，1 MiB = 1024 KiB。
+
+| B（tokens） | 单层 P | 80 层 C / rank | 40 个已写 KV 的 token | 尾块空槽 |
+| --- | --- | --- | --- | --- |
+| 16（主图） | 8 KiB | 640 KiB | 3 个 block_id；预留 1.875 MiB | 8 个；320 KiB / rank |
+| 32（对照） | 16 KiB | 1.25 MiB | 2 个 block_id；预留 2.5 MiB | 24 个；960 KiB / rank |
+
+**B 怎么选：**可通过 `--block-size` 指定；未指定时由平台补默认值，不能把 16 当作所有版本、后端的固定值。当前普通 FlashAttention 声明 kernel block 支持 MultipleOf(16)，FA4 某些形状有额外约束；这里仅用 16 / 32 比较分配容量。较小的 B 通常减少尾块浪费、让前缀复用更细；较大的 B 减少块表项和分配管理次数，但会改变 kernel 效率。最终用目标工作负载测吞吐、延迟与命中率。[3：配置](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/config/cache.py) [4：后端](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/attention/backends/flash_attn.py)
+
+<a id="allocation"></a>
+
+## 显存先建池，请求再按块消费
+
+**01 · 启动：确定 KV 预算 M**
+
+加载权重并做 profile，从执行器显存预算中扣除非 KV 开销及适用预留。`gpu_memory_utilization` 覆盖执行器整体，不是全部给 KV；也可显式配置 `kv_cache_memory_bytes`。
+
+**02 · 初始化：共享 backing 与层 view**
+
+均匀单组按 `N = floor(M / C)` 估块数。当前公共 allocator 申请一份 backing，再建各层 view；多组按规划后的每 pool id 字节跨度计账，各 worker 对齐共同块数。
+
+**03 · 运行：分配与回收编号**
+
+请求从 block pool 领取编号并填块表；GPU 逐层写 KV。结束后减少引用计数，空闲编号回池。正常运行中不会每来一个 token 就新申请一段 GPU 显存。
+
+以上 N 为不使用块数 override 时的容量公式。池还有 null / 保留块，实际请求容量需扣除它们；混合组、padding、额外预留与共享会改变记账。池内 free 增加，也不代表显存会归还给驱动或让 `nvidia-smi` 用量下降。[5：块数与分组](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/core/kv_cache_utils.py) [6：显存预算](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/gpu_worker.py) [7：buffer 初始化](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/gpu_model_runner.py)
+
+**请求需要几块？**无前缀共享、无 lookahead 的单组全注意力模型，覆盖 T 个 KV token 需要 `ceil(T / B)` 块。
+
+B = 16：已写 40 个 token → 3 块；写 position 40（第 41 个 token）继续用尾块 offset 8。写完 position 47 时第三块才满；**处理 position 48 之前**需要第 4 块。一次 prefill chunk 也可能同时申请多块。
+
+有前缀命中时，块表里的条目数不等于新分配的物理块数；共享块只能在全池显存统计中算一次。请求预留空间和已写入的有效 KV 也应分别统计。
+
+<a id="fig-0"></a>
+
+![图 0：“一块”要带上观察范围](assets/kv_cache_figure_0.svg)
+
+### 图 0 · “一块”要带上观察范围
+
+从块表看是同一个 block_id；从数据布局看，它对应每层各一份存储。当前普通 FlashAttention 在每个 head 的内容维拼接 K 与 V。各层 view 共用 backing，层页排列由 layout 与 stride 决定；这不改变同组共享块映射的约定。
+
+<a id="indices"></a>
+
+<a id="indices-title"></a>
+
+## 这些下标是什么意思？从请求定位到具体 K / V
+
+图 0 包含两部分：先用块表把请求中的位置映射为物理槽位，再在各层复用这个槽位。**slot mapping 只确定“哪个块、哪个槽”，不包含层号、K/V 选择和 head。**下面仍以请求 A 的 position = 40、B = 16 为例，定位它在 layer 1 的缓存。所有下标均从 0 开始。
+
+**① 请求内的位置 → 逻辑块号与块内 offset**
+
+```text
+position = 40                 # 请求 A 的第 41 个 token
+B = 16                        # 一个 block 有 16 个 token 槽
+logical_block = 40 // 16 = 2   # 第 3 个逻辑块，覆盖 position 32–47
+offset        = 40 % 16  = 8   # 块内第 9 个槽位
+```
+
+`//` 是整数除法，`%` 是取余。position 是请求内的位置；offset 是块内的位置，两者不是同一个索引。
+
+**② 查 block_table → 实际分配的物理块**
+
+```text
+block_table[A][2] = 7
+            │  │   └─ 物理块编号 block_id = 7
+            │  └──── 请求 A 的逻辑块编号 2
+            └─────── 请求 A（此处是概念写法）
+```
+
+逻辑块号 2 描述请求内的顺序；物理块号 7 指向池中的存储位置。不同请求的 position = 40 可以映射到不同物理块。GPU 块表通常以本批次的**请求行号**索引，而不是直接拿字符串 A 当数组下标；主图省略了单个 KV group 的选择。
+
+**③ block_id + offset → 扁平 slot 编号**
+
+```text
+slot = block_id × B + offset = 7 × 16 + 8 = 120
+
+# 从 slot 可以还原物理块与块内位置
+block_id = 120 // 16 = 7
+offset   = 120 % 16  = 8
+
+# 假设此 token 在本 step 的输入 token 列表中排第 0 位
+slot_mapping[0] = 120
+```
+
+`slot_mapping[i]` 的 i 是**本 step 展平后的输入 token 序号**，不是 layer，也不是请求内 position，通常也不等于请求行号。一个 prefill 请求可以在这个列表里占多个位置；各位置的新 K/V 按对应 slot 写入缓存。
+
+120 是槽位编号，**不是 120 字节，也不是显存指针**。分配了槽位也不代表已经写入有效 KV。批处理 padding 还可能使用负值表示跳过写入，此例只展示有效 token。
+
+**④ 选择 layer、head、state 和 K/V 内容元素**
+
+当前普通 FlashAttention 的每层逻辑 view 是四维；K/V 沿最后的内容维拼接。这里以 `kv_cache[layer]` 表示按 layer name 取得对应 view，不代表所有层分别申请独立 buffer。
+
+```text
+cache = kv_cache[layer]
+cache.shape = (num_blocks, Hkv_local, B, 2*D)
+cache[block_id, h, offset, content]
+```
+
+| 索引 | 含义 | 本例 |
+| --- | --- | --- |
+| `layer` | 先取该层 view，实际可用层名查映射 | layer 1 |
+| `block_id` | 执行侧物理块号；如有拆分则是 kernel block 号 | 7 |
+| `h` | 本 rank 的 KV head 编号 | TP8 示例 Hkv_local = 1，取 0 |
+| `offset` | 块内 state 位置；主图一个 state 对应一个 token | 8 |
+| `content` | K 的 d 对应 d；V 的 d 对应 D+d | D=128 时，K 的第 6 个元素取 5；V 取 133 |
+| `:` | 取该维全部内容；`:D` 取前 D 个元素 | 下例取全部 heads 的 K 或 V |
+
+**从整份 K/V 定位到单个数值**
+
+```text
+# 先选择 layer 1 的逻辑 view
+cache = kv_cache[layer1]       # (num_blocks, H, B, 2*D)
+
+K = cache[7, :, 8, :128]       # 所有 KV heads 的 K，形状 (H,128)
+V = cache[7, :, 8, 128:256]    # 所有 KV heads 的 V，形状 (H,128)
+k_vector = cache[7, 0, 8, :128]
+k_scalar = cache[7, 0, 8, 5]
+v_scalar = cache[7, 0, 8, 133]
+
+# backend 交给写入 kernel 的两个 view
+key_cache, value_cache = cache.transpose(1, 2).split(128, dim=-1)
+# 各自逻辑 shape: (num_blocks, B, H, D)
+```
+
+本例 H=1、D=128、BF16：整份 K 为 256 B，V 为 256 B，合计 512 B。transpose / split 建立视图，不搬运 KV；H>1 时不同 head 的 K 之间夹着 V，所有 K heads 不保证是无间隙切片。
+
+**纠正旧版下标**
+
+v0.10.2 图解曾写 `kv_cache[layer][kv,b,o,h,d]`，kv=0/1。当前基线改为 `kv_cache[layer][b,h,o,content]`，K/V 用最后一维的切片选。旧图的 K + V 表示两份存储合计，不是把数值相加；旧式独立 kv 维度已不适用。
+
+请求 + position → 查块表 → (block_id, offset) ↔ slot
+
+再选择 layer、K/V、head、向量元素 → 具体缓存数值
+
+实际 kernel 再结合该层 buffer 的基地址、dtype 和各维度 stride，算出显存地址。[文末给出了当前 LBNHC 的字节地址公式](#byte-address)。写入常用 slot_mapping，attention 读取则结合 block_table、有效序列长度与 mask 访问缓存。
+
+<a id="fig-1"></a>
+
+![图 1：共享 backing、分层 view 与 K/V 内容维](assets/kv_cache_figure_1.svg)
+
+### 图 1 · 共享 backing、分层 view 与 K/V 内容维
+
+上部两个排列是不同 layout 的示意局部切片，不同时成立。LBNHC 先排整层；BLNHC 先排同号块的各层页。下部选 LBNHC、H=1、B=16、D=128、BF16、无 padding，定位一个 K/V 标量。单 token 跨层不会因共享 backing 就自动紧密连续。
+
+<a id="fig-2"></a>
+
+![图 2：逻辑块 → 物理块:block_table 是唯一的翻译层](assets/kv_cache_figure_2.svg)
+
+### 图 2 · 逻辑块 → 物理块:block_table 是唯一的翻译层
+
+ 图 2 展示完整前缀块共享；当前实现也能按更细 hash 边界登记 partial block。**非 null、ref_cnt=1 且无 block_hash 的块才满足普通原地写条件**。命中已缓存的 partial 尾块再续写时可能要 CoW，不能把“半满”直接等价为私有可写。hash 注册也不等于 GPU 已完成写入，仍受调度与执行顺序约束。内容相同的重复块仍可能存在。
+
+<a id="fig-3"></a>
+
+![图 3：写入路径:一个 token 落到哪一格](assets/kv_cache_figure_3.svg)
+
+### 图 3 · 写入路径:一个 token 落到哪一格
+
+ `slot_mapping` 把 `(num_blocks, block_size)` 两维压平成一个整数索引,写 kernel 按 `slot → (slot//B, slot%B)` 定位块与槽，再结合 head、dtype 和 stride 计算真实地址。主图同组、相同 kernel 粒度的 token 在 L 层用同一个 slot 号，每层写进自己的 view。图 3 是独立于图 2 的调度快照，不要求请求 B 的进度与图 2 相同。支持的 FP8 配置可在缓存写入时量化。
+
+<a id="fig-4"></a>
+
+![图 4：一个 step 的完整数据通路](assets/kv_cache_figure_4.svg)
+
+### 图 4 · 一个 step 的完整数据通路
+
+ 块分配按请求 / KV group 处理，兼容的层可复用块表和输入元数据；KV 读写仍是逐层执行。当前 Model Runner V1 的 BlockTable.compute_slot_mapping 在 GPU 上计算 slot；图中输入准备包含主机更新、必要的 H2D 和设备计算，并非把全部元数据先在 CPU 算完再复制。图中省略 norm、residual 等细节；使用 RoPE 的模型在相应位置变换后缓存 K。不能把整个 CPU step 概括为 O(1)：它仍依赖请求数、token 数、块数和 group / backend 数量。当前 FlashAttention 将缓存更新拆为 do_kv_cache_update，Attention.forward 在 unified_kv_cache_update 后向 unified_attention_with_output 传 kv_cache_dummy_dep，使编译器也能看到先写后读依赖；实际设备操作还必须遵守 stream / graph 执行顺序。无需把这理解成每步主机全设备同步。
+
+<a id="fig-5"></a>
+
+![图 5：分配与回收:块的生命周期](assets/kv_cache_figure_5.svg)
+
+### 图 5 · 分配与回收:块的生命周期
+
+ 引用计数决定块能否回到空闲池；哈希索引决定已有内容能否作为前缀复用。请求释放的是引用，其他请求仍持有的共享块不会因此变成空闲。没有哈希的块也能回池；关闭前缀缓存时仍可复用内存，但不能复用旧 KV 计算结果。
+
+## 把容量、编号、地址和时间串起来
+
+- **容量：**B 决定一个块覆盖多少 token；P 决定单层所占字节；C 是同号块跨本组各层的总量。启动时申请池，运行时按块分配。
+
+- **编号：**请求的 logical block 经 block_table 映射为物理 block_id；兼容的同组层复用编号。它不是 GPU 指针，也不是 CUDA thread block。
+
+- **地址：**定位一个元素仍需 layer / group、K 或 V、block_id、offset、head 与维度，以及真实 stride。
+
+- **时间：**先分配槽位，再逐层计算并写 KV，attention 读取有效内容；最后采样得到的 token，要等它自己的前向才拥有 KV。
+
+- **回收：**释放引用 → 块归池；缓存命中 → 复用内容。它们不等于每次 cudaMalloc / cudaFree，也不保证所有重复内容都去重。
+
+<a id="byte-address"></a>
+
+**具体数值的字节地址：优先读实际 stride**
+
+```text
+# cache 是当前层四维 view；stride() 返回元素步长
+e = cache.element_size()
+sb, sh, so, sc = [s * e for s in cache.stride()]
+base = cache.data_ptr()  # 已含 view 的 storage offset
+K_addr = base + b*sb + h*sh + o*so + d*sc
+V_addr = base + b*sb + h*sh + o*so + (D+d)*sc
+```
+
+无 padding 的 LBNHC、普通 K/V、每 token 一个 state，且 manager/kernel block 都为 B 时，可简化为：
+
+K 地址 = base_layer + ((b × B + o) × H × 2D + h × 2D + d) × e
+
+V 地址 = K 地址 + D × e
+
+b=7、o=8、H=1、D=128、e=2、d=5 时：K 偏移 61450 B，V 偏移 61706 B。基地址是层 view 的起点，不是整个 backing 的起点。换 layout、padding 或 packed spec 就要回到真实 stride；旧版“V 相距半个 layer buffer”的公式已移入历史快照。
+
+**manager page 与 kernel block：一页到底几个块？**
+
+若 manager block=64、kernel block=16，且无 padding / 夹层等布局障碍，一个 manager page 可虚拟拆成 4 个 kernel blocks。例如 manager id=7 展开为 kernel ids 28、29、30、31；块内位置 40 对应 kernel id=30、offset=8，两种记法都得到 slot=488。没有复制 KV，也没有把 64-token 的分配变成 16-token 的回收。
+
+这是条件成立时的教学例子，不是 FlashAttention 固定拆分规则。select_common_block_size 先检查 manager 大小能否直接执行，能就保留；否则寻找所有后端共同支持且能整除 manager 大小的候选。create_kv_cache_views 还检查真实 block stride 能否表达无 padding 的分拆。
+
+**尾块空槽何时算浪费？**
+
+无共享、无 lookahead 的普通请求覆盖 T 个 KV token 时，空槽数为 ceil(T/B)×B−T，范围 0…B−1。仍在生成时可以继续填；只有假设余数均匀，平均才为 (B−1)/2。B 在这里是 manager 分配粒度，kernel 虚拟拆分不会回收大块内的尾部空槽。
+
+**迁移 / offload 要看实际布局与完成状态**
+
+共享 backing 不等于传输目标数据天然是一段连续范围。connector 可选择多段地址、批量复制或打包；具体由布局和接口决定。CPU offload 的 store pending 与 ready、异步 copy 的完成、GPU block 引用释放是不同状态，不能把提交操作当成已经可读。
+
+**哪些情形不能套用普通 token 槽公式？**
+
+**MLA / 压缩 state：**tokens_per_state 可大于 1；某些池化实现还可小于 1。Mamba 的请求级 state 也不是每 token 一份 K/V。容量必须按 spec 的 num_states、num_heads、state_content_size_bytes 与 page padding 计算。
+
+**混合组：**各组单独管理映射和历史保留策略，在共享 backing 上解释不同视图。普通 pool 每 id 跨度取最大组的页总量，专用 alias 布局另算；不能把所有组 view 的 size 累加。PP 按本 rank 的实际层与规格投影，再对齐 worker 块数。
+
+**跨层 KV 共享：**kv_sharing_target_layer_name 指定复用目标，相关层跳过重复缓存更新。相同 slot/metadata 的复用也要满足 group、backend、spec 和 kernel 粒度等条件。
+
+**prefix partial / CoW：**完整 hash 单元可能小于物理 group block；命中半块再续写可以通过复制保留旧内容。可写性不只由 ref_cnt 或“是否写满”单独决定。
+
+<a id="sources"></a>
+
+## 核对依据与归档说明
+
+当前内容核对本机干净源码 `vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（2026-09-07 快照）。2026-09-11 修订：共享 backing、四维 cache view、K/V 内容维、manager/kernel block、partial CoW、缓存与非缓存块回收，以及编译器可见依赖。未运行 GPU 数值或性能测试。
+
+此前 v0.10.2 的 HTML 已按原字节归档为 `raw/02_engineering/03_infer_frameworks/vllm/kv_cache_diagram_20260911/kv_cache_v0102_snapshot.html`。本页的 Markdown 转换件是同目录 `kv_cache_explained_199cb9b.md`；知识库持续维护的内容已吸收进 08 KV Cache、10 Attention Backend 和 11 Model Runner V1。
+
+- [KVCacheSpec / AttentionSpec / create_kv_cache_views](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/kv_cache_interface.py)：state 几何、page padding、shape 与 stride。
+
+- [KVCacheLayout](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/kv_cache_layout.py)：LBNHC、BLNHC 等物理排列。
+
+- [allocate_kv_cache / select_common_block_size](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/utils.py)：共享 backing 与 kernel 粒度协商。
+
+- [FlashAttentionImpl.do_kv_cache_update / forward](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/attention/backends/flash_attn.py)：K/V split、缓存更新与读取。
+
+- [Attention.forward / unified_kv_cache_update](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/model_executor/layers/attention/attention.py)：更新与读取的依赖。
+
+- [缓存规划](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/core/kv_cache_utils.py)：各组字节跨度、PP 投影与 worker 容量对齐。
+
+- [GPUWorker.determine_available_memory](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/gpu_worker.py)：显存 profile 与预算。
+
+- [BlockPool.cache_partial_block / is_block_writable / free_blocks](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/core/block_pool.py)：部分缓存、可写性与归还位置。
+
+- [BlockTable.compute_slot_mapping](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/block_table.py) / [GPUModelRunner._prepare_inputs](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/vllm/v1/worker/gpu_model_runner.py)：请求行、token 行、GPU slot 计算。
+
+- [reshape_and_cache_flash_kernel](https://github.com/vllm-project/vllm/blob/199cb9b964822e59ab9b58d88e7be31eb419a2ae/csrc/libtorch_stable/cache_kernels.cu)：负槽跳过与真实 stride 寻址。

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="fig-5" role="img" aria-labelledby="caption-5" viewBox="0 0 1000 452" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fafbfb"/>
+  <style>
+    #fig-5 .t2  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:11.5px;fill:#54666f}
+    #fig-5 .tb  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;font-weight:650;fill:#1b2a33}
+    #fig-5 .m   {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:10.5px;fill:#54666f}
+    #fig-5 .pnl {fill:#fafbfb;stroke:#c5d0d4;stroke-width:1}
+    #fig-5 .p1  {fill:#fafbfb;stroke:#c5d0d4;stroke-width:1;stroke-dasharray:3 3}
+    #fig-5 .p2  {fill:#d3e4f0;stroke:#2d6e9e;stroke-width:1.6}
+    #fig-5 .p3  {fill:#f0e4c2;stroke:#95701a;stroke-width:1.6}
+    #fig-5 .ar  {stroke:#8c9ba1;stroke-width:1.4;fill:none;marker-end:url(#h5)}
+    #fig-5 .arB {stroke:#2d6e9e;stroke-width:1.4;fill:none;marker-end:url(#h5b)}
+  </style>
+  <defs>
+    <marker id="h5" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#8c9ba1"/>
+    </marker>
+    <marker id="h5b" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#2d6e9e"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="24" y="32">一个物理块的一生</text>
+
+  <rect class="p1" x="24" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="40" y="72">空闲</text>
+  <text class="t2" x="40" y="94">在 free block queue 里,</text>
+  <text class="t2" x="40" y="112">双向链表，按缓存身份回收</text>
+  <text class="m"  x="40" y="140">ref_cnt = 0</text>
+  <text class="m"  x="40" y="158">内容可能还留着旧 KV</text>
+
+  <path class="ar" d="M252,112 L280,112"/>
+
+  <rect class="p2" x="284" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="300" y="72">已分配 · 可写</text>
+  <text class="t2" x="300" y="94">逐 token 或按 chunk 写入，</text>
+  <text class="t2" x="300" y="112">无 hash 且 ref=1 才可原地写</text>
+  <text class="m"  x="300" y="140">ref_cnt = 1</text>
+  <text class="m"  x="300" y="158">私有,可写</text>
+
+  <path class="ar" d="M512,112 L540,112"/>
+
+  <rect class="p3" x="544" y="48" width="224" height="128" rx="2"/>
+  <text class="tb" x="560" y="72">可复用内容 · 已注册</text>
+  <text class="t2" x="560" y="94">算 block_hash(parent_hash,</text>
+  <text class="t2" x="560" y="112">token_ids, extra_keys)</text>
+  <text class="t2" x="560" y="130">写进 hash → block 映射</text>
+  <text class="m"  x="560" y="158">引用期间保留内容，只读复用</text>
+
+  <path class="ar" d="M772,112 L800,112"/>
+
+  <rect class="p3" x="804" y="48" width="172" height="128" rx="2"/>
+  <text class="tb" x="820" y="72">被复用</text>
+  <text class="t2" x="820" y="94">新请求前缀哈希</text>
+  <text class="t2" x="820" y="112">命中,直接挂上</text>
+  <text class="m"  x="820" y="140">ref_cnt++</text>
+  <text class="m"  x="820" y="158">零拷贝</text>
+
+  <path class="ar" d="M890,180 C890,224 890,232 560,232 L140,232 L140,182"/>
+  <text class="t2" x="516" y="226" text-anchor="middle">请求释放引用 → ref 归零：无 hash 回队首；有 hash 回队尾，暂存内容可复用</text>
+
+  <rect class="pnl" x="24" y="268" width="468" height="156" rx="2"/>
+  <text class="tb" x="42" y="294">缓存块与无缓存块的去向不同</text>
+  <text class="t2" x="42" y="318">有 hash 的空闲块放队尾，覆盖前仍可命中；</text>
+  <text class="t2" x="42" y="338">无 hash 或关闭缓存的块放队首，便于复用。</text>
+  <text class="t2" x="42" y="358">缓存块采用 LRU 式淘汰；同一请求释放时</text>
+  <text class="t2" x="42" y="378">通常逆序归还，尾部缓存更早被淘汰。</text>
+  <text class="t2" x="42" y="398">重新分配作写入时，先移除旧哈希再复写。</text>
+
+  <rect class="pnl" x="516" y="268" width="460" height="156" rx="2"/>
+  <text class="tb" x="534" y="294">显存不够时会发生什么</text>
+  <text class="t2" x="534" y="318">本 step 需要更多块，空闲池不足 → 可能抢占：</text>
+  <text class="t2" x="534" y="338">调度器按 FCFS / priority 等策略选受害请求，</text>
+  <text class="t2" x="534" y="358">释放它的块引用，将请求放回 waiting 队列。</text>
+  <text class="t2" x="534" y="382">恢复时重算未命中的前缀；如果缓存仍有效，</text>
+  <text class="t2" x="534" y="402">可以命中复用，但不能保证恢复成本很低。</text>
+</svg>

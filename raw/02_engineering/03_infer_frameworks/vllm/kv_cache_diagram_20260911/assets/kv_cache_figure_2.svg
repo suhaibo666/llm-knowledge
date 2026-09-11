@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="fig-2" role="img" aria-labelledby="caption-2" viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fafbfb"/>
+  <style>
+    #fig-2 .t   {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;fill:#1b2a33}
+    #fig-2 .tb  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;font-weight:650;fill:#1b2a33}
+    #fig-2 .t2  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12px;fill:#54666f}
+    #fig-2 .m   {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11px;fill:#54666f}
+    #fig-2 .mb  {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:12px;font-weight:600;fill:#1b2a33}
+    #fig-2 .lbox{fill:#e6ebed;stroke:#c5d0d4;stroke-width:1}
+    #fig-2 .gbox{fill:#f0e4c2;stroke:#95701a;stroke-width:1.5}
+    #fig-2 .bbox{fill:#d3e4f0;stroke:#2d6e9e;stroke-width:1.5}
+    #fig-2 .sbox{fill:#d5e5d9;stroke:#547f5f;stroke-width:1.5}
+    #fig-2 .free{fill:#fafbfb;stroke:#dde4e6;stroke-width:1;stroke-dasharray:3 3}
+    #fig-2 .aA  {stroke:#2d6e9e;stroke-width:1.4;fill:none;marker-end:url(#hA)}
+    #fig-2 .aB  {stroke:#547f5f;stroke-width:1.4;fill:none;marker-end:url(#hB)}
+  </style>
+  <defs>
+    <marker id="hA" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#2d6e9e"/>
+    </marker>
+    <marker id="hB" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#547f5f"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="24" y="34">逻辑视图 —— 每个请求看到的是一串连续的块</text>
+
+  <text class="tb" x="24" y="76">请求 A</text>
+  <text class="m"  x="24" y="94">40 tokens</text>
+  <rect class="gbox" x="150" y="52" width="120" height="46"/>
+  <text class="t"  x="210" y="72" text-anchor="middle">logical 0</text>
+  <text class="m"  x="210" y="88" text-anchor="middle">tok 0–15</text>
+  <rect class="gbox" x="290" y="52" width="120" height="46"/>
+  <text class="t"  x="350" y="72" text-anchor="middle">logical 1</text>
+  <text class="m"  x="350" y="88" text-anchor="middle">tok 16–31</text>
+  <rect class="bbox" x="430" y="52" width="120" height="46"/>
+  <text class="t"  x="490" y="72" text-anchor="middle">logical 2</text>
+  <text class="m"  x="490" y="88" text-anchor="middle">tok 32–39</text>
+
+  <text class="tb" x="24" y="140">请求 B</text>
+  <text class="m"  x="24" y="158">35 tokens</text>
+  <rect class="gbox" x="150" y="116" width="120" height="46"/>
+  <text class="t"  x="210" y="136" text-anchor="middle">logical 0</text>
+  <text class="m"  x="210" y="152" text-anchor="middle">tok 0–15</text>
+  <rect class="gbox" x="290" y="116" width="120" height="46"/>
+  <text class="t"  x="350" y="136" text-anchor="middle">logical 1</text>
+  <text class="m"  x="350" y="152" text-anchor="middle">tok 16–31</text>
+  <rect class="sbox" x="430" y="116" width="120" height="46"/>
+  <text class="t"  x="490" y="136" text-anchor="middle">logical 2</text>
+  <text class="m"  x="490" y="152" text-anchor="middle">tok 32–34</text>
+
+  <text class="t2" x="580" y="80">A 与 B 的前 32 个 token 完全相同</text>
+  <text class="t2" x="580" y="100">且 LoRA / 多模态 / salt 等缓存键一致</text>
+  <text class="t2" x="580" y="136">→ 已计算的前两个完整块缓存键一致</text>
+  <text class="t2" x="580" y="156">→ 开启 prefix caching 时可复用同一份</text>
+
+  <line x1="24" y1="188" x2="976" y2="188" stroke="#dde4e6"/>
+  <text class="tb" x="24" y="216">块表 —— 逻辑块号到物理块号的翻译层(每请求每 KV group 一份)</text>
+
+  <text class="mb" x="24" y="256">block_table[A]</text>
+  <rect class="gbox" x="150" y="234" width="120" height="32"/><text class="mb" x="210" y="255" text-anchor="middle">12</text>
+  <rect class="gbox" x="290" y="234" width="120" height="32"/><text class="mb" x="350" y="255" text-anchor="middle">3</text>
+  <rect class="bbox" x="430" y="234" width="120" height="32"/><text class="mb" x="490" y="255" text-anchor="middle">7</text>
+
+  <text class="mb" x="24" y="306">block_table[B]</text>
+  <rect class="gbox" x="150" y="284" width="120" height="32"/><text class="mb" x="210" y="305" text-anchor="middle">12</text>
+  <rect class="gbox" x="290" y="284" width="120" height="32"/><text class="mb" x="350" y="305" text-anchor="middle">3</text>
+  <rect class="sbox" x="430" y="284" width="120" height="32"/><text class="mb" x="490" y="305" text-anchor="middle">11</text>
+
+  <!-- arrows -->
+  <path class="aA" d="M210,266 C210,330 796,340 796,422"/>
+  <path class="aB" d="M212,316 C212,350 792,352 792,422"/>
+  <path class="aA" d="M350,266 C350,320 328,336 328,422"/>
+  <path class="aB" d="M354,316 C354,344 332,356 332,422"/>
+  <path class="aA" d="M490,266 C490,320 536,336 536,422"/>
+  <path class="aB" d="M490,316 C490,346 744,352 744,422"/>
+
+  <text class="tb" x="24" y="408">物理块池</text>
+
+  <g>
+    <rect class="free" x="150" y="424" width="44" height="40"/><text class="m" x="172" y="480" text-anchor="middle">0</text>
+    <rect class="free" x="202" y="424" width="44" height="40"/><text class="m" x="224" y="480" text-anchor="middle">1</text>
+    <rect class="free" x="254" y="424" width="44" height="40"/><text class="m" x="276" y="480" text-anchor="middle">2</text>
+    <rect class="gbox" x="306" y="424" width="44" height="40"/><text class="m" x="328" y="480" text-anchor="middle">3</text>
+    <rect class="free" x="358" y="424" width="44" height="40"/><text class="m" x="380" y="480" text-anchor="middle">4</text>
+    <rect class="free" x="410" y="424" width="44" height="40"/><text class="m" x="432" y="480" text-anchor="middle">5</text>
+    <rect class="free" x="462" y="424" width="44" height="40"/><text class="m" x="484" y="480" text-anchor="middle">6</text>
+    <rect class="bbox" x="514" y="424" width="44" height="40"/><text class="m" x="536" y="480" text-anchor="middle">7</text>
+    <rect class="free" x="566" y="424" width="44" height="40"/><text class="m" x="588" y="480" text-anchor="middle">8</text>
+    <rect class="free" x="618" y="424" width="44" height="40"/><text class="m" x="640" y="480" text-anchor="middle">9</text>
+    <rect class="free" x="670" y="424" width="44" height="40"/><text class="m" x="692" y="480" text-anchor="middle">10</text>
+    <rect class="sbox" x="722" y="424" width="44" height="40"/><text class="m" x="744" y="480" text-anchor="middle">11</text>
+    <rect class="gbox" x="774" y="424" width="44" height="40"/><text class="m" x="796" y="480" text-anchor="middle">12</text>
+    <rect class="free" x="826" y="424" width="44" height="40"/><text class="m" x="848" y="480" text-anchor="middle">13</text>
+    <rect class="free" x="878" y="424" width="44" height="40"/><text class="m" x="900" y="480" text-anchor="middle">14</text>
+    <rect class="free" x="930" y="424" width="44" height="40"/><text class="m" x="952" y="480" text-anchor="middle">15</text>
+  </g>
+  <text class="m" x="328" y="449" text-anchor="middle" font-weight="600" fill="#95701a">ref 2</text>
+  <text class="m" x="796" y="449" text-anchor="middle" font-weight="600" fill="#95701a">ref 2</text>
+  <text class="m" x="536" y="449" text-anchor="middle" font-weight="600" fill="#2d6e9e">ref 1</text>
+  <text class="m" x="744" y="449" text-anchor="middle" font-weight="600" fill="#547f5f">ref 1</text>
+  <text class="m" x="24" y="449">虚线 = 空闲</text>
+
+  <rect x="24" y="506" width="952" height="72" rx="2" fill="#e6ebed" stroke="#dde4e6"/>
+  <text class="t2" x="42" y="530">块 3 和块 12 在本例被两个请求同时引用；prefix cache 命中可复用已有块，但并不保证相同内容全局只存一份。</text>
+  <text class="t2" x="42" y="552">注意 A 的逻辑块 0/1/2 落在物理 12/3/7,顺序完全打乱。kernel 每次访问都要过一次 block_table 间接寻址,</text>
+  <text class="t2" x="42" y="570">这是 paging 的间接寻址开销；固定块池内避免可变长外部碎片，尾块仍有空槽；图中省略 null / 保留块。</text>
+</svg>

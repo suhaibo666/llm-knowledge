@@ -7,7 +7,7 @@ title: "vLLM Attention Backend：让本步 Query 找到完整 KV 历史"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
 > **主题**：用一个混合 batch 解释新 K/V 写到哪里、当前 Query 怎样读取请求历史，再追踪 spec、backend、layout、builder 与 impl 如何接合。
 > **适用范围**：attention 能力选择、KV 表示与 metadata 翻译；请求调度、物理块生命周期、设备 batch 维护和 CUDA Graph 全局派发分别由相邻页展开。
-> **最近更新**：2026-09-08。补充地址演算、虚拟块转换，以及当前 B12X、MLA sparse 和布局选择边界。
+> **最近更新**：2026-09-11。补充容量、索引与实际缓存布局的基础解释。
 
 ## 1. 三个新 token，为什么不能只传三个 K/V
 
@@ -73,6 +73,66 @@ flowchart TB
 本页追到 vLLM 的缓存写入 kernel 和第三方 attention 调用参数；未据此声称已验证第三方 kernel 内部数学或 GPU 数值正确性。最关键的不变量是：**同一个 forward 的 Query 边界、请求顺序、块表、槽映射与该层 cache view 必须相互一致，且增量写入先于历史读取。**
 
 源码：`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.prepare_attn`；`vllm/v1/worker/gpu/model_states/default.py::DefaultModelState.prepare_attn`；`vllm/v1/worker/gpu/attn_utils.py::build_attn_metadata`；`vllm/forward_context.py::set_forward_context`；`vllm/model_executor/layers/attention/attention.py::Attention.forward`、`unified_kv_cache_update`、`unified_attention_with_output`；`vllm/v1/attention/backends/flash_attn.py::FlashAttentionImpl.forward`、`FlashAttentionImpl.do_kv_cache_update`；`csrc/libtorch_stable/cache_kernels.cu::vllm::reshape_and_cache_flash_kernel`。
+
+### 2.3 slot 还不是一个具体的 K 或 V：继续补齐四维下标
+
+为单独看清下标，另取请求 A 的 position 40，manager/kernel 块长都为 16，块表逻辑项 2 指向物理块 7。整数除法得到逻辑块 2，取余得到 offset 8，因而 slot 为 **120**。若这个 token 在当步输入流的第 0 行，则 `slot_mapping[0]=120`；左侧 0 是输入 token 行，右侧 120 是存储槽。两者都不含 layer、K/V、head 或向量元素编号。
+
+当前基线先通过 layer name 找到该层 view。普通 FlashAttention、K/V 维度相同且未量化时，逻辑形状为 `(num_blocks, Hkv_local, block_size, 2*D)`。这里用 `cache_by_layer[layer]` 表示按层取 view，不能误认为存在一个由所有层直接 stack 得到的连续 tensor。
+
+| 下标 | 所在位置 | 含义 |
+|---|---|---|
+| `layer` | 取 view 的映射键 | 当前 attention 层的缓存视图 |
+| `b` | view 第 0 维 | 执行侧物理块号；拆分时是 kernel 块号 |
+| `h` | view 第 1 维 | 本 rank 的 KV head；普通例子不等于 Query head |
+| `o` | view 第 2 维 | 块内 stored-state 位置；本例每 state 对应一个 token |
+| `c` | view 第 3 维 | K/V 内容维的元素编号：K 为 0…D−1，V 为 D…2D−1 |
+| `:` | 切片符号 | 取指定维度的全部元素，不是额外的一维 |
+
+**K/V 的选择在最后一维，不是最前面再加一个 0/1 维度。** 例如本例用 H=1、D=128、BF16，layer 1 的整个 K、V 都是 `(1,128)`，各 256 B；想取第 0 个 head 的第 6 个数值，K 取内容下标 5，V 取 133。
+
+```python
+cache = cache_by_layer[layer1]    # (num_blocks, H, B, 2*D)
+K = cache[7, :, 8, :128]          # 所有 KV heads 的 K
+V = cache[7, :, 8, 128:256]       # 所有 KV heads 的 V
+k_vector = cache[7, 0, 8, :128]   # 第 0 个 KV head 的完整 K
+k_scalar = cache[7, 0, 8, 5]      # K 的第 6 个元素
+v_scalar = cache[7, 0, 8, 133]    # V 的第 6 个元素
+```
+
+<!-- 图规格：二维布局图。上部给一个共享backing的layer-major与block-major两种排列，均标同一pool id在各层的页。下部放大普通FlashAttention中一个token的head内容，K的128元素后紧接V的128元素；所有层连续性由stride决定。图不是当前设备实测地址。 -->
+![同号块的跨层 view 与单个 token 的 K/V 内容布局](assets/vllm_kv_slot_address_layout.svg)
+
+`FlashAttentionImpl.do_kv_cache_update()` 将 view 的 head/state 两维交换，然后沿最后一维拆成 K、V，得到供 kernel 使用的 `(num_blocks, B, H, D)` 两个 view；transpose 和 split 表达视图，不意味着复制 KV。一个 head 内的 K 向量与 V 向量相邻；H 大于 1 时，多个 head 的 K 之间夹着 V，不能把“所有 K heads”也当成一段无间隙数组。kernel 使用实际 head/page/block stride，负 slot 则跳过。
+
+### 2.4 从 view 下标到字节地址，连续性必须带上 layout
+
+取 `cache.data_ptr()` 作为这一层 view 的起点，令 $s_b,s_h,s_o,s_c$ 为它的**字节 stride**。PyTorch `cache.stride()` 返回元素 stride，要乘元素字节数；`data_ptr()` 已包含 view 的 storage offset，不能再重复加一次。单个数值地址为：
+
+$$
+\begin{aligned}
+a_K &= a_{\mathrm{layer}}+b s_b+h s_h+o s_o+d s_c, \\
+a_V &= a_{\mathrm{layer}}+b s_b+h s_h+o s_o+(D+d)s_c.
+\end{aligned}
+$$
+
+若选择无 padding 的 LBNHC（旧别名 NHD）、普通等长 K/V，物理顺序是 layer → block → token → head → K/V 内容；本例 manager/kernel 同为 B，且每个 state 就是一个 token。这时 $s_b=BH(2D)e$、$s_h=2De$、$s_o=H(2D)e$、$s_c=e$，可进一步写成：
+
+$$
+\begin{aligned}
+a_K &= a_{\mathrm{layer}}+\bigl((bB+o)H(2D)+h(2D)+d\bigr)e, \\
+a_V &= a_K+De.
+\end{aligned}
+$$
+
+带入 b=7、o=8、H=1、D=128、e=2、d=5，K 距 layer view 起点 **61450 B**，V 距起点 **61706 B**，差 **256 B**。这是给定致密布局的手算地址，不是实际 GPU 指针。换 LBHNC、block-outermost 布局、padding 或 packed spec 后，通用 stride 公式仍成立，后面的致密简式需要重新推导。
+
+> [!contradiction] 旧图中的独立 K/V 维度已不适用
+> v0.10.2 图解写作 `kv_cache[layer][kv, b, o, h, d]`，其中 kv=0/1，且 K/V 间隔半个 layer buffer。当前普通 FlashAttention 的逻辑 view 已改为 `[b,h,o,content]`，K/V 通过 content 切片选择；同一 head 的 K/V 只差 D 个元素。NHD 是物理轴顺序的旧别名，不保证旧版的 `(2,num_blocks,B,H,D)` shape 继续存在。
+
+一个 slot 对应各层相应的位置，但 allocator 可以让层 view 共用一个 backing；LBNHC 将整层排在外侧，BLNHC 把同号块各层的页排在一起。即使同号块的层页连续，也不能推出一个 token 的所有层紧密连续，因为相邻层之间还隔着同一页内其他 token/head。完整的 layout 选择见第 4 节，manager block 到 kernel block 的转换见第 5 节。
+
+源码：`vllm/v1/kv_cache_interface.py::compute_layer_kv_cache_shape_bytes`、`compute_layout_strides`、`create_kv_cache_views`；`vllm/v1/kv_cache_layout.py::KVCacheLayout`；`vllm/v1/worker/utils.py::allocate_kv_cache`；`vllm/v1/attention/backends/flash_attn.py::FlashAttentionImpl.do_kv_cache_update`；`csrc/libtorch_stable/cache_kernels.cu::vllm::reshape_and_cache_flash_kernel`。
 
 ## 3. 在这一步之前，哪些选择已经固定
 

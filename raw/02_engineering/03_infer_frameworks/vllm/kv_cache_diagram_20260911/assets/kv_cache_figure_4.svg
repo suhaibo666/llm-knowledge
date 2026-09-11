@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="fig-4" role="img" aria-labelledby="caption-4" viewBox="0 0 1000 664" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fafbfb"/>
+  <style>
+    #fig-4 .t   {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12.5px;fill:#1b2a33}
+    #fig-4 .tb  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:13px;font-weight:650;fill:#1b2a33}
+    #fig-4 .band{font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12px;font-weight:650;fill:#2d6e9e;letter-spacing:.04em}
+    #fig-4 .t2  {font-family:"Inter","Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:11.5px;fill:#54666f}
+    #fig-4 .m   {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:10.5px;fill:#54666f}
+    #fig-4 .mb  {font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:11px;font-weight:600;fill:#1b2a33}
+    #fig-4 .pnl {fill:#fafbfb;stroke:#c5d0d4;stroke-width:1}
+    #fig-4 .pW  {fill:#d3e4f0;stroke:#2d6e9e;stroke-width:1.6}
+    #fig-4 .pR  {fill:#f0e4c2;stroke:#95701a;stroke-width:1.6}
+    #fig-4 .dash{fill:none;stroke:#8c9ba1;stroke-width:1.2;stroke-dasharray:5 4}
+    #fig-4 .ar  {stroke:#8c9ba1;stroke-width:1.4;fill:none;marker-end:url(#h4)}
+    #fig-4 .arR {stroke:#9e433a;stroke-width:1.4;fill:none;marker-end:url(#h4r)}
+  </style>
+  <defs>
+    <marker id="h4" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#8c9ba1"/>
+    </marker>
+    <marker id="h4r" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#9e433a"/>
+    </marker>
+  </defs>
+
+  <text class="band" x="24" y="30">主机调度与 CPU / GPU 输入准备 · 每个 step（示意）</text>
+
+  <rect class="pnl" x="24" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="40" y="68">Scheduler</text>
+  <text class="t2" x="40" y="90">决定本 step 跑哪些请求、</text>
+  <text class="t2" x="40" y="108">每个请求调度几个 token</text>
+  <text class="m"  x="40" y="134">token_budget 内混排</text>
+  <text class="m"  x="40" y="152">prefill 与 decode</text>
+
+  <path class="ar" d="M256,110 L282,110"/>
+
+  <rect class="pnl" x="286" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="302" y="68">KVCacheManager</text>
+  <text class="t2" x="302" y="90">新请求查 prefix cache，</text>
+  <text class="t2" x="302" y="108">命中则 ref++ 复用；</text>
+  <text class="t2" x="302" y="126">容量不足才从 free queue 取块</text>
+  <text class="m"  x="302" y="152">返回 block_ids</text>
+
+  <path class="ar" d="M518,110 L544,110"/>
+
+  <rect class="pnl" x="548" y="44" width="228" height="130" rx="2"/>
+  <text class="tb" x="564" y="68">_prepare_inputs</text>
+  <text class="t2" x="564" y="90">更新本组输入与元数据：</text>
+  <text class="m"  x="564" y="112">block_table (R, maxB)</text>
+  <text class="m"  x="564" y="130">slot_mapping (T,)</text>
+  <text class="m"  x="564" y="148">seq_lens, query_start_loc</text>
+
+  <path class="ar" d="M780,110 L806,110"/>
+
+  <rect class="pnl" x="810" y="44" width="166" height="130" rx="2"/>
+  <text class="tb" x="826" y="68">设备输入准备</text>
+  <text class="t2" x="826" y="90">H2D 复制部分输入，</text>
+  <text class="t2" x="826" y="108">并在 GPU 计算 slot；</text>
+  <text class="t2" x="826" y="126">满足捕获条件时</text>
+  <text class="t2" x="826" y="144">可 replay 图</text>
+
+  <path class="ar" d="M500,178 L500,204"/>
+
+  <text class="band" x="24" y="222">前向上下文（主机设置）→ GPU 逐层执行</text>
+
+  <rect class="pW" x="24" y="234" width="952" height="46" rx="2"/>
+  <text class="mb" x="42" y="253">set_forward_context(attn_metadata)</text>
+  <text class="t2" x="42" y="271">主机将 attention metadata 放入 forward context，供 attention 调用读取；其中的张量供 GPU kernel 使用。</text>
+
+  <path class="ar" d="M500,284 L500,306"/>
+
+  <rect class="dash" x="24" y="312" width="952" height="238" rx="3"/>
+  <text class="tb" x="42" y="338">for layer in 0 … L−1</text>
+  <text class="t2" x="176" y="338">—— 逐层读写自己的 KV；兼容层复用元数据。主图没有跨层 KV 拷贝。</text>
+
+  <rect class="pnl" x="44" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="60" y="380">QKV 投影 / 位置变换</text>
+  <text class="t2" x="60" y="402">算出本 step 这几个</text>
+  <text class="t2" x="60" y="420">token 的 q, k, v</text>
+  <text class="m"  x="60" y="446">Q: Hq；K/V: Hkv_local</text>
+
+  <path class="ar" d="M264,440 L292,440"/>
+
+  <rect class="pW" x="296" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="312" y="380">写：do_kv_cache_update</text>
+  <text class="t2" x="312" y="402">按 slot_mapping 把 k, v</text>
+  <text class="t2" x="312" y="420">调用 reshape_and_cache_flash</text>
+  <text class="m"  x="312" y="446">先写后读 + 编译器可见依赖</text>
+  <text class="m"  x="312" y="466">kv_cache_dummy_dep 传递依赖</text>
+  <text class="m"  x="312" y="500" fill="#2d6e9e">kv_cache[layer]</text>
+
+  <path class="ar" d="M516,440 L544,440"/>
+
+  <rect class="pR" x="548" y="356" width="216" height="168" rx="2"/>
+  <text class="tb" x="564" y="380">读:paged attention</text>
+  <text class="t2" x="564" y="402">flash_attn_varlen_func</text>
+  <text class="t2" x="564" y="420">按块表访问有效 KV</text>
+  <text class="t2" x="564" y="438">由 seq_lens + causal mask 限定</text>
+  <text class="m"  x="564" y="466">刚写进去的新 token</text>
+  <text class="m"  x="564" y="486">也在这一步被读到</text>
+
+  <path class="ar" d="M768,440 L796,440"/>
+
+  <rect class="pnl" x="800" y="356" width="176" height="168" rx="2"/>
+  <text class="tb" x="816" y="380">o_proj + MLP</text>
+  <text class="t2" x="816" y="402">输出 hidden state,</text>
+  <text class="t2" x="816" y="420">交给下一层</text>
+  <text class="m"  x="816" y="450">KV 不再参与</text>
+
+  <path class="ar" d="M500,554 L500,578"/>
+  <rect class="pnl" x="24" y="582" width="952" height="60" rx="2"/>
+  <text class="tb" x="42" y="606">最后一层 → logits → sampler → 完成相应前向的请求采样新 token</text>
+  <text class="t2" x="42" y="628">采样只产生 token ID；该 token 下次作为输入跑前向时才写它的 KV。未完成的 prefill chunk 不一定产生输出 token。</text>
+  <path class="arR" d="M976,642 H988 V18 H262"/>
+  <text class="m" x="700" y="14" fill="#9e433a">下一个 step</text>
+</svg>

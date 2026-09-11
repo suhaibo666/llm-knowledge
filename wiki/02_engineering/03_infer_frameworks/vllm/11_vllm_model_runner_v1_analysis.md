@@ -7,7 +7,7 @@ title: "vLLM Model Runner V1：请求挪了行，哪些输入必须一起挪"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
 > **主题**：用删除一个请求的例子，解释 MRV1 如何压紧持久 batch、同步移动附属状态，再生成 token-major 输入并回传结果。
 > **适用范围**：MRV1 请求镜像、row 维护、输入物化、异步依赖和 dummy/profile/capture 生命周期；不重做调度、物理块分配、attention 数值算法或采样分布。
-> **最近更新**：2026-09-08。补充可重放的行迁移与索引例子、当前异步边界及 CoW 块复制接缝。
+> **最近更新**：2026-09-11。补充容量、索引与实际缓存布局的基础解释。
 
 ## 1. 删除一个请求，为什么不能只删列表里的名字
 
@@ -145,6 +145,20 @@ prompt-embeds 路径按同一索引取 `is_token_ids`，将实际 embedding 分�
 builder 随后消费同序的 Query 边界、seq lengths、块表和槽映射。第 10 页已演算它们怎样写入槽 453/210/211 并读取历史，本页不再重复 attention 算法。未完成的 chunked prefill 虽可走统一采样入口，其结果会通过 discard mask 丢弃；本例 A 恰好在本步算完 prompt，因而它的末行可产生有效下一 token。
 
 源码：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._prepare_inputs`、`GPUModelRunner._get_cumsum_and_arange`、`GPUModelRunner._prepare_input_ids`；`vllm/v1/worker/gpu_input_batch.py::InputBatch.make_lora_inputs`。
+
+### 5.1 请求行、输入 token 行与缓存槽不能互换
+
+把本例中 A18 单独拿出来：它属于当前请求 row 1，却在展平输入中占 token 行 i=1，自己的 position 是 18；A19 仍属于 row 1，却占 i=2、position 19。假定 kernel 块表与第 10 页一致，A 的逻辑项 1 指向块 13，则 `slot_mapping[1]=210`、`slot_mapping[2]=211`。i=1 恰好等于请求 row 1 是巧合，A19 已说明两者会分开。
+
+| 输入 token 行 i | 请求 row | 请求内 position | CPU token-store 扁平索引 | KV slot |
+|---|---|---|---|---|
+| 0 | B 的 row 0 | 5 | 5 | 453 |
+| 1 | A 的 row 1 | 18 | 50 | 210 |
+| 2 | A 的 row 1 | 19 | 51 | 211 |
+
+CPU token-store 的 50 与 KV slot 210 指向不同对象：前者取 token ID，后者给该 token 新算出的 K/V 找存储槽。`slot_mapping[i]` 按当前输入 token 行读，缓存写入 kernel 也按同一 i 取 K/V 源行；一旦只改排序而不一起更新映射，就可能把内容写给另一个位置。最终还要补 layer、head 与内容维才能定位 K/V 数值，见 [[10_vllm_attention_backends_analysis|Attention Backend]] 的具体下标与字节地址。
+
+源码：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._prepare_inputs`；`vllm/v1/worker/block_table.py::BlockTable.compute_slot_mapping`；`csrc/libtorch_stable/cache_kernels.cu::vllm::reshape_and_cache_flash_kernel`。
 
 ## 6. 异步执行：B 换了 row，上一步 GPU token 还放在旧 row
 
