@@ -1,177 +1,358 @@
 ---
-title: "vLLM MultiprocExecutor：广播 RPC、共享内存队列与进程收尾"
+title: "vLLM MultiprocExecutor RPC：锁步广播、有限队列与进程收尾"
 ---
 
-# vLLM MultiprocExecutor：广播 RPC、共享内存队列与进程收尾
+# vLLM MultiprocExecutor RPC：锁步广播、有限队列与进程收尾
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）。
-> **主题**：一个 executor 父进程怎样启动本机 workers、把同一条方法调用广播给所有 rank、只收所需响应，并在共享内存背压或进程失败时完成收尾。
-> **适用范围**：V1 `MultiprocExecutor`、本机 `WorkerProc`、`MessageQueue`、异步响应和 shutdown；模型怎样切分及设备 collective 归 18，Engine step 事务归 06，多节点服务路由归 13。
-> **最近更新**：2026-09-08。基于当前基线新增专题页；外部分析笔记只作为问题线索，正文结论重新回到源码与测试核验。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **主题**：vLLM MultiprocExecutor RPC（并发与分布式机制分析）
+> **适用范围**：V1 `MultiprocExecutor`、本机 `WorkerProc`、`MessageQueue`、Future 配对、异步输出与 shutdown
+> **最近更新**：2026-09-14
 
-## 1. 它不是把四份任务分给四个空闲进程
+---
 
-`MultiprocExecutor` 面对的是一组共同完成同一次模型执行的 ranks，不是通用进程池。父进程广播 `execute_model` 时，每个 worker 都要取到同一条命令并调用同名方法；TP rank 计算不同 shard，PP stage 计算不同层段。若某个 rank 漏掉或越过一次 collective，其他 rank 可能等待另一条通信序列，而不是由“空闲 worker”补做。
+## 1. 核心问题：模型并行 Worker 不是通用进程池
 
-因此需要先分开三种责任：
+[[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|在线权重更新]]中的 start、update 和 finish 最终都要由 Executor 扇出到每个 Worker。普通推理的 `execute_model` 也遵循同一控制方式：所有 model-parallel ranks 必须看到同一条方法调用，并按同一顺序进入设备通信。
 
-| 责任 | 持有者 | 完成条件 |
-|---|---|---|
-| 启停与 RPC 编排 | 持有 `MultiprocExecutor` 的父进程 | 所需 workers 已就绪；本次目标响应已返回或失败 |
-| 模型与设备状态 | 每个 `WorkerProc` 内的 worker wrapper | 本 rank 的方法执行结束；设备异步资源仍按各自合同保活 |
-| TP/PP 等设备通信 | worker 内建立的 model-parallel groups | 对应 collective 或 P2P 的设备工作真正完成 |
+这与“把四份独立任务分给四个空闲进程”完全不同。TP rank 计算不同 shard，PP stage 计算不同层段；若某个 rank 少取一条命令或走入不同分支，其他 rank 可能卡在下一次 collective，而不是由空闲 Worker 补做。
 
-控制队列只传“所有 rank 这一步要调用什么”，不承载 PP hidden states、TP all-reduce 等设备数据。后两者走 worker 已建立的设备通信组。把这两条平面混在一起，会误以为父进程需要汇总每层 tensor，或误把 RPC 返回当成所有设备通信上的全局 barrier。
+从广播与响应对象的组合可以重建出一项设计选择（**分析推断**）：MultiprocExecutor 使用“一个广播命令流 + 每 Worker 独立响应流”：
 
-## 2. 固定一个 TP=2、PP=2 的四 worker 例子
+- 父进程统一启动、广播和等待；
+- 每个 Worker 都 dequeue 并执行同一 RPC；
+- `output_rank` 只控制谁回复，不控制谁执行；
+- KV/EC aggregator 需要分 rank 状态时，父进程改为收齐全员；
+- 有限共享内存 ring 用背压阻止命令无限领先。
 
-以下例子设 `PCP=1`，四个 worker 都在本机；rank 到 stage 的映射只用于说明当前公式和调用次序：
+| 机制收益 | 对应代价 |
+|---|---|
+| 所有 rank 观察一致控制顺序 | 一个慢 reader 会阻塞广播 ring 的复用 |
+| 普通执行只回传一个最终结果 | 非回复 rank 的方法异常不会直接进入本次普通 RPC 响应 |
+| 本机小消息走共享内存 | 预分配 `/dev/shm`，容量与槽宽必须规划 |
+| Future 可延迟取结果 | 同一响应流必须严格 FIFO 对账 |
+| 进程监控统一收口 | 设备通信库内部卡死最终仍可能依赖信号终止 |
 
-| rank | PP stage | TP lane | 当步职责 |
+本页分析控制平面。PP hidden states、TP all-reduce 等模型数据仍走 Worker 内已经建立的设备通信组；父进程不会汇总每层 tensor，RPC 返回也不是所有设备异步工作的通用全局 barrier。
+
+## 2. 具体例子：TP=2、PP=2 时谁执行、谁回复
+
+设 `PCP=1`，四个 Worker 都在本机：
+
+| global rank | PP stage | TP lane | 当步职责 |
 |---:|---:|---:|---|
-| 0 | 0 | 0 | 前半模型的 TP shard 0；把中间状态发往 rank 2 |
-| 1 | 0 | 1 | 前半模型的 TP shard 1；把中间状态发往 rank 3 |
-| 2 | 1 | 0 | 后半模型的 TP shard 0；普通执行结果的回复 rank |
-| 3 | 1 | 1 | 后半模型的 TP shard 1；参与末 stage 的 TP 计算 |
+| 0 | 0 | 0 | 前半模型 TP shard 0，把中间状态发往 rank 2 |
+| 1 | 0 | 1 | 前半模型 TP shard 1，把中间状态发往 rank 3 |
+| 2 | 1 | 0 | 后半模型 TP shard 0，普通执行的回复 rank |
+| 3 | 1 | 1 | 后半模型 TP shard 1，参与末 stage TP 计算 |
 
-`world_size = TP × PP × PCP = 4`。`_get_output_rank()` 选择最后一个 PP stage 的第一个 TP/PCP worker，当前公式是 `world_size - TP × PCP`，所以本例得到 rank 2，而不是“最后一个全局 rank”3。
+`world_size = TP * PP * PCP = 4`。`_get_output_rank()` 使用：
 
-这只决定普通 RPC 应从哪个响应队列取结果。计算面仍是两条 PP lane：0→2、1→3；每个 stage 内还有 TP collective。若启用了 KV/EC connector 一类 aggregator，executor 会取消唯一回复 rank，收齐所有 worker 响应后再把聚合结果放到指定输出上，此时“只等 rank 2”不成立。
+```text
+output_rank = world_size - TP * PCP
+            = 4 - 2 * 1
+            = 2
+```
 
-## 3. 启动协议为何要先构造全员，再等待 READY
+所以普通 `execute_model` 从 rank 2 的响应队列取结果，而不是从最后一个 global rank 3 取。计算面仍是 0→2、1→3 两条 PP lane，并且每个 stage 内仍有 TP collective。
 
-父进程先计算本机进程数、准备广播输入队列句柄和 worker 环境，再通过 `make_worker_process()` 启动子进程。启动阶段返回的 `UnreadyWorkerProcHandle` 只足以观察进程、READY pipe 和父进程存活管道；收到 READY 后才转换为带响应队列的 `WorkerProcHandle`。
+当 KV 或 EC connector 配置了 aggregator，`collective_rpc` 会把广播中的 `output_rank` 改为 `None`，令四个 Worker 都回复，再把各 rank 输出聚合到原定 output rank 的结果上。由此，“所有 rank 都执行”始终成立，“只等 rank 2”只属于无 aggregator 的普通路径。
 
-每个子进程在报告 READY 前依次建立 worker wrapper、初始化设备和分布式环境、加载模型，并创建自己的响应 `MessageQueue`。父进程必须先把所有本机子进程都创建出来，再逐个等待 READY；源码明确把这条顺序与 `init_device` 内可能发生的跨 rank 同步联系起来。若启动一个就阻塞等一个，后续 rank 还没出现，前面的 rank 可能永远等不到通信同伴。
+## 3. 启动协议：为什么先创建全员，再等待 READY
 
-READY 还不是队列已可安全收发。父子随后对广播输入队列和响应队列执行订阅握手；两端必须按相同固定顺序等待，否则两边可能分别卡在不同队列。下面只画进程可见的先后，不把设备组内部初始化伪装成父进程调用。
+### 3.1 READY 前 Worker 已完成哪些工作
+
+父进程先创建广播输入 `MessageQueue`，再连续启动所有本机子进程。每个 `WorkerProc` 在发出 READY 前已经：
+
+1. 创建并初始化 `WorkerWrapperBase`；
+2. 执行 `init_device()`，建立设备与分布式环境；
+3. 执行 `load_model()`；
+4. 按需启动异步输出线程；
+5. 创建自己的响应 `MessageQueue`；
+6. 导出响应队列句柄。
+
+父进程不能“启动 rank 0，等它 READY，再启动 rank 1”。`init_device()` 可能在 ranks 之间同步；若后续 rank 还未创建，先启动者可能永远等不到通信同伴。`WorkerProc.wait_for_ready` 因而用 `multiprocessing.connection.wait` 同时观察所有 ready pipes，谁先准备好就先读取谁，而不是按 rank 串行等待。
+
+### 3.2 READY 后仍要按固定顺序握手队列
+
+READY 表示 Worker 构造完成并交出了响应队列句柄，不表示发布—订阅队列已经完成订阅。父子两侧随后都先等待广播输入队列，再按一致顺序等待各响应队列；源码明确警告重排会死锁。
 
 ```mermaid
 sequenceDiagram
     participant E as Executor 父进程
     participant W0 as Worker 0
-    participant W3 as Worker 1 到 3
+    participant WX as Worker 1 到 3
     participant Q as 输入与响应队列
-    E->>Q: 创建广播输入队列并保留句柄
-    E->>W0: 启动子进程
-    E->>W3: 启动其余子进程
-    W0->>W0: 初始化设备并加载模型
-    W3->>W3: 初始化设备并加载模型
-    W0->>Q: 创建本 rank 响应队列
-    W3->>Q: 创建各自响应队列
-    W0-->>E: READY 与响应队列句柄
-    W3-->>E: READY 与响应队列句柄
-    E->>E: 全员 READY 后物化 worker handles
-    E->>Q: 先握手输入队列
-    W0->>Q: 先握手输入队列
-    W3->>Q: 先握手输入队列
-    E->>Q: 再按固定顺序握手响应队列
+    E->>Q: 创建广播输入队列
+    E->>W0: 启动 rank 0
+    E->>WX: 启动其余 ranks
+    par Worker 0 构造
+        W0->>W0: init device，load model
+        W0->>Q: 创建响应队列
+    and 其余 Worker 构造
+        WX->>WX: init device，load model
+        WX->>Q: 创建各自响应队列
+    end
+    W0-->>E: READY 与队列句柄
+    WX-->>E: READY 与队列句柄
+    E->>E: 全员 READY 后物化 handles
+    E->>Q: 等待输入队列订阅
+    W0->>Q: 等待输入队列订阅
+    WX->>Q: 等待输入队列订阅
+    E->>Q: 再握手响应队列
     W0->>Q: 握手自身响应队列
-    W3->>Q: 握手各自响应队列
-    Q-->>E: 全部队列可用
+    WX->>Q: 握手各自响应队列
+    Q-->>E: RPC 通道可用
 ```
 
-启动期要区分两类失败：子进程构造过程中报错，会通过 ready pipe 让父进程知道“从未 READY”；READY 后主循环失败则走运行期响应和进程监控。只等一个普通 RPC timeout 不能覆盖前一种情况。
+构造期异常通过 ready pipe 告诉父进程“从未 READY”；READY 后 busy loop 的异常则通过响应队列或进程监控暴露。这两个阶段不能只靠普通 RPC timeout 混为一谈。
 
-## 4. 四类通道分别交付什么
+## 4. RPC 协议：广播决定执行顺序，响应决定返回语义
 
-| 通道 | 方向 | 负载 | 为什么不能互换 |
+### 4.1 四类通道
+
+| 通道 | 方向 | 负载 | 生命周期 |
 |---|---|---|---|
-| READY pipe | worker→父进程 | 启动成功或构造异常、响应队列句柄 | 只属于启动握手，不承担持续 RPC |
-| 父进程存活管道 | 父进程→worker 的持有关系 | 父端句柄是否仍存在 | 父进程退出时 worker 读到 EOF，可触发本地 shutdown |
-| 广播 `MessageQueue` | 父进程→所有 workers | 方法名或 callable、args、kwargs、目标回复 rank | 每个 reader 都必须消费同一槽位；不是负载均衡队列 |
-| 每 worker 响应 `MessageQueue` | worker→父进程 | 返回值或失败包装 | 普通调用可只等一个 rank，聚合调用则需要全部 ranks |
+| READY pipe | Worker → 父进程 | READY/构造失败、响应队列句柄 | 只用于启动 |
+| death pipe | 父进程持有 writer，Worker 监控 reader | 父端是否仍存活 | 父退出或关闭时触发 Worker 收尾 |
+| 广播 `MessageQueue` | 父进程 → 所有 Workers | method/callable、args、kwargs、`output_rank` | 每个 reader 必须消费每个槽 |
+| 每 Worker 响应 `MessageQueue` | Worker → 父进程 | `SUCCESS`/`FAILURE` 与结果 | 只由需要回复的 rank 写入 |
 
-`collective_rpc()` 实际广播的是 `(method, args, kwargs, output_rank)`。worker busy loop 每次都从广播队列取一条消息并执行 `_execute_worker_rpc()`；`output_rank` 只决定谁把返回值送回父进程，不决定谁执行。由此可以得出一个**分析推断**：共享命令流的核心收益不是节省 Python 调用次数，而是让所有 model-parallel ranks 观察相同调用顺序，从控制面降低 collective 次序分叉的机会。它仍不能替代各设备通信路径自己的顺序检查。
+`collective_rpc()` 广播的元组是 `(method, args, kwargs, output_rank)`。method 可以是字符串，也可以是 cloudpickle 后的 callable。每个 Worker 的 busy loop 都调用 `_execute_worker_rpc()`；`output_rank` 只在执行后决定是否调用 `handle_output()`。
 
-## 5. 一次 RPC 怎样从广播走到唯一回复或全量聚合
-
-普通 `execute_model()` 和 `sample_tokens()` 都把工作交给 `collective_rpc()`。调用链可拆成以下步骤：
-
-1. 父进程确认自己是 leader 且 executor 未进入失败状态。
-2. 父进程把调用元组写入广播队列；四个 workers 都会取到并执行。
-3. 普通路径指定 rank 2 为 `unique_reply_rank`，父进程只为 rank 2 建立本次等待。
-4. rank 0、1、3 仍完成本地方法，只是不向父进程返回普通结果；rank 2 将结果放入自己的响应队列。
-5. 若传入 aggregators，executor 改为等待全部四个响应，再把分 rank 结果合并到约定输出；任何一个 worker 的失败响应都会使调用失败。
-6. `non_block=True` 返回 `FutureWrapper`；同步调用则立即执行同一个 future 的 `result()`。
+### 4.2 一次 RPC 的普通与聚合路径
 
 ```mermaid
 flowchart TB
-    A[父进程提交 collective RPC] --> B[广播同一调用元组]
-    B --> C0[rank 0 执行]
-    B --> C1[rank 1 执行]
-    B --> C2[rank 2 执行]
-    B --> C3[rank 3 执行]
-    C0 --> D{是否需要全量聚合}
+    A["父进程调用 collective_rpc"] --> B["广播同一调用元组"]
+    B --> C0["rank 0 执行"]
+    B --> C1["rank 1 执行"]
+    B --> C2["rank 2 执行"]
+    B --> C3["rank 3 执行"]
+    C0 --> D{"是否配置输出 aggregator"}
     C1 --> D
     C2 --> D
     C3 --> D
-    D -->|否| E[只取 rank 2 响应]
-    D -->|是| F[收齐四个响应]
-    F --> G[按 aggregator 合并到指定输出]
-    E --> H{响应是否失败}
+    D -->|否| E["只有 output rank 2 回复"]
+    D -->|是| F["四个 ranks 都回复"]
+    F --> G["aggregator 合并到目标结果"]
+    E --> H{"收到 SUCCESS"}
     G --> H
-    H -->|否| I[Future 返回结果]
-    H -->|是| J[当前 Future 抛出 RPC 异常]
+    H -->|是| I["Future 返回"]
+    H -->|否| J["当前 Future 抛错"]
+
+    classDef default fill:#f7f7f7,stroke:#707070,color:#202020
+    classDef acc1 fill:#e8f1ff,stroke:#3569a8,color:#173a63
+    classDef acc2 fill:#fff2d9,stroke:#b7791f,color:#6b4300
+    class A,B,E,F,G,I acc1
+    class D,H,J acc2
 ```
 
-异步模型输出还有一层生命周期要求：若 worker 返回 `AsyncModelRunnerOutput`，可选响应线程会在 worker 侧调用 `get_output()` 完成物化，再把可传输结果写入响应队列。否则 runner 复用的设备或 host buffer 可能在父进程真正读取前已改变。这里的“RPC 已排队”“设备执行完成”“Python 结果已物化”是三个不同完成点。
+普通路径只创建 rank 2 的本次等待；rank 0、1、3 仍执行，但不发送结果。聚合路径则令 `output_rank=None`，依次读取全部 response queues，再由一个或多个 aggregator 合并。
 
-## 6. MessageQueue 的共享内存快路不是无限邮箱
+“全员回复”只在成功路径上构成 all-replies barrier。父进程按响应队列顺序读取，遇到第一个 `FAILURE` 就立即抛错，不再消费其后的队列；因此失败返回只能证明命令已经广播且至少一个错误已被观察，不能证明其余回复已经 drain。
 
-本机 `MessageQueue` 的小数据路径建立在 `ShmRingBuffer` 上：单写者、多读者，默认 10 个槽，每槽最多 24 MiB。每个槽有 written 状态和按 reader 分开的 read 状态；writer 只有确认**所有 readers** 都释放当前槽后才能绕回重用。写入和读取状态之间使用内存栅栏维持发布顺序。
+这里有一个重要的错误可见性边界：`_execute_worker_rpc` 只在“本 rank 应回复”时把异常包装成 `FAILURE`。因此普通 unique-reply RPC 中，非 output rank 的 Python 方法异常会被该进程记录，但不会直接成为父进程本次响应；只有该异常进一步导致进程退出、collective 失败、回复 rank 报错或超时，父进程才会从其他机制观察到它。需要逐 rank 证明成功的控制操作应使用全员回复，而不能复用唯一回复语义。
 
-这使背压成为合同的一部分：四个 workers 中只要一个长期不 dequeue，writer 最多推进有限槽位便会等待。worker 正常读取时，即便反序列化或消费过程抛异常，`acquire_read()` 的 `finally` 也会标记该 reader 已释放槽位；进程死亡则需要 executor 的故障与 shutdown 路径打断等待，不能指望 ring 自动忘掉读者。
+### 4.3 异步输出要先物化再跨进程
 
-消息先 pickle，并可把较大的对象拆成 out-of-band buffers。若本机序列化结果放不进一个 ring slot，writer 在共享内存里写 overflow 标记，再通过本机 socket 发送完整负载；远端 reader 本来就走 socket。这里的 overflow 是**单条消息太大时的旁路**，不是 ring 满时把排队压力无界转移到 socket。
+若 Worker 返回 `AsyncModelRunnerOutput`，响应线程会先在 Worker 侧执行 `get_output()`，再把可传输结果入队。该线程显式设置 Worker 设备，避免在设备 0 隐式创建额外 CUDA context。
 
-因此遇到“第若干步才卡住”时，可以先区分三件事：
+这一步保证被 Model Runner 复用的 device/host buffer 在父进程读取前已经物化。因此至少要区分“RPC 已广播”“设备执行已产生异步句柄”和“Python 结果已物化入响应队列”三个完成点。
 
-- 所有 workers 是否仍在按同一 RPC 序列 dequeue；
-- 是否有单条 payload 越过共享内存槽上限，改走 overflow socket；
-- 是否已有 worker 失败，而父进程仍在等待它释放 ring 槽或返回响应。
+## 5. MessageQueue：共享内存快路怎样产生背压
 
-## 7. Future 保证提交顺序，不保证任意乱序取结果
+### 5.1 广播输入与响应队列的容量并不相同
 
-父进程维护待完成 `FutureWrapper` 队列。新 future 从一端加入；调用某个 future 的 `result()` 时，会从最旧端依次读取响应并完成前面的 futures，直到轮到目标对象。因此先提交 A、再提交 B，却先等待 B，并不会绕过 A 直接从同一响应流中取“下一条就是 B”；它先对账 A，再返回 B。
+当前基线的本机快路使用 `ShmRingBuffer`，默认槽数都是 10，但槽宽有两套来源：
 
-这是响应队列没有为每条普通 RPC 携带独立请求 ID 时的重要配对规则。回归测试覆盖了“等待后提交 future 时先 drain 前序 future”和陈旧 deadline 的约束。`FutureWrapper.result()` 当前不支持调用者传入普通 `timeout` 参数；executor 的故障监控与内部等待期限不能被描述成完整的 per-call deadline API。
+| 队列 | 构造方式 | 默认槽数 | 当前默认槽宽 | 近似 payload 区 |
+|---|---|---:|---:|---:|
+| Executor 广播输入 | 显式传入 `VLLM_MQ_MAX_CHUNK_BYTES_MB` | 10 | 16 MiB | 160 MiB |
+| 每 Worker 响应 | `MessageQueue(1, 1)` | 10 | 24 MiB | 每 Worker 240 MiB |
 
-这也说明并发提交的安全边界：只要同一响应队列保持 FIFO、所有 workers 观察相同命令顺序，父进程可以延期 materialize；如果某条路径私自多发或少发一个 response，后续结果可能整体错位，而不仅是当前 future 超时。
+以上还未计每槽元数据，实际共享内存段略大。对本页四 Worker 示例，仅 payload 区就约为 `160 + 4 * 240 = 1120 MiB`。**旧稿把所有队列概括为 10×24 MiB，本次按构造点复核后更正**：16 MiB 是 Executor 输入广播队列的环境变量默认值；24 MiB 是 `MessageQueue` 类默认值，当前用于每 Worker 响应队列。创建前 `check_shm_free_space()` 会核对 `/dev/shm` 可用空间，容器部署需据 Worker 数量预留。
 
-## 8. 失败和 shutdown 要同时解除进程、队列与设备等待
+### 5.2 一个槽何时可以复用
 
-运行期 worker 方法异常会包装成失败响应，父进程读取后让当前 future 抛出 RPC 异常；它本身不等价于 worker 进程已经死亡。独立的进程监控线程观察各子进程 sentinel：任一 worker 意外退出时，才把 executor 标为 failed、执行 shutdown，并调用注册的 failure callback，让上层终止仍在等待的 Engine 工作。worker 还监控父进程存活管道：父进程关闭自己持有的 writer 或意外退出时，子进程读到 EOF，设置 shutdown 并关闭消息队列，避免成为孤儿 busy loop。
+每个广播槽含一个 written flag 和每个本地 reader 各自的 read flag。writer 发布数据前后用 memory fence 约束可见性；只有所有 readers 都把当前槽标为已读，writer 才能绕回覆盖它。
 
-父进程正常 `shutdown()` 的关键顺序是：先关闭 death writers 通知 workers，再关闭本地队列，并等待进程退出；超过宽限期后升级到 `SIGTERM`，仍不退出再到 `SIGKILL`。这不是优雅停止所有 GPU collective 的数学证明，而是进程级最后收口。若 worker 卡在外部通信库内部，最终仍可能依赖强制终止。
+```mermaid
+flowchart TB
+    A["槽可写<br/>written=0 或全员已读"] --> B["writer 获得槽"]
+    B --> C{"消息放得进槽"}
+    C -->|是| D["payload 写入 SHM"]
+    C -->|否| O["SHM 写 overflow 标记<br/>payload 走本机 socket"]
+    D --> P["清 reader flags<br/>fence 后 written=1"]
+    O --> P
+    P --> R["每个 reader dequeue<br/>finally 置本 rank read=1"]
+    R --> G{"所有 reader flags 都为 1"}
+    G -->|否| W["等待尚未读取的 reader<br/>writer 不能复用"]
+    W --> G
+    G -->|是| A
 
-需要保留的三个故障不变量是：
+    classDef default fill:#f7f7f7,stroke:#707070,color:#202020
+    classDef acc1 fill:#e8f1ff,stroke:#3569a8,color:#173a63
+    classDef acc2 fill:#fff2d9,stroke:#b7791f,color:#6b4300
+    class B,D,P,R acc1
+    class C,O,G,W acc2
+```
 
-| 不变量 | 破坏后的典型表现 | 先查入口 |
+图中的闭环暴露了复用不变量：大消息虽然改走 socket，仍要先占用 ring 槽发布 overflow 标记；任一 reader 没有完成该槽的 read flag，writer 就不能进入下一轮复用。
+
+因此背压不是异常，而是协议：
+
+- 一个 Worker 长期不 dequeue，整个广播 writer 最多领先 10 个槽；
+- `acquire_read()` 在 `finally` 中标记释放，即使反序列化抛错，也不会永久占住当前槽；消费者代码发生在 `dequeue()` 返回之后，不属于这项保证；
+- 进程直接死亡时，ring 不会自动删除 reader。shutdown 能取消 reader 的 `SpinCondition` 等待并最终终止 Worker，但 `acquire_write()` 没有对应的 shutdown 检查；当前 collective RPC deadline 只传给响应 `dequeue()`，广播 `enqueue()` 没有传 timeout，Worker monitor 触发的 queue shutdown 也不能证明会解除一个已经卡住的 writer wait。此路径只有更上层终止/重建父进程才能界定；若其他调用方显式给 `enqueue` timeout，则属于另一份调用合同；
+- reader 空闲后以通知唤醒，同时每 5000 ms 重新检查权威 SHM flag，以限制丢通知后的恢复时间。
+
+`VLLM_RINGBUFFER_WARNING_INTERVAL` 只控制 writer 长时间找不到空槽时的告警间隔，不扩大队列，也不解除背压。
+
+### 5.3 大消息旁路不是“队列满了就走 socket”
+
+对象先 pickle；大于等于 1 MiB 的可缓冲对象可以作为 out-of-band buffer 分离。若主 pickle 与这些 buffers 的总大小放不进一个 ring slot，writer 先在共享内存槽写 overflow 标记，再通过本机 ZeroMQ socket 发送完整 multipart；远端 reader 本来就走 socket。
+
+overflow 的触发条件是**单条消息超过槽宽**，不是 ring 已满。队列满时 writer 等最慢 reader；不会把排队压力无限转移到 socket。诊断“运行若干步后卡住”时，应分别检查：
+
+1. 是否有 rank 少 dequeue 了一条 RPC；
+2. 是否单条 payload 超过 16/24 MiB，改走 overflow socket；
+3. 是否 Worker 已失败，而父进程仍在等它释放槽或返回。
+
+## 6. Future：响应没有请求 ID 时怎样保持配对
+
+`FutureWrapper` 把新 Future 从 deque 左侧加入。调用某个 Future 的 `result()` 时，从右侧取最老对象并执行 `_wait_for_response()`，直到目标 Future 完成。若先提交 A、再提交 B，却先等待 B，代码会先读取 A 的响应，再读取 B。
+
+```mermaid
+flowchart TB
+    SA["提交 A"] --> SB["提交 B"] --> SC["提交 C"]
+    SC --> D["deque 左到右<br/>C, B, A"]
+    D --> WC["调用 C.result"]
+    WC --> PA["从右 pop A<br/>读取 A response"]
+    PA --> PB["从右 pop B<br/>读取 B response"]
+    PB --> PC["从右 pop C<br/>读取 C response"]
+    PC --> RC["C 完成并返回"]
+
+    classDef default fill:#f7f7f7,stroke:#707070,color:#202020
+    classDef acc1 fill:#e8f1ff,stroke:#3569a8,color:#173a63
+    classDef acc2 fill:#fff2d9,stroke:#b7791f,color:#6b4300
+    class D,WC acc2
+    class PA,PB,PC,RC acc1
+```
+
+这条 FIFO drain 规则替代了普通响应消息中的 request ID。只要同一响应队列与广播命令顺序一致，父进程可以延迟取结果；某条路径若私自多发或少发一个 response，后续 Future 都可能错位。
+
+`FutureWrapper.result(timeout=...)` 当前明确拒绝非 `None` 参数。`collective_rpc(timeout=...)` 计算的是内部 deadline，并在依次读取 response queues 时传递剩余时间；`execute_model` 和 `sample_tokens` 使用 `VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS`。这不能描述为通用 Future per-call timeout API。
+
+## 7. 代码协作与调用路径
+
+### 7.1 谁拥有哪一段状态
+
+| 责任 | 主要对象 | 持有状态 |
 |---|---|---|
-| 全员 READY 后再进入队列握手 | 启动 hang，部分 rank 从未完成设备初始化 | ready pipe 状态、worker 构造异常、握手顺序 |
-| 所有 workers 消费相同 RPC 序列 | 特定 batch 或特定方法后 collective hang | 广播 dequeue、方法分支、各 rank 日志序号 |
-| response 与 future 保持 FIFO 对账 | 后续 future 返回错位或永久等待 | 每 rank 响应数、前序 future 是否已 drain |
+| 进程与广播编排 | `MultiprocExecutor` | Worker handles、广播队列、响应队列、Future deque、failure callback |
+| 单 rank 生命周期 | `WorkerProc` | Worker wrapper、响应队列、异步输出线程、death-pipe monitor |
+| 有限传输通道 | `MessageQueue` / `ShmRingBuffer` | 槽、读写 flags、通知 socket、overflow socket |
+| 模型与设备工作 | `WorkerWrapperBase` 及具体 Worker | 本 rank 模型、设备与分布式组 |
+| 输出聚合 | `KVOutputAggregator` / `ECOutputAggregator` | 分 rank connector 输出的合并规则 |
 
-## 9. 从症状回到稳定源码入口
+### 7.2 启动调用树
 
-以下路径相对固定基线；表内使用 `path::symbol`，不继承外部笔记里的易漂移行号：
+```text
+MultiprocExecutor._init_executor
++-- MessageQueue for rpc broadcast
++-- WorkerProc.make_worker_process for every local rank
++-- WorkerProc.wait_for_ready
+|   `-- multiprocessing.connection.wait on all ready pipes
++-- rpc_broadcast_mq.wait_until_ready
+`-- each worker_response_mq.wait_until_ready
 
-| 核验问题 | 源码与测试入口 |
+WorkerProc.worker_main
++-- WorkerProc.__init__
+|   +-- WorkerWrapperBase.init_worker
+|   +-- init_device
+|   +-- load_model
+|   `-- WorkerProc._init_message_queues
++-- send READY
++-- wait_until_ready in fixed queue order
+`-- WorkerProc.worker_busy_loop
+```
+
+### 7.3 RPC 调用树
+
+```text
+MultiprocExecutor.execute_model
+`-- MultiprocExecutor.collective_rpc
+    +-- rpc_broadcast_mq.enqueue
+    +-- FutureWrapper
+    `-- FutureWrapper.result
+        `-- get_response from one or all response queues
+
+WorkerProc.worker_busy_loop
+`-- rpc_broadcast_mq.dequeue
+    `-- WorkerProc._execute_worker_rpc
+        +-- WorkerWrapperBase method
+        `-- WorkerProc.handle_output
+            `-- WorkerProc.enqueue_output
+                `-- worker_response_mq.enqueue
+```
+
+### 7.4 稳定源码路线
+
+| 核验问题 | 稳定源码锚点 |
 |---|---|
-| executor 怎样建立 workers 与 queues | `vllm/v1/executor/multiproc_executor.py::MultiprocExecutor._init_executor`、`WorkerProc.make_worker_process`、`WorkerProc.wait_for_ready`、`WorkerProc._init_message_queues`；`tests/distributed/test_multiproc_executor.py::test_multiproc_executor_counts_all_local_dp_workers` |
-| 哪个 rank 回复，聚合何时收全员 | `vllm/v1/executor/multiproc_executor.py::MultiprocExecutor._get_output_rank`、`collective_rpc`；`tests/distributed/test_multiproc_executor.py::test_multiproc_executor_pp` |
-| worker 怎样执行并物化输出 | `vllm/v1/executor/multiproc_executor.py::WorkerProc.worker_busy_loop`、`_execute_worker_rpc`、`handle_output`、`enqueue_output`；`tests/v1/executor/test_multiproc_executor.py` |
-| 共享内存 ring 怎样产生背压 | `vllm/distributed/device_communicators/shm_broadcast.py::ShmRingBuffer`、`MessageQueue.acquire_write`、`acquire_read`、`enqueue`、`dequeue`；`tests/distributed/test_shm_broadcast.py` |
-| Future 怎样维持响应顺序 | `vllm/v1/executor/multiproc_executor.py::FutureWrapper.result`、`_wait_for_response`；`tests/v1/executor/test_multiproc_executor_timeout.py` |
-| 父子进程怎样发现死亡并收尾 | `vllm/v1/executor/multiproc_executor.py::WorkerProc.monitor_death_pipe`、`MultiprocExecutor.shutdown`、`_ensure_worker_termination`；`tests/v1/shutdown/test_startup_error.py`、`tests/v1/shutdown/test_forward_error.py` |
+| Worker 创建、全员 READY 与队列握手 | `vllm.v1.executor.multiproc_executor.MultiprocExecutor._init_executor`、`WorkerProc.make_worker_process`、`WorkerProc.wait_for_ready` |
+| output rank 与聚合回复 | `MultiprocExecutor._get_output_rank`、`MultiprocExecutor.collective_rpc` |
+| Worker 执行与异常包装 | `WorkerProc.worker_busy_loop`、`WorkerProc._execute_worker_rpc`、`WorkerProc.enqueue_output` |
+| 异步输出物化 | `WorkerProc.handle_output`、`WorkerProc.async_output_busy_loop` |
+| ring flags、背压与 overflow | `vllm.distributed.device_communicators.shm_broadcast.ShmRingBuffer`、`MessageQueue.acquire_write`、`acquire_read`、`enqueue`、`dequeue` |
+| Future FIFO 对账 | `vllm.v1.executor.multiproc_executor.FutureWrapper.result`、`_wait_for_response` |
+| 父子死亡检测与收尾 | `MultiprocExecutor.start_worker_monitor`、`MultiprocExecutor.shutdown`、`WorkerProc.monitor_death_pipe` |
+| PP output rank、Worker 方法与异步输出测试 | `tests/distributed/test_multiproc_executor.py`、`tests/v1/executor/test_multiproc_executor.py` |
+| Future deadline 与前序 drain 测试 | `tests/v1/executor/test_multiproc_executor_timeout.py` |
+| ring 释放、容量和 overflow 测试 | `tests/distributed/test_shm_broadcast.py` |
+| 构造/运行期故障测试 | `tests/v1/shutdown/test_startup_error.py`、`tests/v1/shutdown/test_forward_error.py` |
 
-本页完成的是源码与测试合同核验，没有运行多进程 GPU 推理、多节点传输或故障注入；默认槽数、单槽上限和 output-rank 公式是当前基线事实，不应直接推广到未来版本或 Ray executor。
+## 8. 失败、收尾与运行边界
+
+### 8.1 方法失败与进程死亡是两条路径
+
+回复 rank 的方法异常会包装成 `FAILURE`，父进程读取后令当前 Future 抛 `RuntimeError`；进程可以继续存活。非回复 rank 的异常只有日志，不直接入普通 unique-reply response。
+
+独立 Worker monitor 观察所有子进程 sentinel。任一 Worker 意外退出时，Executor 标记 `is_failed`、进入 shutdown 并调用一次 failure callback，使 EngineCore 能停止仍在等待的工作。反方向上，Worker 监控 death pipe：父进程退出或关闭 writer 时，reader 收到 EOF，设置 shutdown event 并取消队列等待，避免遗留孤儿 busy loop。
+
+### 8.2 shutdown 的升级顺序
+
+父进程正常 shutdown 时先关闭各 death writer，让 Worker 有机会自行退出；然后等待 `VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS`。仍存活则发送 `SIGTERM`，再等固定 4 秒，最后对残余进程发送 kill。响应队列和广播队列随后关闭。
+
+这是一套进程级收口，不是“任意 GPU collective 都可优雅取消”的证明。若 Worker 卡在外部通信库内部，最终仍可能依赖强制终止。
+
+### 8.3 配置合同
+
+| 配置 | 默认值 | 作用范围 | 边界 |
+|---|---:|---|---|
+| `VLLM_MQ_MAX_CHUNK_BYTES_MB` | 16 | Executor 广播输入队列单槽宽 | 不改变每 Worker 响应队列的 24 MiB 类默认值 |
+| `VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS` | 300 | multiprocessing `execute_model` / `sample_tokens` RPC；源码注释限定 TP>1 | 不是 `Future.result(timeout)` 实现 |
+| `VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS` | 5 | 发信号前的优雅退出宽限 | SIGTERM 后另有固定 4 秒等待 |
+| `VLLM_RINGBUFFER_WARNING_INTERVAL` | 60 | writer 等空槽的告警间隔 | 不解除阻塞 |
+| `MessageQueue.max_chunks` | 10 | 当前构造默认槽数 | 不是环境变量 |
+| `SHM_READER_RECHECK_INTERVAL_MS` | 5000 | reader 空闲时重查 SHM flag | 模块常量，不是用户配置 |
+
+### 8.4 三条运行不变量
+
+| 不变量 | 破坏后的表现 | 优先检查 |
+|---|---|---|
+| 全员进程先创建，再等待 READY，随后按相同顺序握手 | 启动 hang，部分 rank 从未完成设备初始化 | ready pipe、构造异常、握手顺序 |
+| 所有 Workers 消费同一 RPC 序列 | 特定调用后 collective hang 或 ring 很快写满 | 各 rank dequeue/方法序号、最慢 reader |
+| response 与 Future 保持 FIFO 对账 | 后续结果错位或永久等待 | 每 rank 响应数、前序 Future 是否 drain |
+
+MultiprocExecutor 适合一个父进程控制本机或 inner-DP 范围内的一组锁步 Worker；它不替代 Ray 的多节点调度，也不拥有 TP/PP collective 的张量合同。向上看，[[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|Engine 架构]]决定何时提交 Future 和消费结果；向内看，[[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]]拥有设备状态与 buffer 生命周期；出现进程或队列故障后，[[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|可观测性与可靠性]]把这些内部状态转换成服务健康信号。
 
 ## Related Pages
 
-- [[06_vllm_engine_architecture_analysis|Engine 运行]] — 解释谁提交 executor future，以及结果返回后怎样与 Scheduler snapshot 对账。
-- [[13_vllm_serving_control_plane_analysis|Serving 控制面]] — 放大到 launcher、EngineCore、路由、ready 与服务级 shutdown。
-- [[18_vllm_distributed_inference_analysis|分布式推理]] — 接续 worker 内部 TP/PP/DP/EP 的成员、shape 与通信顺序。
-- [[12_vllm_model_runner_v2_analysis|Model Runner V2]] — 解释 worker 方法内部的设备状态、异步输出和 buffer 生命周期。
-- [[23_vllm_observability_reliability_analysis|可观测性与可靠性]] — 将 worker 失败、Engine dead 与用户可见健康状态连起来。
+- [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 解释谁提交 Executor Future，以及结果怎样回到 Engine step。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 展开 Worker 方法内部的设备状态与异步输出 buffer 生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] —— 把 READY、进程死亡和 shutdown 接到服务级生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 拥有 Worker 内 TP/PP/DP/EP 的设备通信与顺序合同。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 将 Worker/Engine 故障转成对用户可见的健康状态。
+- [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|vLLM 在线权重更新]] —— 给出全员回复 RPC 的一个运行时状态变更用例。

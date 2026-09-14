@@ -1,0 +1,288 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920" role="img" aria-labelledby="title desc">
+<title id="title">SP 如何按 token 分摊 RMSNorm，并分别返回 y 与 residual u</title>
+<desc id="desc">T=4、H=4、TP=2 的教学布局。上方 AllReduce 后，两 rank 对全部 token 重复 RMSNorm，返回完整 y 和 u。下方 ReduceScatter 后，R0 只处理 t0、t1，R1 只处理 t2、t3；AllGather 恢复两 rank 的完整 y，residual u 仍为每 rank 2×4。每个格子包含一个 token 的全部 hidden 列。</desc>
+<style>
+text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+.title{font-size:25px;font-weight:700}.panel-title{font-size:21px;font-weight:700}.stage{font-size:18px;font-weight:650}
+.body{font-size:15px}.dim{font-size:14px;fill:#697280}.rank{font-size:15px;font-weight:650}.value{font-size:18px}
+.arrow-label{font-size:13px;fill:#697280}.blue{fill:#2563EB}.orange{fill:#8A4A11;font-size:16px}.note{font-size:15px;fill:#173F87}
+.neutral{fill:#fff;stroke:#C7CCD3;stroke-width:1.1}.ghost{fill:#F4F5F7;stroke:#D5DAE1;stroke-dasharray:3 3}
+.acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}.acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+.panel{fill:#FCFDFF;stroke:#D5DAE1}.arrow{fill:none}.arrow.main{stroke:#2563EB;stroke-width:2.3}.arrow.aux{stroke:#8A939F;stroke-width:1.6}
+</style><defs><marker id="blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#2563EB"/></marker><marker id="gray" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#8A939F"/></marker></defs>
+<rect class="neutral" x="0" y="0" width="1400" height="920" rx="0"/>
+<text class="title" x="28" y="37" text-anchor="start">Sequence Parallelism：按 token 分摊 Norm，分别追踪 y 与 residual u</text>
+<text class="body" x="28" y="69" text-anchor="start">教学输入：T=4，H=4，TP=2；各 token 的贡献 p₀=(1,2,3,4)，p₁=(1,0,−1,−2)；w=(1,2,1,2)，ε=10⁻⁶</text>
+<text class="body" x="28" y="95" text-anchor="start">每格 = 一个 token 的完整 H=4 向量；uₜ = 两 rank 贡献之和，yₜ = RMSNorm(uₜ)；灰虚格 = 此 rank 不持有该 token。</text>
+<rect class="panel" x="20" y="120" width="1360" height="366" rx="12"/>
+<text class="panel-title" x="40" y="151" text-anchor="start">未改写 · 两个 rank 都做完整 Norm</text>
+<text class="stage" x="40" y="187" text-anchor="start">① GEMM partial</text>
+<text class="dim" x="40" y="212" text-anchor="start">每 rank：4×4</text>
+<text class="stage" x="380" y="187" text-anchor="start">② AllReduce</text>
+<text class="dim" x="380" y="212" text-anchor="start">求和并复制；每 rank：4×4</text>
+<text class="stage" x="720" y="187" text-anchor="start">③ RMSNorm</text>
+<text class="dim" x="720" y="212" text-anchor="start">各自处理全部 4 个 token</text>
+<text class="stage" x="1060" y="187" text-anchor="start">④ 返回 (y, u)</text>
+<text class="dim" x="1060" y="212" text-anchor="start">y、u 都是每 rank 完整张量</text>
+<text class="dim" x="99" y="233" text-anchor="middle">t0</text>
+<text class="dim" x="156" y="233" text-anchor="middle">t1</text>
+<text class="dim" x="213" y="233" text-anchor="middle">t2</text>
+<text class="dim" x="270" y="233" text-anchor="middle">t3</text>
+<text class="rank" x="40" y="269" text-anchor="start">R0</text>
+<rect class="cell neutral" x="74" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="99.5" y="269" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="131" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="156.5" y="269" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="188" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="213.5" y="269" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="245" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="270.5" y="269" text-anchor="middle">p₀</text>
+<text class="rank" x="40" y="313" text-anchor="start">R1</text>
+<rect class="cell neutral" x="74" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="99.5" y="313" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="131" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="156.5" y="313" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="188" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="213.5" y="313" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="245" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="270.5" y="313" text-anchor="middle">p₁</text>
+<text class="dim" x="439" y="233" text-anchor="middle">t0</text>
+<text class="dim" x="496" y="233" text-anchor="middle">t1</text>
+<text class="dim" x="553" y="233" text-anchor="middle">t2</text>
+<text class="dim" x="610" y="233" text-anchor="middle">t3</text>
+<text class="rank" x="380" y="269" text-anchor="start">R0</text>
+<rect class="cell neutral" x="414" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="439.5" y="269" text-anchor="middle">u₀</text>
+<rect class="cell neutral" x="471" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="496.5" y="269" text-anchor="middle">u₁</text>
+<rect class="cell neutral" x="528" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="553.5" y="269" text-anchor="middle">u₂</text>
+<rect class="cell neutral" x="585" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="610.5" y="269" text-anchor="middle">u₃</text>
+<text class="rank" x="380" y="313" text-anchor="start">R1</text>
+<rect class="cell neutral" x="414" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="439.5" y="313" text-anchor="middle">u₀</text>
+<rect class="cell neutral" x="471" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="496.5" y="313" text-anchor="middle">u₁</text>
+<rect class="cell neutral" x="528" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="553.5" y="313" text-anchor="middle">u₂</text>
+<rect class="cell neutral" x="585" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="610.5" y="313" text-anchor="middle">u₃</text>
+<text class="dim" x="779" y="233" text-anchor="middle">t0</text>
+<text class="dim" x="836" y="233" text-anchor="middle">t1</text>
+<text class="dim" x="893" y="233" text-anchor="middle">t2</text>
+<text class="dim" x="950" y="233" text-anchor="middle">t3</text>
+<text class="rank" x="720" y="269" text-anchor="start">R0</text>
+<rect class="cell neutral" x="754" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="779.5" y="269" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="811" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="836.5" y="269" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="868" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="893.5" y="269" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="925" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="950.5" y="269" text-anchor="middle">y₃</text>
+<text class="rank" x="720" y="313" text-anchor="start">R1</text>
+<rect class="cell neutral" x="754" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="779.5" y="313" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="811" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="836.5" y="313" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="868" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="893.5" y="313" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="925" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="950.5" y="313" text-anchor="middle">y₃</text>
+<text class="dim" x="1119" y="233" text-anchor="middle">t0</text>
+<text class="dim" x="1176" y="233" text-anchor="middle">t1</text>
+<text class="dim" x="1233" y="233" text-anchor="middle">t2</text>
+<text class="dim" x="1290" y="233" text-anchor="middle">t3</text>
+<text class="rank" x="1060" y="269" text-anchor="start">R0</text>
+<rect class="cell neutral" x="1094" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="269" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="1151" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="269" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="1208" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="269" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="1265" y="245" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="269" text-anchor="middle">y₃</text>
+<text class="rank" x="1060" y="313" text-anchor="start">R1</text>
+<rect class="cell neutral" x="1094" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="313" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="1151" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="313" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="1208" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="313" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="1265" y="289" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="313" text-anchor="middle">y₃</text>
+<path class="arrow aux" d="M 319 284 H 367" marker-end="url(#gray)"/>
+<text class="arrow-label" x="343" y="271" text-anchor="middle">sum</text>
+<path class="arrow aux" d="M 659 284 H 707" marker-end="url(#gray)"/>
+<text class="arrow-label" x="683" y="271" text-anchor="middle">Norm</text>
+<path class="arrow aux" d="M 999 284 H 1047" marker-end="url(#gray)"/>
+<text class="arrow-label" x="1023" y="271" text-anchor="middle">返回</text>
+<text class="dim" x="1094" y="348" text-anchor="start">y：每 rank 4×4</text>
+<text class="stage" x="1060" y="369" text-anchor="start">residual u：每 rank 4×4</text>
+<text class="dim" x="1119" y="383" text-anchor="middle">t0</text>
+<text class="dim" x="1176" y="383" text-anchor="middle">t1</text>
+<text class="dim" x="1233" y="383" text-anchor="middle">t2</text>
+<text class="dim" x="1290" y="383" text-anchor="middle">t3</text>
+<text class="rank" x="1060" y="419" text-anchor="start">R0</text>
+<rect class="cell neutral" x="1094" y="395" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="419" text-anchor="middle">u₀</text>
+<rect class="cell neutral" x="1151" y="395" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="419" text-anchor="middle">u₁</text>
+<rect class="cell neutral" x="1208" y="395" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="419" text-anchor="middle">u₂</text>
+<rect class="cell neutral" x="1265" y="395" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="419" text-anchor="middle">u₃</text>
+<text class="rank" x="1060" y="463" text-anchor="start">R1</text>
+<rect class="cell neutral" x="1094" y="439" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="463" text-anchor="middle">u₀</text>
+<rect class="cell neutral" x="1151" y="439" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="463" text-anchor="middle">u₁</text>
+<rect class="cell neutral" x="1208" y="439" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="463" text-anchor="middle">u₂</text>
+<rect class="cell neutral" x="1265" y="439" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="463" text-anchor="middle">u₃</text>
+<text class="body" x="40" y="354" text-anchor="start">p₀、p₁：GEMM 的规约贡献</text>
+<text class="dim" x="40" y="377" text-anchor="start">这里没有已有 residual 输入。</text>
+<rect class="acc2" x="380" y="356" width="600" height="49" rx="8"/>
+<text class="orange" x="394" y="386" text-anchor="start">两个 rank 重复计算同一批 token 的 RMSNorm。</text>
+<text class="body" x="40" y="441" text-anchor="start">返回约定：第一个输出是 norm 结果 y；第二个输出 u 用作后续 residual。</text>
+<text class="dim" x="40" y="466" text-anchor="start">两条方案使用相同输入；差别是中间 token 的归属与 residual 的形状。</text>
+<rect class="panel" x="20" y="493" width="1360" height="366" rx="12"/>
+<text class="panel-title" x="40" y="524" text-anchor="start">SP 改写 · token 分片后做本地 Norm</text>
+<text class="stage" x="40" y="560" text-anchor="start">① GEMM partial</text>
+<text class="dim" x="40" y="585" text-anchor="start">每 rank：4×4</text>
+<text class="stage" x="380" y="560" text-anchor="start">② ReduceScatter</text>
+<text class="dim" x="380" y="585" text-anchor="start">沿 token 轴 dim=0；每 rank：2×4</text>
+<text class="stage" x="720" y="560" text-anchor="start">③ 本地 RMSNorm</text>
+<text class="dim" x="720" y="585" text-anchor="start">仅处理本 rank 的 2 个 token</text>
+<text class="stage" x="1060" y="560" text-anchor="start">④ AllGather → 返回</text>
+<text class="dim" x="1060" y="585" text-anchor="start">仅聚合 y，沿 token 轴 dim=0</text>
+<text class="dim" x="99" y="606" text-anchor="middle">t0</text>
+<text class="dim" x="156" y="606" text-anchor="middle">t1</text>
+<text class="dim" x="213" y="606" text-anchor="middle">t2</text>
+<text class="dim" x="270" y="606" text-anchor="middle">t3</text>
+<text class="rank" x="40" y="642" text-anchor="start">R0</text>
+<rect class="cell neutral" x="74" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="99.5" y="642" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="131" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="156.5" y="642" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="188" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="213.5" y="642" text-anchor="middle">p₀</text>
+<rect class="cell neutral" x="245" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="270.5" y="642" text-anchor="middle">p₀</text>
+<text class="rank" x="40" y="686" text-anchor="start">R1</text>
+<rect class="cell neutral" x="74" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="99.5" y="686" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="131" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="156.5" y="686" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="188" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="213.5" y="686" text-anchor="middle">p₁</text>
+<rect class="cell neutral" x="245" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="270.5" y="686" text-anchor="middle">p₁</text>
+<text class="dim" x="439" y="606" text-anchor="middle">t0</text>
+<text class="dim" x="496" y="606" text-anchor="middle">t1</text>
+<text class="dim" x="553" y="606" text-anchor="middle">t2</text>
+<text class="dim" x="610" y="606" text-anchor="middle">t3</text>
+<text class="rank" x="380" y="642" text-anchor="start">R0</text>
+<rect class="cell acc1" x="414" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="439.5" y="642" text-anchor="middle">u₀</text>
+<rect class="cell acc1" x="471" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="496.5" y="642" text-anchor="middle">u₁</text>
+<rect class="cell ghost" x="528" y="618" width="51" height="36" rx="5"/>
+<text class="dim" x="553.5" y="642" text-anchor="middle">—</text>
+<rect class="cell ghost" x="585" y="618" width="51" height="36" rx="5"/>
+<text class="dim" x="610.5" y="642" text-anchor="middle">—</text>
+<text class="rank" x="380" y="686" text-anchor="start">R1</text>
+<rect class="cell ghost" x="414" y="662" width="51" height="36" rx="5"/>
+<text class="dim" x="439.5" y="686" text-anchor="middle">—</text>
+<rect class="cell ghost" x="471" y="662" width="51" height="36" rx="5"/>
+<text class="dim" x="496.5" y="686" text-anchor="middle">—</text>
+<rect class="cell acc1" x="528" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="553.5" y="686" text-anchor="middle">u₂</text>
+<rect class="cell acc1" x="585" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="610.5" y="686" text-anchor="middle">u₃</text>
+<text class="dim" x="779" y="606" text-anchor="middle">t0</text>
+<text class="dim" x="836" y="606" text-anchor="middle">t1</text>
+<text class="dim" x="893" y="606" text-anchor="middle">t2</text>
+<text class="dim" x="950" y="606" text-anchor="middle">t3</text>
+<text class="rank" x="720" y="642" text-anchor="start">R0</text>
+<rect class="cell acc1" x="754" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="779.5" y="642" text-anchor="middle">y₀</text>
+<rect class="cell acc1" x="811" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="836.5" y="642" text-anchor="middle">y₁</text>
+<rect class="cell ghost" x="868" y="618" width="51" height="36" rx="5"/>
+<text class="dim" x="893.5" y="642" text-anchor="middle">—</text>
+<rect class="cell ghost" x="925" y="618" width="51" height="36" rx="5"/>
+<text class="dim" x="950.5" y="642" text-anchor="middle">—</text>
+<text class="rank" x="720" y="686" text-anchor="start">R1</text>
+<rect class="cell ghost" x="754" y="662" width="51" height="36" rx="5"/>
+<text class="dim" x="779.5" y="686" text-anchor="middle">—</text>
+<rect class="cell ghost" x="811" y="662" width="51" height="36" rx="5"/>
+<text class="dim" x="836.5" y="686" text-anchor="middle">—</text>
+<rect class="cell acc1" x="868" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="893.5" y="686" text-anchor="middle">y₂</text>
+<rect class="cell acc1" x="925" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="950.5" y="686" text-anchor="middle">y₃</text>
+<text class="dim" x="1119" y="606" text-anchor="middle">t0</text>
+<text class="dim" x="1176" y="606" text-anchor="middle">t1</text>
+<text class="dim" x="1233" y="606" text-anchor="middle">t2</text>
+<text class="dim" x="1290" y="606" text-anchor="middle">t3</text>
+<text class="rank" x="1060" y="642" text-anchor="start">R0</text>
+<rect class="cell neutral" x="1094" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="642" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="1151" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="642" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="1208" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="642" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="1265" y="618" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="642" text-anchor="middle">y₃</text>
+<text class="rank" x="1060" y="686" text-anchor="start">R1</text>
+<rect class="cell neutral" x="1094" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="686" text-anchor="middle">y₀</text>
+<rect class="cell neutral" x="1151" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="686" text-anchor="middle">y₁</text>
+<rect class="cell neutral" x="1208" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="686" text-anchor="middle">y₂</text>
+<rect class="cell neutral" x="1265" y="662" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="686" text-anchor="middle">y₃</text>
+<path class="arrow main" d="M 319 657 H 367" marker-end="url(#blue)"/>
+<text class="arrow-label blue" x="343" y="644" text-anchor="middle">sum</text>
+<path class="arrow main" d="M 659 657 H 707" marker-end="url(#blue)"/>
+<text class="arrow-label blue" x="683" y="644" text-anchor="middle">Norm</text>
+<path class="arrow main" d="M 999 657 H 1047" marker-end="url(#blue)"/>
+<text class="arrow-label blue" x="1023" y="644" text-anchor="middle">AG</text>
+<text class="dim" x="1094" y="721" text-anchor="start">y：每 rank 4×4</text>
+<text class="stage" x="1060" y="742" text-anchor="start">residual u：每 rank 2×4</text>
+<text class="dim" x="1119" y="756" text-anchor="middle">t0</text>
+<text class="dim" x="1176" y="756" text-anchor="middle">t1</text>
+<text class="dim" x="1233" y="756" text-anchor="middle">t2</text>
+<text class="dim" x="1290" y="756" text-anchor="middle">t3</text>
+<text class="rank" x="1060" y="792" text-anchor="start">R0</text>
+<rect class="cell acc1" x="1094" y="768" width="51" height="36" rx="5"/>
+<text class="value" x="1119.5" y="792" text-anchor="middle">u₀</text>
+<rect class="cell acc1" x="1151" y="768" width="51" height="36" rx="5"/>
+<text class="value" x="1176.5" y="792" text-anchor="middle">u₁</text>
+<rect class="cell ghost" x="1208" y="768" width="51" height="36" rx="5"/>
+<text class="dim" x="1233.5" y="792" text-anchor="middle">—</text>
+<rect class="cell ghost" x="1265" y="768" width="51" height="36" rx="5"/>
+<text class="dim" x="1290.5" y="792" text-anchor="middle">—</text>
+<text class="rank" x="1060" y="836" text-anchor="start">R1</text>
+<rect class="cell ghost" x="1094" y="812" width="51" height="36" rx="5"/>
+<text class="dim" x="1119.5" y="836" text-anchor="middle">—</text>
+<rect class="cell ghost" x="1151" y="812" width="51" height="36" rx="5"/>
+<text class="dim" x="1176.5" y="836" text-anchor="middle">—</text>
+<rect class="cell acc1" x="1208" y="812" width="51" height="36" rx="5"/>
+<text class="value" x="1233.5" y="836" text-anchor="middle">u₂</text>
+<rect class="cell acc1" x="1265" y="812" width="51" height="36" rx="5"/>
+<text class="value" x="1290.5" y="836" text-anchor="middle">u₃</text>
+<text class="body" x="40" y="727" text-anchor="start">p₀、p₁：GEMM 的规约贡献</text>
+<text class="dim" x="40" y="750" text-anchor="start">这里没有已有 residual 输入。</text>
+<text class="note" x="380" y="727" text-anchor="start">R0：t0、t1；R1：t2、t3</text>
+<text class="dim" x="380" y="750" text-anchor="start">切分 token；H 列保持完整。</text>
+<rect class="acc1" x="40" y="779" width="945" height="62" rx="8"/>
+<text class="note" x="56" y="804" text-anchor="start">每个 token 只在一个 rank 上做 Norm；AllGather 后，两 rank 重新拿到全部 y₀…y₃。</text>
+<text class="note" x="56" y="827" text-anchor="start">返回值中的 u 不参与这次 AllGather，继续保留 token 分片。</text>
+<text class="dim" x="28" y="879" text-anchor="start">适用边界：仅示意 FirstAllReduceRMSNormPattern。H=4 是布局教学例；真实 SP 启用还受设备、hidden size 与 token 阈值约束。</text>
+<text class="dim" x="28" y="902" text-anchor="start">源码：vllm/compilation/passes/fusion/sequence_parallelism.py · FirstAllReduceRMSNormPattern.register · baseline 199cb9b96482</text>
+</svg>

@@ -13,6 +13,34 @@ All source ingestions and significant wiki updates are logged here.
 ---
 
 
+## 2026-09-14：vLLM 24–26 按功能与机制画像重构
+
+- 参考 Megatron-LM 12 的连续因果解释深度，并按知识库归属分类：[[24_vllm_extension_plugin_system_analysis|24 扩展插件系统]]与[[26_vllm_multiproc_executor_rpc_deepdive|26 MultiprocExecutor RPC]]使用机制分析画像，[[25_vllm_weight_transfer_online_update_analysis|25 在线权重更新]]使用功能分析画像；三页形成“启动扩展 → 运行时权重变更 → 本地多进程 collective”的连续主线，冻结基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`。
+- 24 用真实管理 Endpoint 重放 API 200/Render 503，补 General/Platform/IO/Endpoint/Stat Logger 的选择、所有权和冻结点，以及 LoRA resolver 快照、单 frontend 锁、错误与无统一 rollback。25 用 `step-41 → step-42` 和 `W=(1,2) → (1,9)` 展开 pause/session/finish/version/resume，补 Trainer/Worker 双 factory、四类后端、packed/unpacked、IPC pickle 安全门、cache/draft/DP 和 partial-rank failure。26 用 TP=2、PP=2 例解释 READY、广播/回复、异步输出、Future FIFO 与 shutdown，并把共享内存容量更正为广播 `10×16 MiB`、每 Worker 响应 `10×24 MiB`。
+- 独立审阅者按 base rubric、功能/机制画像、源码 spot-check、重写守恒和跨页一致性复审，三页及跨页最终均 PASS。10 幅 Mermaid 解析并在本地构建页面目视检查；严格链接、Markdown、资源、数学、站点构建与空白检查通过。详细证据见 `docs/research/2026-09-14-vllm-24-26-refactor-review.md`。本轮只做静态源码核验，未运行模型、GPU、NCCL/IPC、Ray/NIXL/RDT、多节点或故障注入测试，未修改 vLLM 源码。
+
+## 2026-09-14：修复 vLLM 21 十项审阅问题并替换 SP 布局图
+
+- 对照冻结源码修正 inplace provider 才插保护 clone 的条件，正文、成本表与系统图同步；删除附录对外部 kernel 数量及通信调度的过度断言。
+- SP/AsyncTP 合并到融合家族，自定义 Pass 独立成章；旧重复附录收为源码导航，并恢复删表时独有的注册顺序、匹配守卫及容差/range 所有权证据。普通 § 引用逐条复核，补齐 PyTorch 前置知识链接。
+- 统一后半篇段落与中英间距，解释各变体与开篇算例的对应，移出正文中的审阅过程措辞。SP token 分片改用可复现生成的 SVG，保留 y 聚齐与 residual u 分片的区别。
+- 独立审阅按用户10项与SP图要求复核，保留初审退回及修订记录；T0四项、站点构建、10张Mermaid渲染、SVG复现与代码示例语法检查通过。未运行vLLM设备/分布式测试或GPU benchmark。详细证据见 `docs/research/2026-09-14-vllm-21-23-refactor-review.md` 的第三轮记录。
+
+## 2026-09-14：补齐 vLLM Pass 机制与 21–23 段落解释
+
+- 根据用户对首轮“规则怎样匹配、融合依据、自定义扩展、与 torch.compile 的差别仍未讲清”的反馈，重新对照 Megatron-LM 12 的连续段落写法。21 由协调者重写，22/23 由原作者并行改写；每页均交给未参与该页写作的代理独立审读。
+- [[21_vllm_ir_and_fusion_passes_analysis|21 IR 与融合 Pass]] 补 FX、vLLM IR、Pass 与 Torch backend 的层次关系；用 Add+RMS 的 pattern/replacement/fake inputs 解释注册和编译时替换，区分计算等价、结构匹配、dtype extra_check、能力/range 门与性能依据。新增 §7.2–7.3 的对象 hook 接入、融合规则装配、固定插入位置、UUID、区间和正反例验证，并澄清 callable 配置、pre-grad 路径与 SM100 阈值的边界。
+- 三篇将承担机制解释的表格转成“输入与问题→处理→结果与约束”的连续段落，保留配置和源码查阅表。21 全部旧稳定源码锚点、26 个内置流程、16/6/4 配置与环境条目保留；22 补 NIXL descriptor 配对和 MoRI offset/session/status，23 补输出累积、logger window 与 reset 的实际顺序。修正累计 Counter 与窗口增量、PREEMPTED 调用 helper、MoRIIO READ 层前 wait 的局部不一致。
+- 基线与功能树不变。独立审查轨迹、原内容保留账、门禁与渲染结果追加到 `docs/research/2026-09-14-vllm-21-23-refactor-review.md`；示例完成语法检查和源码接入路径核验，未宣称已经运行 vLLM/CUDA、多机或外部服务测试。
+
+## 2026-09-14：vLLM 21–23 参考 Megatron-LM 12 重构解释主线
+
+- 按用户指定，以 Megatron-LM 12 的原理、具体算例、系统集成、变体及成本边界为深度参考，三个子代理分别重构 [[21_vllm_ir_and_fusion_passes_analysis|21 IR 与融合 Pass]]、[[22_vllm_disaggregated_kv_serving_analysis|22 分离式 KV Serving]]、[[23_vllm_observability_reliability_analysis|23 可观测性与可靠性]]；协调者独立打开冻结源码审读、退回修正并集成。基线保持 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，页面编号和功能树归属不变。
+- 21 从 add/RMSNorm 双输出合同解释 donation、functionalization、lowering 与 clone 回收，再展开 SP/AsyncTP、量化、通信融合、QK/RoPE/KV、attention 输出量化和 MLA dual norm 的实际注册分支。修正关闭 torch-wrap 被误写成整条 Pass 链停用的结论，区分 IR 相关匹配与仍可运行的其他 Pass；保留原 26 条流程、16 个 PassConfig 字段及 19 移交的 6 个配置字段。
+- 22 用同一个 12-token 请求重放 NIXL pull/push、MoRIIO READ/WRITE、Mooncake direct/store，补齐 store 三种布局和 MultiConnector 的完成门。区分默认 fail 的请求终态与接收收尾后的 block 释放；明确 MoRIIO READ 的 `(11, False)`、barrier 超时与 FULL graph 边界，以及部分直连错误分支缺少通用 invalid/receive 反馈的事实。保留 16 个注册名、配置与既有纠错，接口查阅表后移至 §14，§5.4、§11.1 保持稳定。
+- 23 补普通三 token 算例、真实统计消费链、logger/plugin 选择、多模态计时分摊与跨 worker 取 max、NIXL 七项实际指标、默认 fatal 双路径及 FT 恢复边界；保留原抢占算例、时钟域限制和设计文档冲突。明确 invalid blocks 是控制数据与日志，未注册专用计数指标；详细 trace 的配置声明不等同于 v1 已存在对应计时消费者。
+- 三页共 26 幅 Mermaid 经浏览器渲染和逐图审读，修正旧图配色及断行；无新增 SVG。以源码 AST 提取的统计类执行普通与抢占算例，区间结果符合正文。严格链接、数学、Markdown、资源检查与站点构建、三页公式渲染结果见 `docs/research/2026-09-14-vllm-21-23-refactor-review.md`；本轮为静态源码核验和文档验收，未运行 GPU、多机传输、OTLP 服务或故障注入。
+
 ## 2026-09-14：并发文档重构的全局集成验收
 
 - 对本工作区并发完成的 DeepSeek-V4.1、vLLM 与 Slime 系列重构做提交前全局盘点，逐项核对正文、领域索引、总索引、变更日志、冻结来源、图形生成器、SVG 产物及配套测试。领域计数复算为模型 68 页、DeepSeek 23 页、vLLM 27 页、Slime 24 页，与各级索引一致；新增页面命名、来源路由和资源归属均落在功能树既有位置。
