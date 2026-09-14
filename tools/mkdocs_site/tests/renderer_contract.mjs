@@ -757,6 +757,7 @@ async function main() {
         "--disable-default-apps",
         "--disable-sync",
         "--no-first-run",
+        "--no-sandbox",
       ],
     })
     const cases = []
