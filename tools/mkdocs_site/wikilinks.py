@@ -64,7 +64,7 @@ _MARKDOWN_EXTENSIONS = (
 )
 _MARKDOWN_EXTENSION_CONFIGS: dict[str, dict[str, object]] = {
     "pymdownx.superfences": {
-        "custom_fences": [{"name": "mermaid", "class": "mermaid"}]
+        "custom_fences": [{"name": "mermaid", "class": "kb-mermaid"}]
     },
     "pymdownx.arithmatex": {"generic": True},
     "toc": {"permalink": False, "toc_depth": 3},

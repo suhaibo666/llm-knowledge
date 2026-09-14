@@ -43,10 +43,6 @@
       });
     });
 
-    if (window.MathJax && typeof window.MathJax.typesetPromise === "function") {
-      const content = document.querySelector("[data-md-component='content']");
-      if (content) window.MathJax.typesetPromise([content]);
-    }
   }
 
   document.addEventListener("DOMContentLoaded", enhancePage);

@@ -1,7 +1,10 @@
 (function () {
   "use strict";
+  const assetRoot = new URL(".", document.currentScript.src);
+  const runtimeUrl = new URL("vendor/mermaid/mermaid.min.js", assetRoot).href;
   const renderedBlocks = new WeakSet();
   const diagramSources = new WeakMap();
+  let runtimePromise;
   let diagramSequence = 0;
   let viewer;
   let viewerCanvas;
@@ -319,7 +322,7 @@
 
   function captureSources(root) {
     const saved = window.__kbMermaidSourceList || [];
-    (root || document).querySelectorAll(".mermaid").forEach(function (node, index) {
+    (root || document).querySelectorAll(".kb-mermaid").forEach(function (node, index) {
       sourceFor(node, saved[index]);
     });
   }
@@ -333,11 +336,37 @@
     if (artifact) artifact.remove();
   }
 
+  function loadRuntime() {
+    if (window.mermaid) return Promise.resolve(window.mermaid);
+    if (runtimePromise) return runtimePromise;
+    runtimePromise = new Promise(function (resolve, reject) {
+      const script = document.createElement("script");
+      script.src = runtimeUrl;
+      script.async = true;
+      script.addEventListener("load", function () {
+        if (window.mermaid) {
+          resolve(window.mermaid);
+        } else {
+          reject(new Error("Mermaid runtime loaded without a global API"));
+        }
+      }, { once: true });
+      script.addEventListener("error", function () {
+        reject(new Error("Mermaid runtime failed to load: " + runtimeUrl));
+      }, { once: true });
+      document.head.appendChild(script);
+    });
+    return runtimePromise;
+  }
+
   async function renderDiagrams(root) {
-    if (!window.mermaid) return;
     captureSources(root);
-    const nodes = Array.from((root || document).querySelectorAll(".mermaid"))
+    let nodes = Array.from((root || document).querySelectorAll(".kb-mermaid"))
       .filter(function (node) { return !renderedBlocks.has(node); });
+    if (!nodes.length) return;
+    await loadRuntime();
+    nodes = nodes.filter(function (node) {
+      return node.isConnected && !renderedBlocks.has(node);
+    });
     if (!nodes.length) return;
 
     window.mermaid.initialize({

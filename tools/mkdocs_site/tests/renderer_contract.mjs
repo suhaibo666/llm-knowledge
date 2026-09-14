@@ -71,7 +71,18 @@ function startFixtureServer(siteRoot, servedResponses) {
         response.end("Not found")
         return
       }
-      const body = await readFile(candidate)
+      let body = await readFile(candidate)
+      if (path.basename(candidate) === "sitemap.xml") {
+        const servedPrefix = requestPath.startsWith("/llm-knowledge/")
+          ? "/llm-knowledge"
+          : ""
+        body = Buffer.from(
+          body.toString("utf8").replaceAll(
+            "https://suhaibo666.github.io/llm-knowledge",
+            `http://${request.headers.host}${servedPrefix}`,
+          ),
+        )
+      }
       servedResponses.set(requestPath, 200)
       response.writeHead(200, {
         "content-type": contentTypes.get(path.extname(candidate)) ?? "application/octet-stream",
@@ -201,10 +212,6 @@ function isExpectedMermaidError(entry) {
   )
 }
 
-function isExpectedMermaidPageError(message) {
-  return message.startsWith("Parse error on line") && message.includes("got 'EOF'")
-}
-
 async function assertUnifiedArticleLayout(page) {
   const cases = []
   for (const width of [390, 1024, 1440, 1920]) {
@@ -213,7 +220,7 @@ async function assertUnifiedArticleLayout(page) {
       const article = document.querySelector(".md-content__inner")
       const prose = [...article.children].find((node) => node.tagName === "P")
       const mermaid = article.querySelector(
-        ":scope > .mermaid:not([data-kb-mermaid-error])",
+        ":scope > .kb-mermaid:not([data-kb-mermaid-error])",
       )
       const table = article.querySelector(
         ":scope > .md-typeset__scrollwrap, :scope > table:not([class])",
@@ -261,7 +268,7 @@ async function assertUnifiedArticleLayout(page) {
 
 async function assertMermaidViewerLifecycle(page) {
   const triggerSelector = (
-    ".mermaid:not([data-kb-mermaid-error]) .kb-mermaid-zoom-trigger"
+    ".kb-mermaid:not([data-kb-mermaid-error]) .kb-mermaid-zoom-trigger"
   )
   const triggerCount = await page.$$eval(
     ".kb-mermaid-zoom-trigger",
@@ -443,6 +450,20 @@ async function runCase(browser, origin, basePath, servedResponses) {
   const browserMessages = []
   const pageErrors = []
   const workerUrls = []
+  const prefetchPath = `${basePath}domain/index.html`
+  let heldMermaidRequest
+  let signalMermaidRequest
+  let signalSearchIndexRequest
+  let signalPrefetchRequest
+  const mermaidRequested = new Promise((resolve) => {
+    signalMermaidRequest = resolve
+  })
+  const searchIndexRequested = new Promise((resolve) => {
+    signalSearchIndexRequest = resolve
+  })
+  const prefetchRequested = new Promise((resolve) => {
+    signalPrefetchRequest = resolve
+  })
 
   try {
     await page.setCacheEnabled(false)
@@ -451,6 +472,18 @@ async function runCase(browser, origin, basePath, servedResponses) {
       const rawUrl = request.url()
       requests.push(rawUrl)
       const url = new URL(rawUrl)
+      if (url.pathname.endsWith("/search/search_index.json")) {
+        signalSearchIndexRequest()
+      }
+      if (url.pathname === prefetchPath) signalPrefetchRequest()
+      if (
+        !heldMermaidRequest &&
+        url.pathname.endsWith("/assets/vendor/mermaid/mermaid.min.js")
+      ) {
+        heldMermaidRequest = request
+        signalMermaidRequest()
+        return
+      }
       if (
         ["http:", "https:", "ws:", "wss:"].includes(url.protocol) &&
         url.hostname !== "127.0.0.1"
@@ -480,23 +513,68 @@ async function runCase(browser, origin, basePath, servedResponses) {
     page.on("pageerror", (error) => pageErrors.push(error.message))
     page.on("workercreated", (worker) => workerUrls.push(worker.url()))
 
-    const response = await page.goto(
+    const navigation = page.goto(
       `${origin}${basePath}domain/10_article.html`,
       { waitUntil: "domcontentloaded", timeout: 60_000 },
     )
+    navigation.catch(() => undefined)
+    await Promise.race([
+      mermaidRequested,
+      delay(10_000).then(() => assert.fail(`${basePath} never requested Mermaid`)),
+    ])
+    await page.waitForFunction(
+      () => document.querySelectorAll("mjx-container").length > 0,
+      { timeout: 5_000 },
+    )
+    await delay(250)
+    assert.equal(
+      requests.some((rawUrl) => (
+        new URL(rawUrl).pathname.endsWith("/search/search_index.json")
+      )),
+      false,
+      `${basePath} eagerly downloaded the search index`,
+    )
+    await page.click("header [for=__search]")
+    await Promise.race([
+      searchIndexRequested,
+      delay(5_000).then(() => assert.fail(`${basePath} did not load search on demand`)),
+    ])
+    await page.keyboard.press("Escape")
+    await page.waitForFunction(() => !document.querySelector("#__search")?.checked)
+    await heldMermaidRequest.continue()
+    heldMermaidRequest = undefined
+    const response = await navigation
     assert.equal(response?.status(), 200, `${basePath} fixture page did not return 200`)
     await page.waitForFunction(
       () =>
         document.querySelectorAll("mjx-container").length > 0 &&
-        document.querySelectorAll(".mermaid").length === 2 &&
-        document.querySelector(".mermaid[data-kb-mermaid-error='true']") &&
-        document.querySelector(".mermaid:not([data-kb-mermaid-error]) svg"),
+        document.querySelectorAll(".kb-mermaid").length === 2 &&
+        document.querySelector(".kb-mermaid[data-kb-mermaid-error='true']") &&
+        document.querySelector(".kb-mermaid:not([data-kb-mermaid-error]) svg"),
       { timeout: 30_000 },
     )
+    await page.evaluate((href) => {
+      const link = document.createElement("a")
+      link.id = "kb-prefetch-probe"
+      link.href = href
+      link.textContent = "prefetch probe"
+      Object.assign(link.style, {
+        position: "fixed",
+        inset: "0 auto auto 0",
+        zIndex: "9999",
+      })
+      document.body.appendChild(link)
+    }, `${origin}${prefetchPath}`)
+    await page.hover("#kb-prefetch-probe")
+    await Promise.race([
+      prefetchRequested,
+      delay(5_000).then(() => assert.fail(`${basePath} did not prefetch a hovered page`)),
+    ])
+    await page.$eval("#kb-prefetch-probe", (link) => link.remove())
     await waitForRendererActivity(requests, responses, servedResponses)
 
     const metrics = await page.evaluate(() => {
-      const blocks = [...document.querySelectorAll(".mermaid")]
+      const blocks = [...document.querySelectorAll(".kb-mermaid")]
       const malformed = blocks.find(
         (block) => block.dataset.kbMermaidError === "true",
       )
@@ -521,7 +599,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
         ).length,
         orphanErrorGraphics: document.querySelectorAll(
           'body > div[id^="dkb-mermaid-"] svg, ' +
-          '.mermaid[data-kb-mermaid-error="true"] svg .error-icon',
+          '.kb-mermaid[data-kb-mermaid-error="true"] svg .error-icon',
         ).length,
         securitySvg: secure?.querySelectorAll("svg").length ?? 0,
         dangerousDom:
@@ -562,16 +640,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
     )
     assert.deepEqual(failedRequests, [], `${basePath} had failed requests`)
     assert.deepEqual(failedResponses, [], `${basePath} had HTTP error responses`)
-    assert.equal(
-      pageErrors.filter(isExpectedMermaidPageError).length,
-      1,
-      `${basePath} did not emit exactly one expected Mermaid parse pageerror`,
-    )
-    assert.deepEqual(
-      pageErrors.filter((message) => !isExpectedMermaidPageError(message)),
-      [],
-      `${basePath} emitted unexpected page errors`,
-    )
+    assert.deepEqual(pageErrors, [], `${basePath} emitted unexpected page errors`)
     const unexpectedMessages = browserMessages.filter(
       (entry) => !isExpectedMermaidError(entry),
     )
@@ -642,7 +711,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
   } catch (error) {
     const state = await page.evaluate(() => ({
       math: document.querySelectorAll("mjx-container").length,
-      mermaid: [...document.querySelectorAll(".mermaid")].map((block) => ({
+      mermaid: [...document.querySelectorAll(".kb-mermaid")].map((block) => ({
         error: block.dataset.kbMermaidError ?? null,
         source: block.textContent?.trim() ?? "",
         svg: block.querySelectorAll("svg").length,
@@ -660,6 +729,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
     })}`
     throw error
   } finally {
+    await heldMermaidRequest?.continue().catch(() => undefined)
     await page.close().catch(() => undefined)
   }
 }

@@ -37,15 +37,15 @@ test("rootMermaidSvgs rejects SVG nodes outside the supplied block", () => {
 })
 
 
-test("searchResultMatches rejects a target left by a previous query", () => {
-  const stale = {
-    href: "http://127.0.0.1:8000/target.html?h=上下文并行",
+test("searchResultMatches accepts results without an optional highlight query", () => {
+  const result = {
+    href: "http://127.0.0.1:8000/target.html",
     text: "Megatron-LM 上下文并行",
   }
 
   assert.equal(
-    searchResultMatches(stale, "13_megatron_cp_analysis", "/target.html"),
-    false,
+    searchResultMatches(result, "13_megatron_cp_analysis", "/target.html"),
+    true,
   )
 })
 

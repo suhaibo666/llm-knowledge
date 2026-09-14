@@ -25,6 +25,7 @@ theme:
         name: 跟随系统主题
   features:
     - navigation.instant
+    - navigation.instant.prefetch
     - navigation.tracking
     - navigation.tabs
     - navigation.sections
@@ -35,7 +36,6 @@ theme:
     - navigation.top
     - toc.follow
     - search.suggest
-    - search.highlight
     - content.code.copy
     - content.action.view
 plugins:
@@ -56,7 +56,7 @@ markdown_extensions:
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
-          class: mermaid
+          class: kb-mermaid
   - pymdownx.arithmatex:
       generic: true
   - toc:
@@ -68,7 +68,5 @@ extra_css:
   - assets/extra.css
 extra_javascript:
   - assets/mathjax.js
-  - assets/vendor/mathjax/tex-chtml.js
   - assets/diagram.js
-  - assets/vendor/mermaid/mermaid.min.js
   - assets/extra.js

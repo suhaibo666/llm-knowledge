@@ -41,11 +41,17 @@ jobs:
       - name: Install documentation dependencies
         run: python -m pip install -r requirements-docs.txt
 
+      - name: Test site behavior
+        run: npm run docs:mkdocs:test:unit
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Build wiki
         run: python -m tools.mkdocs_site.cli build
+
+      - name: Validate rendered formulas
+        run: node tools/mkdocs-site/mathjax-corpus.mjs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

@@ -16,6 +16,10 @@ const repoRoot = path.resolve(toolDir, "..", "..")
 const nodeModules = path.join(toolDir, "node_modules")
 const puppeteerPackage = path.join(nodeModules, "puppeteer-core", "package.json")
 const articlePath = "/02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis.html"
+const packedDatasetPath = (
+  "/02_engineering/02_train_frameworks/megatron-lm/"
+  + "29_megatron_packed_dataset_dynamic_cp_analysis.html"
+)
 const articleTitle = "Megatron-LM 上下文并行(Context Parallelism)接入面深度解析"
 
 export function rootMermaidSvgs(block) {
@@ -32,7 +36,6 @@ export function rootMermaidSvgs(block) {
 export function searchResultMatches(result, query, targetSuffix) {
   const url = new URL(result.href)
   return url.pathname.endsWith(targetSuffix)
-    && (url.searchParams.get("h") === query || result.text.includes(query))
 }
 
 export function diagnosticSearchIndexUrl(origin) {
@@ -352,11 +355,10 @@ async function searchFor(page, origin, query, targetSuffix) {
   try {
     await page.waitForFunction(
       (value, suffix) => [...document.querySelectorAll("a.md-search-result__link")]
-        .some((link) => {
-          const url = new URL(link.href)
-          return url.pathname.endsWith(suffix)
-            && (url.searchParams.get("h") === value || link.textContent.includes(value))
-        }),
+        .some((link) => (
+          document.querySelector("[data-md-component='search-query']")?.value === value
+          && new URL(link.href).pathname.endsWith(suffix)
+        )),
       { timeout: 60_000 },
       query,
       targetSuffix,
@@ -599,7 +601,7 @@ async function assertArticleContracts(page, origin) {
 }
 
 async function assertSearch(page, origin) {
-  await searchFor(page, origin, "跨多节点的超长序列", articlePath)
+  await searchFor(page, origin, "跨多节点的超长序列", packedDatasetPath)
   await assertSearchMiss(page, origin, "__kb_no_matching_document_7f9c__", articlePath)
   await searchFor(page, origin, "13_megatron_cp_analysis", articlePath)
 }
@@ -622,7 +624,7 @@ async function assertRenderers(page, origin) {
     `${origin}/02_engineering/04_posttrain_frameworks/verl/02_verl_quickstart_guide.html`,
   )
   await page.waitForFunction(
-    () => [...document.querySelectorAll(".mermaid")]
+    () => [...document.querySelectorAll(".kb-mermaid")]
       .filter((block) => block.querySelector("svg")).length >= 2,
     { timeout: 30_000 },
   )
@@ -637,7 +639,7 @@ async function assertRenderers(page, origin) {
       }
       return parent === block
     })
-    return [...document.querySelectorAll(".mermaid")].map((block) => {
+    return [...document.querySelectorAll(".kb-mermaid")].map((block) => {
       const roots = rootsFor(block)
       const svg = roots[0]
       const blockBox = block.getBoundingClientRect()

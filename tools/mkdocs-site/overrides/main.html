@@ -8,6 +8,70 @@
   {% endif %}
 {% endblock %}
 
+{% block extrahead %}
+  {{ super() }}
+  <script>
+    (() => {
+      const nativeFetch = window.fetch.bind(window);
+      const nativeXhrOpen = XMLHttpRequest.prototype.open;
+      const nativeXhrSend = XMLHttpRequest.prototype.send;
+      let releaseGate;
+      let released = false;
+      const gate = new Promise((resolve) => { releaseGate = resolve; });
+
+      const isSearchIndex = (input) => {
+        const raw = input instanceof Request ? input.url : String(input);
+        try {
+          const url = new URL(raw, location.href);
+          return url.origin === location.origin
+            && url.pathname.endsWith("/search/search_index.json");
+        } catch {
+          return false;
+        }
+      };
+
+      window.fetch = (input, init) => {
+        if (!released && isSearchIndex(input)) {
+          return gate.then(() => nativeFetch(input, init));
+        }
+        return nativeFetch(input, init);
+      };
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        this.__kbDeferSearchIndex = isSearchIndex(url);
+        return nativeXhrOpen.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function (...args) {
+        if (!released && this.__kbDeferSearchIndex) {
+          gate.then(() => nativeXhrSend.apply(this, args));
+          return;
+        }
+        return nativeXhrSend.apply(this, args);
+      };
+
+      const releaseSearchIndex = () => {
+        if (released) return;
+        released = true;
+        releaseGate();
+        document.removeEventListener("click", activateSearch, true);
+        document.removeEventListener("focusin", activateSearch, true);
+        document.removeEventListener("change", activateSearch, true);
+      };
+      const activateSearch = (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('[for="__search"], #search-query, [data-md-component="search"]')) {
+          releaseSearchIndex();
+        }
+      };
+
+      document.addEventListener("click", activateSearch, true);
+      document.addEventListener("focusin", activateSearch, true);
+      document.addEventListener("change", activateSearch, true);
+      if (new URLSearchParams(location.search).has("q")) releaseSearchIndex();
+      window.kbReleaseSearchIndex = releaseSearchIndex;
+    })();
+  </script>
+{% endblock %}
+
 {% block site_nav %}
   {% if nav %}
     {% if page.meta and page.meta.hide %}
@@ -59,7 +123,7 @@
   {% endif %}
   <script>
     (() => {
-      const blocks = document.currentScript.closest("article").querySelectorAll(".mermaid");
+      const blocks = document.currentScript.closest("article").querySelectorAll(".kb-mermaid");
       window.__kbMermaidSourceList = Array.from(blocks, (block) => {
         block.classList.add("no-mathjax");
         const code = block.children.length === 1 && block.firstElementChild.tagName === "CODE"
