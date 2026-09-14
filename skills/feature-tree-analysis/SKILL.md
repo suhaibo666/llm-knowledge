@@ -92,7 +92,7 @@ Per `skills/README.md`, every rule states how it is verified:
   module (the `_analysis` suffix is on the whitelist); canonical baseline header
   `> **源码基线**：owner/repo@hex（branch，YYYY-MM-DD）` (exact Chinese host output label);
   Related Pages / changelog / all five
-  quality gates apply in full; split a spec page over 500 lines by sub-module.
+  quality gates apply in full.
   **`kb_baseline` in `docs/radar/watchlist.yaml` is repo-wide** — `tools/radar.py` reports
   upstream drift against it for every page pinned to that repo. Advance it only when the feature
   tree covers the repo's whole wiki domain and every page pinned to that repo has been moved to

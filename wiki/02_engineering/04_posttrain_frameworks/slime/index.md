@@ -5,7 +5,7 @@ title: "slime RL 后训练框架 — 知识地图"
 # slime RL 后训练框架 — 知识地图
 
 > **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（2026-08-12）；vime 衍生实现另见该页基线。
-> **最近更新**：2026-09-10。
+> **最近更新**：2026-09-11。
 > **系列规模**：23 篇内容页，加本索引共 24 个 Markdown 文件。新增多模态、评估、SFT 三个独立专题；源码核验范围和运行验证边界见各页。
 
 本表是本目录唯一页面入口清单。先读 01 架构和 02 配置，再沿 10–19 进入数据、训练与服务机制；20–28 按能力选读，30–31 用于诊断。
@@ -14,17 +14,17 @@ title: "slime RL 后训练框架 — 知识地图"
 
 | 段 | 页面 | 解决的问题 |
 |---|---|---|
-| 0 | [[02_engineering/04_posttrain_frameworks/slime/01_slime_architecture_overview_analysis]] | 整体软件架构、设计取舍、职责与关键接口 |
+| 0 | [[02_engineering/04_posttrain_frameworks/slime/01_slime_architecture_overview_analysis]] | 设计背景、四层八模块、运行协作、模块合同与使用场景 |
 | 0 | [[02_engineering/04_posttrain_frameworks/slime/02_slime_quickstart_and_configuration_guide]] | 从脚本、CLI、Megatron/SGLang YAML 到源码入口怎样对应 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/10_slime_end_to_end_iteration_analysis]] | 同步、one-stage async 与 fully-async 叠加的调度与权重 commit |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis]] | GPU 怎么放、actor 怎么起、谁拥有服务与生命周期 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]] | prompt/group/sample/rollout/train batch 如何转换且不丢语义 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] | 请求并发、RM、动态采样、partial、streaming、fully async 怎样实现 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]] | actor/ref/teacher/critic、logprob、advantage、optimizer step 的内部路径 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] | GRPO/PPO/GSPO/CISPO、reducer、DP/CP/PP/VPP 不变量 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]] | 四条权重路径、HF 逻辑重组、训推 topology 转换、共卡 CUDA IPC 与 MoE 定向路由 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]] | 四层训推一致性、TIS/MIS 与 routing replay |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]] | engine recovery、debug replay、trace/profiling、CI 分层 |
+| 1 | [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]] | DP 调度与 THD/CP 打包、actor/ref/teacher/critic 的 tag 切换、logprob、advantage、optimizer step 的内部路径 |
+| 1 | [[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] | GRPO/PPO/GSPO/CISPO 估计器、rollout 均值 reducer 与缩放链、DP/CP/micro-batch 不变量 |
+| 1 | [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]] | 四种 updater 与数据面、HF 逻辑重组与分桶、暂停窗口里的提交、共卡 IPC 与 MoE 定向路由、增量版本链 |
+| 1 | [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]] | 六层训推一致性证据链、top-p 与路由重放、对齐替换层、TIS/ICEPOP/MIS 校正 |
+| 1 | [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]] | 故障域局部恢复、更新边界上的 engine 重建、续训共同切点、取证与 CI 分层 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis]] | rollout 数据面扩展、external SGLang、完整 backend 替换边界 |
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/20_slime_on_policy_distillation_analysis]] | 两种核心 OPD 模式、独立 teacher server 协议、reverse-KL advantage |
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/21_slime_speculative_decoding_mtp_analysis]] | EAGLE/draft、在线 MTP 训练、同步与接受率闭环 |

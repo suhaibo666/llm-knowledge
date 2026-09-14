@@ -169,7 +169,7 @@ $$
 
 ### 5.1 优先取已完成样本、超额采样与动态过滤
 
-默认循环按完成顺序接收 group 并整批补采；完整过程与数值例子见 [[13_slime_sglang_rollout_engine_analysis#4.6 四组候选如何得到两组训练数据|候选采样时间线]]。调优时关注 `--over-sampling-batch-size` 引起的在途容量阶跃。[`slime/rollout/sglang_rollout.py:400-436`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L436) 这一组合解决的是“有效 batch 被 filter 打空”和“等待整批最慢任务”，不是减少单个 group 的服务时间。
+默认循环按完成顺序接收 group 并整批补采；完整过程与数值例子见 [[13_slime_sglang_rollout_engine_analysis#2.1 最小实例：四个候选组得到两个训练组|候选采样时间线]]。调优时关注 `--over-sampling-batch-size` 引起的在途容量阶跃。[`slime/rollout/sglang_rollout.py:400-436`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L436) 这一组合解决的是“有效 batch 被 filter 打空”和“等待整批最慢任务”，不是减少单个 group 的服务时间。
 
 令尝试 group 数为 $N_{\mathrm{attempt}}$，接收数为 $N_{\mathrm{accept}}$，进入 loss 的有效 token 数为 $N_{\mathrm{loss}}$。更有意义的两个效率量是：
 
@@ -197,7 +197,7 @@ partial 在 batch 已满后回收 unfinished group，下轮只生成剩余 token
 
 ### 5.3 Fully-async 是异步 driver 上的生产者替换
 
-官方 recipe 同时要求 `train_async.py` 和 `--rollout-function-path slime.rollout.fully_async_rollout.generate_rollout_fully_async`：one-stage async 提供阶段重叠，替换函数提供跨 round 的 group 池与预热队列，二者叠加。后台并发和按缺口 drain 的机制归 [[13_slime_sglang_rollout_engine_analysis#4.7 Fully-async：在异步 driver 上保持后台 group 池|持续生产者]]，driver future 及权重更新等待的权威时序归 [[10_slime_end_to_end_iteration_analysis]]。
+官方 recipe 同时要求 `train_async.py` 和 `--rollout-function-path slime.rollout.fully_async_rollout.generate_rollout_fully_async`：one-stage async 提供阶段重叠，替换函数提供跨 round 的 group 池与预热队列，二者叠加。后台并发和按缺口 drain 的机制归 [[13_slime_sglang_rollout_engine_analysis#2.3 变体：同一协议的三条替换轴|持续生产者 §2.3.2]]，driver future 及权重更新等待的权威时序归 [[10_slime_end_to_end_iteration_analysis]]。
 
 调优时同时记录日志中的 `queue_warm/queue_left` 和自行测量的 enqueue→dequeue 年龄；前者是文字日志，后者默认没有时间戳指标。当 trainer 更慢时，预热队列可能只增加样本陈旧度，未必减少 cycle time。它没有版本年龄上限；不支持 evaluation，跨 round 顺序 best effort，README 声明 partial resume 尚未接通。默认 dynamic filter 和轮末后处理位于被替换函数中，不能假定所有默认 hook 都继续工作。
 

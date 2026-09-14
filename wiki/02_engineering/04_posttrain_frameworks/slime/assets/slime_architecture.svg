@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="810" viewBox="0 0 1120 810" role="img" aria-labelledby="title desc"><title id="title">slime 四层八模块静态架构</title><desc id="desc">场景入口、应用编排、后训练合同、后端适配四层向下连接外部运行时。右侧表示可选工作流扩展和横切观测恢复。箭头不表示训练时间顺序。</desc><defs><marker id="main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="aux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#C3651F"/></marker></defs><style>text{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;fill:#2A313B}.title{font-size:24px;font-weight:700}.heading{font-size:18px;font-weight:650}.label{font-size:17px;font-weight:600}.sub{font-size:14px;fill:#5B6470}.neutral{fill:#fff;stroke:#C7CCD3;stroke-width:1.4}.ghost{fill:#F7F6F3;stroke:#DDD9D2;stroke-width:1.2}.acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}.acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.4}.arrow{fill:none}.main{stroke:#2563EB;stroke-width:2.2}.aux{stroke:#C3651F;stroke-width:1.5;stroke-dasharray:5 4}</style><rect width="1120" height="810" fill="white"/>
+<text x="24" y="34" class="title" text-anchor="start">slime：四层软件责任与八个模块</text>
+<text x="24" y="58" class="sub" text-anchor="start">静态能力视图 · 主线为依赖方向；跨层调用与返回数据见正文</text>
+<rect x="24" y="82" width="790" height="108" rx="7" class="ghost"/>
+<text x="42" y="108" class="heading" text-anchor="start">1  场景入口层</text>
+<rect x="42" y="122" width="754" height="54" rx="7" class="neutral"/>
+<text x="419" y="144" class="label" text-anchor="middle">配置与场景装配</text>
+<text x="419" y="165" class="sub" text-anchor="middle">CLI / YAML / 后端参数合并</text>
+<path d="M419 190 V211" class="arrow main" marker-end="url(#main)"/>
+<rect x="24" y="214" width="790" height="108" rx="7" class="ghost"/>
+<text x="42" y="240" class="heading" text-anchor="start">2  应用编排层</text>
+<rect x="42" y="254" width="371" height="54" rx="7" class="neutral"/>
+<text x="227.5" y="276" class="label" text-anchor="middle">迭代控制</text>
+<text x="227.5" y="297" class="sub" text-anchor="middle">轮次 / 阶段 / 等待与完成</text>
+<rect x="425" y="254" width="371" height="54" rx="7" class="neutral"/>
+<text x="610.5" y="276" class="label" text-anchor="middle">资源与生命周期</text>
+<text x="610.5" y="297" class="sub" text-anchor="middle">GPU 放置 / actors / server groups</text>
+<path d="M419 322 V343" class="arrow main" marker-end="url(#main)"/>
+<rect x="24" y="346" width="790" height="108" rx="7" class="ghost"/>
+<text x="42" y="372" class="heading" text-anchor="start">3  后训练合同层</text>
+<rect x="42" y="386" width="371" height="54" rx="7" class="neutral"/>
+<text x="227.5" y="408" class="label" text-anchor="middle">生成与评测</text>
+<text x="227.5" y="429" class="sub" text-anchor="middle">轨迹组 / reward / eval</text>
+<rect x="425" y="386" width="371" height="54" rx="7" class="acc1"/>
+<text x="610.5" y="408" class="label" text-anchor="middle">样本与批次</text>
+<text x="610.5" y="429" class="sub" text-anchor="middle">Sample / 身份 / mask / DP 计划</text>
+<path d="M419 454 V475" class="arrow main" marker-end="url(#main)"/>
+<rect x="24" y="478" width="790" height="108" rx="7" class="ghost"/>
+<text x="42" y="504" class="heading" text-anchor="start">4  后端适配层</text>
+<rect x="42" y="518" width="243.33333333333334" height="54" rx="7" class="neutral"/>
+<text x="163.66666666666669" y="540" class="label" text-anchor="middle">训练执行适配</text>
+<text x="163.66666666666669" y="561" class="sub" text-anchor="middle">角色 / model / optimizer</text>
+<rect x="297.33333333333337" y="518" width="243.33333333333334" height="54" rx="7" class="neutral"/>
+<text x="419.00000000000006" y="540" class="label" text-anchor="middle">推理服务适配</text>
+<text x="419.00000000000006" y="561" class="sub" text-anchor="middle">server / router / HTTP 控制</text>
+<rect x="552.6666666666667" y="518" width="243.33333333333334" height="54" rx="7" class="acc1"/>
+<text x="674.3333333333334" y="540" class="label" text-anchor="middle">权重发布</text>
+<text x="674.3333333333334" y="561" class="sub" text-anchor="middle">转换 / 传输 / 版本可见性</text>
+<path d="M419 586 V607" class="arrow main" marker-end="url(#main)"/>
+<rect x="24" y="610" width="790" height="78" rx="7" class="neutral"/>
+<text x="42" y="636" class="heading" text-anchor="start">外部运行时边界</text>
+<text x="42" y="662" class="sub" text-anchor="start">Ray：资源与远程对象    Megatron：训练执行    SGLang：生成服务    PyTorch：张量</text>
+<path d="M419 688 V711" class="arrow main" marker-end="url(#main)"/>
+<rect x="24" y="714" width="790" height="62" rx="7" class="ghost"/>
+<text x="42" y="740" class="heading" text-anchor="start">设备与通信基础设施</text>
+<text x="42" y="762" class="sub" text-anchor="start">GPU / 设备运行时 / 集合通信 / 网络 / 文件系统</text>
+<rect x="858" y="214" width="238" height="112" rx="7" class="acc2"/>
+<text x="877" y="241" class="heading" text-anchor="start">横切能力</text>
+<text x="877" y="268" class="sub" text-anchor="start">日志 · trace · 指标 · debug</text>
+<text x="877" y="293" class="sub" text-anchor="start">检查 · 健康监测 · 恢复</text>
+<text x="877" y="315" class="sub" text-anchor="start">挂接控制与执行边界</text>
+<path d="M858 254 H818" class="arrow aux" marker-end="url(#aux)"/>
+<path d="M868 326 H834 V532 H818" class="arrow aux" marker-end="url(#aux)"/>
+<rect x="858" y="346" width="238" height="110" rx="7" class="neutral"/>
+<text x="877" y="373" class="heading" text-anchor="start">侧接扩展</text>
+<text x="877" y="400" class="sub" text-anchor="start">custom generate / rollout</text>
+<text x="877" y="425" class="sub" text-anchor="start">agent · reward · environment</text>
+<text x="877" y="446" class="sub" text-anchor="start">在 Sample 等合同处接入</text>
+<path d="M858 389 H818" class="arrow aux" marker-end="url(#aux)"/>
+<text x="858" y="633" class="label" text-anchor="start">外部库内部实现</text>
+<text x="858" y="657" class="sub" text-anchor="start">不是本页已核验的源码</text>
+<text x="858" y="689" class="sub" text-anchor="start">主线：软件责任逐层落实</text>
+<text x="858" y="713" class="sub" text-anchor="start">虚线：可选或横切接入</text>
+<text x="858" y="737" class="sub" text-anchor="start">蓝框：两个关键交界</text>
+<text x="24" y="800" class="sub" text-anchor="start">源码基线：THUDM/slime @ 681b3adca541 · 分层为依据实现重建的设计分析</text>
+</svg>

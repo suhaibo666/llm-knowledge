@@ -4,8 +4,8 @@ title: "DeepSeek 模型家族 — 目录索引"
 
 # DeepSeek 模型家族 — 目录索引
 
-> 覆盖 DeepSeek LLM、V2、V3、V4、R1、Coder、Math、MoE、VL 等全系列
-> 最后更新: 2026-07-31（kb-reorg P7 Task 7:目录内分段编号 + 命名统一——`mHC`→`mhc_analysis`、`Engram_Analysis`→`engram_analysis`、`deepseek_math_v2`补 `_analysis` 后缀、`_deep_dive`→`_deepdive`、`_report`/`_diagrams`/`_details` 非法后缀就近改 `_analysis`/`_deepdive`）
+> 覆盖 DeepSeek LLM、V2、V3、V4、V4.1、R1、Coder、Math、MoE、VL 等全系列
+> 最后更新: 2026-09-10（新增 V4.1 Flash 首发分析，旧 V4 页面保留各自基线）
 
 ---
 
@@ -26,6 +26,7 @@ title: "DeepSeek 模型家族 — 目录索引"
 | [[16_deepseek_coder_v2_analysis]] | DeepSeek-Coder-V2, MoE 代码模型, 338 语言, 128K |
 | [[17_deepseek_math_analysis]] | DeepSeekMath 7B, 120B 数学 tokens, GRPO 起源 |
 | [[18_deepseek_math_v2_analysis]] | DeepSeekMath-V2, 自验证, Generator-Verifier 循环 |
+| [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] | 原始结构图与完整骨架、逐 token KV/半组实例、结构加速与并行亲和、消融边界、主流模型对比及 API 成本 |
 
 ### 段 2 · 架构组件与 V4 专题深挖(20-29)
 

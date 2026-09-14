@@ -112,6 +112,9 @@ venv.bak/
 .claude/*
 !.claude/skills
 
+# Codex project-local settings belong to the workstation, not the shared knowledge base
+/.codex/
+
 # Superpowers framework session working files (brainstorm drafts, review tmp, logs)
 .superpowers/
 

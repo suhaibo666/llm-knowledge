@@ -1,0 +1,459 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1420" viewBox="0 0 1180 1420" role="img" aria-labelledby="title desc">
+<title id="title">slime Megatron 训练后端：从训练字典到一次 optimizer step 的四次决定性转换</title>
+<desc id="desc">泳道 A 复现 build_dp_schedule 的按 rollout 组步、first-fit 打包、拆 bin 对齐与轮询分发；泳道 B 复现 get_batch 对一个 micro-batch 的 zigzag CP 切片、THD 拼接、cu_seqlens 与 next-token mask 对齐，并用同一 micro-batch 对照 allgather_cp 的整体拼接与连续等分；泳道 C 复现 actor 一轮内 ref、old_actor、actor 三个 CPU tag 的切换，以及全批前向次数与 forward_backward_func 调用次数；泳道 D 复现 train_one_step 的清梯度、全部 micro-batch 前反向、一次 optimizer step 与按逻辑 rollout 数推进 LR scheduler。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11px;fill:#38414D}
+  .mono2{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:9.5px;fill:#38414D}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .h1{fill:#DCE7FB;stroke:#AEB6C2;stroke-width:1.1}
+  .x{fill:#EEF1F5;stroke:#D9DEE7;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="1420" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">一份训练字典 → 一次 optimizer step：调度、打包、角色切换、训练步</text>
+<text x="24" y="56" class="su" text-anchor="start">dp_size=2 · cp_size=2 · tp=1 · global_batch_size=4 个逻辑 rollout · max_tokens_per_gpu=9 → cap 18 · data_pad_size_multiplier=8 · prompt 长 4</text>
+<rect x="24" y="74" width="1132" height="336" rx="10" class="panel"/>
+<text x="40" y="98" class="pt" text-anchor="start">A  build_dp_schedule：先按 rollout id 组步，再 first-fit 打包，拆 bin 对齐到 dp_size，最后轮询分给 rank</text>
+<text x="40" y="132" class="sm" text-anchor="start">样本（total = prompt + response，mask 和）</text>
+<rect x="40" y="140" width="110" height="44" rx="5" class="cell"/>
+<text x="95" y="157" class="mono" text-anchor="middle">s0 · r0</text>
+<text x="95" y="174" class="mono2" text-anchor="middle">4+8=12，mask 7</text>
+<rect x="158" y="140" width="110" height="44" rx="5" class="cell"/>
+<text x="213" y="157" class="mono" text-anchor="middle">s1 · r1</text>
+<text x="213" y="174" class="mono2" text-anchor="middle">4+2=6，mask 2</text>
+<rect x="276" y="140" width="110" height="44" rx="5" class="acc1"/>
+<text x="331" y="157" class="mono" text-anchor="middle">s2a · r2</text>
+<text x="331" y="174" class="mono2" text-anchor="middle">4+4=8，mask 4</text>
+<rect x="394" y="140" width="110" height="44" rx="5" class="acc1"/>
+<text x="449" y="157" class="mono" text-anchor="middle">s2b · r2</text>
+<text x="449" y="174" class="mono2" text-anchor="middle">4+6=10，mask 6</text>
+<rect x="512" y="140" width="110" height="44" rx="5" class="cell"/>
+<text x="567" y="157" class="mono" text-anchor="middle">s3 · r3</text>
+<text x="567" y="174" class="mono2" text-anchor="middle">4+2=6，mask 2</text>
+<text x="40" y="202" class="tx" text-anchor="start">① 按 rollout_id 首次出现顺序分组：r0 r1 r2 r3 → 4 // 4 = 1 步；r2 的两个片段同步</text>
+<text x="40" y="220" class="tx" text-anchor="start">② first-fit（cap 18）：[s0 s1]=18  [s2a s2b]=18  [s3]=6  → K=3</text>
+<text x="40" y="238" class="tx" text-anchor="start">③ 对齐：target_K = ceil(3/2)×2 = 4；拆最大的多样本 bin（和相同取下标大者）bin1 [s2a s2b] → [s2b] + [s2a]</text>
+<rect x="40" y="252" width="140" height="30" rx="5" class="cell"/>
+<text x="110" y="271" class="mono" text-anchor="middle">bin0 [s0 s1] = 18</text>
+<rect x="190" y="252" width="140" height="30" rx="5" class="acc1"/>
+<text x="260" y="271" class="mono" text-anchor="middle">bin1 [s2b] = 10</text>
+<rect x="340" y="252" width="140" height="30" rx="5" class="cell"/>
+<text x="410" y="271" class="mono" text-anchor="middle">bin2 [s3] = 6</text>
+<rect x="490" y="252" width="140" height="30" rx="5" class="acc1"/>
+<text x="560" y="271" class="mono" text-anchor="middle">bin3 [s2a] = 8</text>
+<text x="40" y="310" class="tx" text-anchor="start">④ 分发：balance_data=False 时 rank r 取 bin r, r+2, …（各 2 个 mb）；=True 时 KK 按估算 FLOPs 配对，本例对任意 aL+bL² 也得 {bin0,bin2} / {bin1,bin3}</text>
+<rect x="40" y="318" width="540" height="48" rx="6" class="neutral"/>
+<text x="50" y="336" class="mono" text-anchor="start">DP rank 0: partition=[0,1,4]  mbs = [s0 s1] [s3]</text>
+<text x="50" y="354" class="mono2" text-anchor="start">micro_batch_indices=[[0,1],[2]]  num_microbatches=[2]  global_batch_sizes=[4]</text>
+<rect x="600" y="318" width="540" height="48" rx="6" class="neutral"/>
+<text x="610" y="336" class="mono" text-anchor="start">DP rank 1: partition=[3,2]  mbs = [s2b] [s2a]</text>
+<text x="610" y="354" class="mono2" text-anchor="start">micro_batch_indices=[[0],[1]]  num_microbatches=[2]  global_batch_sizes=[4]</text>
+<rect x="800" y="198" width="340" height="96" rx="8" class="acc2"/>
+<text x="812" y="218" class="pt" text-anchor="start">静态路径（micro_batch_size=2）：固定步长切块</text>
+<text x="812" y="238" class="tx" text-anchor="start">[s0 s1] [s2a s2b] [s3] → K=3，不是 dp_size 的倍数</text>
+<text x="812" y="256" class="tx" text-anchor="start">不拆块，直接 AssertionError（拆会破坏定长不变量）</text>
+<text x="812" y="274" class="tx" text-anchor="start">→ 调 step_size / micro_batch_size / DP·VPP 使其整除</text>
+<text x="812" y="290" class="cap" text-anchor="start">尾部凑不满一整步的 rollout 连同片段被丢出 schedule</text>
+<text x="40" y="382" class="cap" text-anchor="start">balance_by_flops：KK 先分 3 组 {s0} {s1,s2b} {s2a,s3}（与系数无关）→ 拆 [s1 s2b] 为 [s2b]+[s1]；强制 balance_data 时 a &gt; 22b 给 rank0 [s2b] [s0]，a ≤ 22b 给 rank0 [s2b] [s2a s3]</text>
+<text x="40" y="400" class="cap" text-anchor="start">每条样本还带 rollout_mask_sums=[7,2,10,10,2]（同一 rollout 的片段共用；见 12 页）→ 切分前算好，切分后 s2a、s2b 已在不同 mb</text>
+<rect x="24" y="422" width="1132" height="484" rx="10" class="panel"/>
+<text x="40" y="446" class="pt" text-anchor="start">B  get_batch：rank 0 的 mb0 [s0 s1] 在 cp_size=2 下的 zigzag 切片、THD 拼接与 next-token mask 对齐</text>
+<text x="142" y="477" class="mono" text-anchor="end">原 tokens</text>
+<rect x="150" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="477" class="mono2" text-anchor="middle">s0:0</text>
+<rect x="184" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="477" class="mono2" text-anchor="middle">s0:1</text>
+<rect x="218" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="477" class="mono2" text-anchor="middle">s0:2</text>
+<rect x="252" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="268" y="477" class="mono2" text-anchor="middle">s0:3</text>
+<rect x="286" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="302" y="477" class="mono2" text-anchor="middle">s0:4</text>
+<rect x="320" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="336" y="477" class="mono2" text-anchor="middle">s0:5</text>
+<rect x="354" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="370" y="477" class="mono2" text-anchor="middle">s0:6</text>
+<rect x="388" y="462" width="32" height="22" rx="3" class="x"/>
+<text x="404" y="477" class="mono2" text-anchor="middle">s0:7</text>
+<rect x="422" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="438" y="477" class="mono2" text-anchor="middle">s0:8</text>
+<rect x="456" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="472" y="477" class="mono2" text-anchor="middle">s0:9</text>
+<rect x="490" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="506" y="477" class="mono2" text-anchor="middle">s0:10</text>
+<rect x="524" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="540" y="477" class="mono2" text-anchor="middle">s0:11</text>
+<rect x="558" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="574" y="477" class="mono2" text-anchor="middle">s1:0</text>
+<rect x="592" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="608" y="477" class="mono2" text-anchor="middle">s1:1</text>
+<rect x="626" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="642" y="477" class="mono2" text-anchor="middle">s1:2</text>
+<rect x="660" y="462" width="32" height="22" rx="3" class="cell"/>
+<text x="676" y="477" class="mono2" text-anchor="middle">s1:3</text>
+<rect x="694" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="710" y="477" class="mono2" text-anchor="middle">s1:4</text>
+<rect x="728" y="462" width="32" height="22" rx="3" class="h1"/>
+<text x="744" y="477" class="mono2" text-anchor="middle">s1:5</text>
+<text x="770" y="477" class="sm" text-anchor="start">蓝 = 可训练 response，灰 = prompt / 工具 token（s0:7）</text>
+<text x="150" y="502" class="sm" text-anchor="start">每条样本各自 chunk = ceil(total / (2·cp))：s0 chunk=3 无补齐；s1 chunk=2 补 2 个 pad → rank r 取第 r 段与第 3−r 段</text>
+<text x="142" y="529" class="mono" text-anchor="end">cp0 tokens</text>
+<rect x="150" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="529" class="mono2" text-anchor="middle">s0:0</text>
+<rect x="184" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="529" class="mono2" text-anchor="middle">s0:1</text>
+<rect x="218" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="529" class="mono2" text-anchor="middle">s0:2</text>
+<rect x="252" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="268" y="529" class="mono2" text-anchor="middle">s0:9</text>
+<rect x="286" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="302" y="529" class="mono2" text-anchor="middle">s0:10</text>
+<rect x="320" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="336" y="529" class="mono2" text-anchor="middle">s0:11</text>
+<rect x="354" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="529" class="mono2" text-anchor="middle">s1:0</text>
+<rect x="388" y="514" width="32" height="22" rx="3" class="cell"/>
+<text x="404" y="529" class="mono2" text-anchor="middle">s1:1</text>
+<rect x="422" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="438" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="456" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="472" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="490" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="524" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="558" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="592" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="626" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="529" class="mono2" text-anchor="middle">pad</text>
+<rect x="660" y="514" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="529" class="mono2" text-anchor="middle">pad</text>
+<text x="702" y="529" class="mono2" text-anchor="start">cu_seqlens=[0,12,20,32]（局部 [0,6,10,16] × cp）</text>
+<text x="142" y="555" class="mono" text-anchor="end">cp0 mask</text>
+<rect x="150" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="184" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="218" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="252" y="540" width="32" height="22" rx="3" class="acc1"/>
+<text x="268" y="555" class="mono2" text-anchor="middle">1</text>
+<rect x="286" y="540" width="32" height="22" rx="3" class="acc1"/>
+<text x="302" y="555" class="mono2" text-anchor="middle">1</text>
+<rect x="320" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="336" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="354" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="388" y="540" width="32" height="22" rx="3" class="cell"/>
+<text x="404" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="422" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="438" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="456" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="472" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="490" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="524" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="558" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="592" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="626" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="555" class="mono2" text-anchor="middle">0</text>
+<rect x="660" y="540" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="555" class="mono2" text-anchor="middle">0</text>
+<text x="702" y="555" class="mono2" text-anchor="start">有效 2；负责 response 下标 s0{6,7} s1{}</text>
+<text x="142" y="589" class="mono" text-anchor="end">cp1 tokens</text>
+<rect x="150" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="589" class="mono2" text-anchor="middle">s0:3</text>
+<rect x="184" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="589" class="mono2" text-anchor="middle">s0:4</text>
+<rect x="218" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="589" class="mono2" text-anchor="middle">s0:5</text>
+<rect x="252" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="268" y="589" class="mono2" text-anchor="middle">s0:6</text>
+<rect x="286" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="302" y="589" class="mono2" text-anchor="middle">s0:7</text>
+<rect x="320" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="336" y="589" class="mono2" text-anchor="middle">s0:8</text>
+<rect x="354" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="589" class="mono2" text-anchor="middle">s1:2</text>
+<rect x="388" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="404" y="589" class="mono2" text-anchor="middle">s1:3</text>
+<rect x="422" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="438" y="589" class="mono2" text-anchor="middle">s1:4</text>
+<rect x="456" y="574" width="32" height="22" rx="3" class="cell"/>
+<text x="472" y="589" class="mono2" text-anchor="middle">s1:5</text>
+<rect x="490" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="589" class="mono2" text-anchor="middle">pad</text>
+<rect x="524" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="589" class="mono2" text-anchor="middle">pad</text>
+<rect x="558" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="589" class="mono2" text-anchor="middle">pad</text>
+<rect x="592" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="589" class="mono2" text-anchor="middle">pad</text>
+<rect x="626" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="589" class="mono2" text-anchor="middle">pad</text>
+<rect x="660" y="574" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="589" class="mono2" text-anchor="middle">pad</text>
+<text x="702" y="589" class="mono2" text-anchor="start">cu_seqlens=[0,12,20,32]（局部 [0,6,10,16] × cp）</text>
+<text x="142" y="615" class="mono" text-anchor="end">cp1 mask</text>
+<rect x="150" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="166" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="184" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="200" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="218" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="234" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="252" y="600" width="32" height="22" rx="3" class="cell"/>
+<text x="268" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="286" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="302" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="320" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="336" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="354" y="600" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="388" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="404" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="422" y="600" width="32" height="22" rx="3" class="acc1"/>
+<text x="438" y="615" class="mono2" text-anchor="middle">1</text>
+<rect x="456" y="600" width="32" height="22" rx="3" class="cell"/>
+<text x="472" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="490" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="524" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="558" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="592" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="626" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="615" class="mono2" text-anchor="middle">0</text>
+<rect x="660" y="600" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="615" class="mono2" text-anchor="middle">0</text>
+<text x="702" y="615" class="mono2" text-anchor="start">有效 7；负责 response 下标 s0{0,1,2,3,4,5} s1{0,1}</text>
+<text x="40" y="646" class="sm" text-anchor="start">allgather_cp（DSA 模式）对照：先把整个 mb 拼接、补到 cp × pad_size = 16 的倍数（这里补 14），再按 rank 连续等分</text>
+<text x="142" y="669" class="mono" text-anchor="end">ag cp0 tokens</text>
+<rect x="150" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="669" class="mono2" text-anchor="middle">s0:0</text>
+<rect x="184" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="669" class="mono2" text-anchor="middle">s0:1</text>
+<rect x="218" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="669" class="mono2" text-anchor="middle">s0:2</text>
+<rect x="252" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="268" y="669" class="mono2" text-anchor="middle">s0:3</text>
+<rect x="286" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="302" y="669" class="mono2" text-anchor="middle">s0:4</text>
+<rect x="320" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="336" y="669" class="mono2" text-anchor="middle">s0:5</text>
+<rect x="354" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="669" class="mono2" text-anchor="middle">s0:6</text>
+<rect x="388" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="404" y="669" class="mono2" text-anchor="middle">s0:7</text>
+<rect x="422" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="438" y="669" class="mono2" text-anchor="middle">s0:8</text>
+<rect x="456" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="472" y="669" class="mono2" text-anchor="middle">s0:9</text>
+<rect x="490" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="506" y="669" class="mono2" text-anchor="middle">s0:10</text>
+<rect x="524" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="540" y="669" class="mono2" text-anchor="middle">s0:11</text>
+<rect x="558" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="574" y="669" class="mono2" text-anchor="middle">s1:0</text>
+<rect x="592" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="608" y="669" class="mono2" text-anchor="middle">s1:1</text>
+<rect x="626" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="642" y="669" class="mono2" text-anchor="middle">s1:2</text>
+<rect x="660" y="654" width="32" height="22" rx="3" class="cell"/>
+<text x="676" y="669" class="mono2" text-anchor="middle">s1:3</text>
+<text x="702" y="669" class="mono2" text-anchor="start">cu_seqlens=[0,12,18,32]（不乘 cp）；真实 token 16</text>
+<text x="142" y="695" class="mono" text-anchor="end">ag cp0 mask</text>
+<rect x="150" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="184" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="218" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="234" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="252" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="268" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="286" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="302" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="320" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="336" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="354" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="370" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="388" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="404" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="422" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="438" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="456" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="472" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="490" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="506" y="695" class="mono2" text-anchor="middle">1</text>
+<rect x="524" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="540" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="558" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="574" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="592" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="608" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="626" y="680" width="32" height="22" rx="3" class="cell"/>
+<text x="642" y="695" class="mono2" text-anchor="middle">0</text>
+<rect x="660" y="680" width="32" height="22" rx="3" class="acc2"/>
+<text x="676" y="695" class="mono2" text-anchor="middle">1</text>
+<text x="702" y="695" class="mono2" text-anchor="start">有效 8</text>
+<text x="142" y="729" class="mono" text-anchor="end">ag cp1 tokens</text>
+<rect x="150" y="714" width="32" height="22" rx="3" class="cell"/>
+<text x="166" y="729" class="mono2" text-anchor="middle">s1:4</text>
+<rect x="184" y="714" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="729" class="mono2" text-anchor="middle">s1:5</text>
+<rect x="218" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="234" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="252" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="268" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="286" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="302" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="320" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="336" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="354" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="370" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="388" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="404" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="422" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="438" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="456" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="472" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="490" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="524" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="558" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="592" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="626" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="729" class="mono2" text-anchor="middle">pad</text>
+<rect x="660" y="714" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="729" class="mono2" text-anchor="middle">pad</text>
+<text x="702" y="729" class="mono2" text-anchor="start">cu_seqlens=[0,12,18,32]（不乘 cp）；真实 token 2</text>
+<text x="142" y="755" class="mono" text-anchor="end">ag cp1 mask</text>
+<rect x="150" y="740" width="32" height="22" rx="3" class="acc2"/>
+<text x="166" y="755" class="mono2" text-anchor="middle">1</text>
+<rect x="184" y="740" width="32" height="22" rx="3" class="cell"/>
+<text x="200" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="218" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="234" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="252" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="268" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="286" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="302" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="320" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="336" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="354" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="370" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="388" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="404" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="422" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="438" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="456" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="472" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="490" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="506" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="524" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="540" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="558" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="574" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="592" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="608" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="626" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="642" y="755" class="mono2" text-anchor="middle">0</text>
+<rect x="660" y="740" width="32" height="22" rx="3" class="x"/>
+<text x="676" y="755" class="mono2" text-anchor="middle">0</text>
+<text x="702" y="755" class="mono2" text-anchor="start">有效 1</text>
+<rect x="40" y="774" width="1100" height="114" rx="8" class="ghost"/>
+<text x="52" y="794" class="tx" text-anchor="start">mask 先按样本左补 prompt_len−1=3、右补 1，再与 tokens 同样切片：位置 p 的 mask 属于"预测 token p+1 的 logit"，</text>
+<text x="52" y="812" class="tx" text-anchor="start">所以 response 第 r 个 token 的 mask 落在 p = prompt_len + r − 1。zigzag 拼接后补到 pad_size = tp × 8 = 8 的倍数（这里补 6），</text>
+<text x="52" y="830" class="tx" text-anchor="start">局部 cu_seqlens 乘 cp_size 得到每条样本补齐后的全局长度（s0 12、s1 8，s1 原长 6）。两个 CP rank 的 mask 有效数 2 + 7 = 9 = 两条样本的 mask 和。</text>
+<text x="52" y="850" class="tx" text-anchor="start">s1 在 cp0 上一个 response 位置都没有：它分到的两段是 prompt 头与补齐尾。这就是 loss 侧"空 rank 仍参加集合通信"的来源（15 页）。</text>
+<text x="52" y="870" class="tx" text-anchor="start">allgather 下 cp1 只有 2 个真实 token、1 个有效位置；logprob 先按连续片算，再经 _allgather_cp_redistribute 一次可微 all-reduce 切回 zigzag。</text>
+<rect x="24" y="918" width="1132" height="250" rx="10" class="panel"/>
+<text x="40" y="942" class="pt" text-anchor="start">C  train_actor 一轮：同一份 GPU 模型按 CPU tag 换入换出，只有 actor 走反向；本例 kl_coef=0、use_kl_loss 让 ref 存在</text>
+<rect x="40" y="962" width="200" height="62" rx="6" class="neutral"/>
+<text x="140" y="980" class="mono" text-anchor="middle">1. tag ref</text>
+<text x="140" y="997" class="sm" text-anchor="middle">forward_only</text>
+<text x="140" y="1014" class="mono2" text-anchor="middle">ref_log_probs</text>
+<path d="M240 993 L248 993" class="aux"/>
+<rect x="248" y="962" width="200" height="62" rx="6" class="acc2"/>
+<text x="348" y="980" class="mono" text-anchor="middle">2. tag actor</text>
+<text x="348" y="997" class="sm" text-anchor="middle">_switch_model 无前向</text>
+<text x="348" y="1014" class="mono2" text-anchor="middle">跳过前向；detach 充当 old</text>
+<path d="M448 993 L456 993" class="aux"/>
+<rect x="456" y="962" width="200" height="62" rx="6" class="ghost"/>
+<text x="556" y="980" class="mono" text-anchor="middle">3. tag actor</text>
+<text x="556" y="997" class="sm" text-anchor="middle">advantages</text>
+<text x="556" y="1014" class="mono2" text-anchor="middle">advantages, returns</text>
+<path d="M656 993 L664 993" class="aux"/>
+<rect x="664" y="962" width="200" height="62" rx="6" class="acc1"/>
+<text x="764" y="980" class="mono" text-anchor="middle">4. tag actor</text>
+<text x="764" y="997" class="sm" text-anchor="middle">train</text>
+<text x="764" y="1014" class="mono2" text-anchor="middle">1 × train_one_step</text>
+<path d="M864 993 L872 993" class="aux"/>
+<rect x="872" y="962" width="200" height="62" rx="6" class="ghost"/>
+<text x="972" y="980" class="mono" text-anchor="middle">5. tag actor</text>
+<text x="972" y="997" class="sm" text-anchor="middle">backup</text>
+<text x="972" y="1014" class="mono2" text-anchor="middle">CPU tag actor ← GPU</text>
+<text x="40" y="1050" class="tx" text-anchor="start">can_reuse_log_probs_in_loss = 单步(1) ∧ policy_loss ∧ kl_coef=0 ∧ ¬rollout_logprobs ∧ ¬mismatch ∧ ¬critic ∧ ¬old_actor ∧ ¬OPD ∧ (¬routing_replay ∨ R3) ∧ ≠gspo → true</text>
+<text x="40" y="1068" class="tx" text-anchor="start">全批前向 = ref 1 + 训练 1 = 2（forward_backward_func 调用 2 次）；num_steps_per_rollout=2（G 变为 2）时不可复用，多一次 old-policy 全批前向 = 3，调用 6 次</text>
+<text x="40" y="1086" class="tx" text-anchor="start">每次 _switch_model 是 CPU pinned 张量 → GPU 参数的同名整份拷贝，之后 cuda.synchronize；未知 tag 抛 ValueError。</text>
+<text x="40" y="1104" class="tx" text-anchor="start">训练结束 backup("actor")；(rollout_id+1) % ref_update_interval == 0 且有 ref tag 时 backup("ref")。critic 是独立 RayTrainGroup，不走 tag。</text>
+<text x="40" y="1122" class="cap" text-anchor="start">compute_advantages_and_returns 只在 PP last stage 有 log_probs/values 时计算；normalize_advantages 在 DP×CP 组上 all-reduce 带 mask 统计。</text>
+<text x="40" y="1140" class="cap" text-anchor="start">forward_only 用同一个 get_forward_backward_func(forward_only=True) 按步调用；按 micro_batch_indices 还原顺序，冻结基线下是恒等映射（源码 TODO）。</text>
+<rect x="24" y="1180" width="1132" height="206" rx="10" class="panel"/>
+<text x="40" y="1204" class="pt" text-anchor="start">D  train_one_step（每个训练步一次）：K=2 个 micro-batch 的前反向累积，一次 optimizer.step，scheduler.step(increment=4)</text>
+<rect x="40" y="1224" width="176" height="66" rx="6" class="neutral"/>
+<text x="128" y="1244" class="mono2" text-anchor="middle">zero_grad_buffer / zero_grad</text>
+<text x="128" y="1262" class="sm" text-anchor="middle">before-train-step hook</text>
+<text x="128" y="1278" class="sm" text-anchor="middle">（可选自定义钩子）</text>
+<path d="M216 1257 L224 1257" class="aux"/>
+<rect x="224" y="1224" width="176" height="66" rx="6" class="acc1"/>
+<text x="312" y="1244" class="mono2" text-anchor="middle">forward_backward_func(K=2)</text>
+<text x="312" y="1262" class="sm" text-anchor="middle">closure: get_batch → model</text>
+<text x="312" y="1278" class="sm" text-anchor="middle">→ loss_function 回调</text>
+<path d="M400 1257 L408 1257" class="main"/>
+<rect x="408" y="1224" width="176" height="66" rx="6" class="neutral"/>
+<text x="496" y="1244" class="mono2" text-anchor="middle">loss × M / G × world</text>
+<text x="496" y="1262" class="sm" text-anchor="middle">M=2 G=4 world=dp·cp=4</text>
+<text x="496" y="1278" class="sm" text-anchor="middle">Megatron 再 ÷ M</text>
+<path d="M584 1257 L592 1257" class="aux"/>
+<rect x="592" y="1224" width="176" height="66" rx="6" class="acc1"/>
+<text x="680" y="1244" class="mono2" text-anchor="middle">valid_step → optimizer.step()</text>
+<text x="680" y="1262" class="sm" text-anchor="middle">assert update_successful</text>
+<text x="680" y="1278" class="sm" text-anchor="middle">仅 NaN 检查关时预检跳过</text>
+<path d="M768 1257 L776 1257" class="aux"/>
+<rect x="776" y="1224" width="176" height="66" rx="6" class="acc1"/>
+<text x="864" y="1244" class="mono2" text-anchor="middle">scheduler.step(+4)</text>
+<text x="864" y="1262" class="sm" text-anchor="middle">以逻辑 rollout 数</text>
+<text x="864" y="1278" class="sm" text-anchor="middle">计 samples-seen</text>
+<path d="M952 1257 L960 1257" class="aux"/>
+<rect x="960" y="1224" width="176" height="66" rx="6" class="ghost"/>
+<text x="1048" y="1244" class="mono2" text-anchor="middle">reduce_train_step_metrics</text>
+<text x="1048" y="1262" class="sm" text-anchor="middle">PP last stage: Σ_mb，</text>
+<text x="1048" y="1278" class="sm" text-anchor="middle">all-reduce dp·cp，再 / G</text>
+<text x="40" y="1316" class="tx" text-anchor="start">三种边界不能混：rollout round 是数据版本边界；global_batch_sizes 的一个元素（4 个 rollout）是 optimizer 边界；micro-batch 只是流水线/梯度累积单元。</text>
+<text x="40" y="1334" class="tx" text-anchor="start">LR scheduler 的总量估算 train_iters = num_rollout × rollout_batch_size × n // G = 100×2×2 // 4 = 100，lr_decay_steps = train_iters × G = 400；实际进度靠每步 increment 累加。</text>
+<text x="40" y="1352" class="cap" text-anchor="start">loss_function 内的缩放只是链条第一环：Megatron 再除 M，DDP 在 dp·cp 组平均，最终留下 Σ_g L_g / G；数值账本见 15 页。</text>
+<text x="24" y="1408" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 build_dp_schedule / expand_bins_by_splitting / slice_with_cp / get_batch / train_actor / train_one_step</text>
+</svg>

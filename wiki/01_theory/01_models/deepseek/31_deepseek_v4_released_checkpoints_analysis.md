@@ -11,14 +11,18 @@ title: "DeepSeek-V4 正式版 checkpoint 对账：论文超参逐字段坐实，
 >   - `raw/01_theory/01_models/deepseek/DeepSeek_V4_Flash_0731_model_card_7872f01b.md` + `DeepSeek_V4_Flash_0731_config_7872f01b.json`，对应 [deepseek-ai/DeepSeek-V4-Flash-0731 `7872f01b`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/tree/7872f01b)（HF 仓库创建于 2026-07-31）。
 >   - 参数量取自 HuggingFace safetensors 索引（2026-08-27 读取）。
 >
-> **维度**：对账 / 核对（Reconciliation）—— 论文基线 × 发布权重。
-> **更新**：2026-08-27。
+> **主题**：以论文基线逐字段核对 V4-Pro-0813 与 V4-Flash-0731 的发布配置、参数量、DSpark/FP4 增量和能力表。
+> **适用范围**：结论只适用于上述 V4 正式 checkpoint 快照；V4.1 的 CED/CSA2 新结构由独立页面承接。
+> **最近更新**：2026-09-14。补充 V4.1 版本边界并统一页面头部与关联导航；权重核对仍以 0731/0813 快照为准。
 >
 > 本页回答一个此前无法回答的问题：**[[30_deepseek_v4_audit_analysis|V4 审计]] 是拿论文核对 wiki，本页则是拿"真正发出来的权重"核对论文。**
 
 ---
 
 ## 0. 一句话结论
+
+> [!note] 后续版本
+> 2026-09-10 发布的 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] 已采用 CED / CSA2 新结构，并公开自己的报告与参考代码。本页“结构与论文一致”“未披露后训练”等描述限定在上述 V4 正式 checkpoint 基线，不外推到 V4.1。
 
 **正式版 checkpoint 的 `config.json` 与论文 §4.2.1 的超参逐字段吻合，一处未偏。** 库内既有的 V4 分析页（尤其 [[26_deepseek_v4_technical_deepdive]] 的 CSA/HCA 机制与 [[13_deepseek_v4_analysis]] 的规模表）**经得起权重层面的复核**。
 
@@ -185,12 +189,11 @@ dtype 分布（Pro）：`I8 = 1623.5B`、`F8_E4M3 = 24.0B`、`BF16 = 3.0B`、`F3
 
 ---
 
-## 关联页面
+## Related Pages
 
 - [[30_deepseek_v4_audit_analysis]] — **先读这页**：以论文核对 wiki 的审计；本页是它的权重侧续篇。
 - [[13_deepseek_v4_analysis]] — V4 总体架构与规模表（本页 §5 对其 Flash 参数量提出增量）。
 - [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 机制深潜；本页 §2 是对它的权重级验证。
 - [[24_deepseek_v4_fp4_qat_analysis]] — FP4 QAT 方法；本页 §4 给出其发布形态证据。
 - [[dspark_analysis]] · [[deepspec_codebase_analysis]] — DSpark 机制与源码；本页 §3 给出其配置级证据。
-- [[25_mhc_analysis]] — mHC；其 `hc_mult=4 / hc_sinkhorn_iters=20` 与 [[12_glm_5_3_flash_analysis|GLM-5.3-Flash]] 完全一致。
 - [[01_theory/01_models/index|模型架构与模型家族总索引]]

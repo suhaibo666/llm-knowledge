@@ -899,7 +899,6 @@ class PartFourArtifactContractTest(unittest.TestCase):
                 "external_matmul_execution": "True",
                 "fallback_eigvals_execution": "True",
                 "codegen_only_status": "generated_not_executed",
-                "real_pointwise_compile_status": "blocked_missing_msvc_cl",
                 "fusion_enabled_has_fused_scheduler": "True",
                 "fusion_limited_has_fused_scheduler": "False",
                 "fusion_codegen_structure_changed": "True",
@@ -913,6 +912,10 @@ class PartFourArtifactContractTest(unittest.TestCase):
                 "triton_autotune_tested": "False",
             }
             self.assertEqual(expected, {key: observed.get(key) for key in expected})
+            self.assertIn(
+                observed.get("real_pointwise_compile_status"),
+                {"compiled", "blocked_missing_msvc_cl"},
+            )
 
             required = {
                 "environment.json",

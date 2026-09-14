@@ -12,12 +12,224 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+
+## 2026-09-14：并发文档重构的全局集成验收
+
+- 对本工作区并发完成的 DeepSeek-V4.1、vLLM 与 Slime 系列重构做提交前全局盘点，逐项核对正文、领域索引、总索引、变更日志、冻结来源、图形生成器、SVG 产物及配套测试。领域计数复算为模型 68 页、DeepSeek 23 页、vLLM 27 页、Slime 24 页，与各级索引一致；新增页面命名、来源路由和资源归属均落在功能树既有位置。
+- 集成修正：总索引更新时间推进至 2026-09-14；[[31_deepseek_v4_released_checkpoints_analysis|V4 正式 checkpoint 对账]]补齐标准主题、范围与 `Related Pages` 结构；vLLM 06、09、15–20、22 的末尾导航收敛到每页 3–7 个解释性链接；仓库忽略本机 `.codex/` 配置，避免再次提交工作站专属设置。
+- 全量门禁在 macOS 暴露两处与正文无关的跨平台测试假设：预览服务退出后的端口探针未采用 Python HTTPServer 自带的 `SO_REUSEADDR` 语义，会把 TIME_WAIT 误判成进程仍存活；Torch 教学实验把 Windows 缺少 MSVC 的结果硬编码成唯一合法状态。测试已改为分别验证“按服务真实复用语义可重新绑定”和“真实编译成功或明确缺少 MSVC”两种有效环境结果，原 4 个失败用例及完整测试集随后转绿。
+- 最终验收：严格链接检查 452 页零断链、歧义、裸 index、陈旧章节、孤页；43 个改动 Markdown 的数学、格式、资源检查均零错误零警告；变更相关 SVG 通过 XML、边界、重叠、数值重放与生成器一致性检查，56 项 Node 测试通过；全库 520 个 Mermaid 块、5,608 个公式、452 页 MkDocs 构建与浏览器烟雾检查全部通过；Python 工具测试 468 项通过。4 条 Slime 遗留行号引用仅因本机 locator 未解析对应 checkout 被记为环境缺口，内容错误与警告均为 0。
+
+## 2026-09-14：vLLM 20–22 按 07 的流程标准补齐核心流程、入向合同与配置契约
+
+- 延续 09–12、14–16、17–19 三轮，对 [[20_vllm_fused_ops_and_kernels_analysis|20 融合算子与 Kernel]]、[[21_vllm_ir_and_fusion_passes_analysis|21 IR 与融合 Pass]]、[[22_vllm_disaggregated_kv_serving_analysis|22 分离式 KV Serving]] 施加同一标准。流程同前：三个独立评审代理 → 三个写作代理并发改（一页一人）→ 原评审复审（评审与作者始终不同人）→ 协调者应用剩余项、维护索引与本日志。20、22 各经两轮复审，21 一轮后由协调者应用剩余项再经评审确认。基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，三页由 356、278、256 行增至 979、542、829 行。中途两个写作代理曾被 API 会话限流打断，续跑时保留了已完成的源码核验，未重开。
+- **三页写得对，缺的是结构与入向合同。** 首轮事实错误 20 页 6 处、21 页 6 处、22 页 3 处；三个评审各自独立复算了全部手算算例（20 的四个、21 的 RMSNorm、22 的 12-token），**无一出错**。真正的失败是别页指过来的东西落空：20 页对 `marlin`、`warp`、`rope` 三个词的命中数都是 0，而 17 把 Marlin warp/tile 布局与 FP8 shuffle 布局、15 把 rope kernel 交给了它；21 页**完全没有配置契约**，而 19 已把 6 个 `CompilationConfig` 字段连同 `PassConfig` 阈值语义移交过来；22 页只写了 16 个注册 connector 中的 4 个，08 早写明「native 以外的 offload 后端由 22 承接」却无人兑现，`MultiConnector`、HF3FS、FlexKV 全库零命中。
+- 20 新增：Marlin repack 后每条 lane 的字节与两组 scale permutation、`convert_to_fp8_moe_kernel_format` 的八条布局分支与两条带注释的重排理由、rope 族三个 CustomOp 注册与 1-head/N-head 两个 qk-norm+rope kernel（后者经 `__shared__` 共享 cos/sin，页面原说「无 shared memory」只对前者成立）、activation 的两根派发轴、MoE meta 参数三级选择（离线表，不是 runtime autotune）、闭环位置图、20 条核心流程、三棵调用树、配置契约与逐流程成本账。
+- 21 新增：`ir_enable_torch_wrap` 这一「IR 是否对编译器可见」的前置开关（关掉则图里没有任何 `vllm_ir` 节点）、按 `PostGradPassManager.configure` append 序列穷尽的 26 条 pass、22 字段配置契约（`PassConfig` 16/16 + 19 移交 6）、闭环位置图（回流边为 `PostGradPassManager.uuid()` → Inductor code cache → 下次 compile）、pattern trace 的三档归一化、成本账。
+- 22 新增：16 个注册名的 connector 家族表（每家填哪个协议槽、归谁）、`MooncakeConnector` 直连与 `MultiConnector` 的 13 条折叠规则、`delay_free_blocks` / partial tail / 被拒请求清理的协议侧、MRv1 deferred finalize、KV 平面的 rank 约定、NIXL push 用同一 12-token 请求重放、闭环位置图、`KVTransferConfig` 13 字段 + extra-config 38/38 键 + 16/16 环境变量（覆盖率由三种读法的 grep 推导，命令写进工作报告）、成本账。所有锚点补成仓库相对全路径。
+- **基线源码里值得单独记住的几处**：
+  - `select_unquantized_moe_backend` 在 batched activation format 下会把显式请求的 `TRITON` **无日志地**改写成 `BATCHED_TRITON`，日志打印的是改写后的名字。
+  - `KVTransferConfig` 的 `kv_rank`、`kv_parallel_size`、`kv_ip`、`kv_port` 在全仓（含 tests/examples）**无任何读取者**；唯一同名的 `lmcache_mp_connector.py::extract_world_size_and_kv_rank` 只读 `parallel_config`。实际生效的 KV 平面 rank 约定是 `kv_transfer_params` 的 tp/dcp/pp、`NixlAgentMetadata.dcp_size/pcp_size` 与 `compute_tp_mapping`。
+  - NIXL push 的模块 docstring 说 watchdog「fails requests」，代码只删 deadline 与待发注册并打 warning——已写成 `[!contradiction]`。静态读码还发现：watchdog 不停 heartbeat，D 未中止时两侧 block 都被续租占住；D 被外部中止后 heartbeat 会停、P 侧可释放，但 D 的目标 block 停在延迟释放、再无 `finished_recving`。页面以「未找到回收路径」记录，**不下 hang 结论**，是否构成可观测泄漏需实测。
+  - AR+RMS 融合阈值在两处用不同分母：19 的 compile-range 端点（`VllmConfig._set_compile_ranges`）只看目标模型 hidden size，CUDA `AllReduceFusionPass` 的门取目标与 draft 两者较大值（vLLM #52023）。draft 更宽时端点大于门，本该被圈进融合区的那段 range 反而全部跳过融合（静态推论）。
+  - `PassConfig.__post_init__` 的平台否决只在构造时跑一次，早于 optimization level 默认；`_set_config_default` 直接 `setattr` 不重建。所以否决只拦得住显式给的值——`fuse_rope_kvcache_cat_mla` 的 O2/O3 默认函数不带平台判据，是唯一真实缺口。
+- **协调者的归属裁定**：`MultiConnector` 组合语义、KV 平面的 EPD/PD rank 约定、LMCache 等非 native offload 后端的协议槽归 22；`OffloadingConnector` native 机制仍归 08；FlexKV/HF3FS 只需在家族表点名协议槽，不要求深写。rope 设备 kernel 归 20（10 全文唯一 rope 命中是一个 backend 选择测试名，不覆盖 kernel）。`IrOp.dispatch` / `_filter_priority_impls` 归 20，21 只留移交句——两页并发重写时若都推出去会双双落空。`fast_moe_cold_start` 在 `vllm/compilation/` 与 `vllm/ir/` 下零命中、不产生 IR 节点，归 19 而非 21；`debug_dump_path` 原被 19 移交给 05 而 05 零命中，改由 19 收回。
+- **写作代理与评审相互纠错**：写作代理驳回评审错误 20 页 6 + 2 处、21 页 7 处、22 页 14 + 3 处，复审全部认下（其中评审编造过一个不存在的方法名，把 defer 语义写反过）；评审也反查出写作代理的错——22 页首稿只 grep 了 `get_from_extra_config` 一种读法，漏掉 MoRIIO 与 Mooncake 共 28 个键却声称 100% 覆盖；20 页首稿引入 33 处缩写路径，其中 `fused_moe.py::` 在全仓对应两个文件。两边的根因相同：猜读取点或只看匹配行，而不是 grep 定义与全部读取点。
+- **错在我这一环的**：上一轮我把 17 的 Marlin 布局指针从「交 24」改成「交 20」，却没核 20 有没有 Marlin——指向了一个只字未提的页面；19 的 `debug_dump_path` → 05 与 `fast_moe_cold_start` → 21 两条移交也是我上一轮写的悬空指针。本轮给评审的 brief 猜了一个基线下不存在的 `SharedStorageConnector`；给写作者的 brief 把 `lookup_rpc_port` 写成必填（只看了 grep 出的 `[]` 行，没看上一行的 `if ... in extra_config` 守卫），又把变量名 `num_sender_workers`/`protocol` 当成键名（真键是 `num_workers`/`mooncake_protocol`）——均由写作者查出。我改 19、18 时也各写错过一次符号名或缩写路径，自查后改正。另外我的窄锚点正则漏掉一格多符号的写法，在 20 页只抓到 17/33 处，换宽正则才找全，并据此把 21、22、19 重扫确认干净。
+- **跨页修复（超出 20–22 范围）**：19 §9.1 字段账改为「点名 21 + 移交 21 页 6 个」并补 AR 分母分歧的回链；18 三处不再把死字段写成 rank 约定，改指 22 §11.1；15 的 rope 归属改为只归 20、「1P1D rank 约定」拆成 KV 平面归 22 与 EC 平面仍无归属、3 条遗留缩写锚点补全；17 两条、06 一条指向 20/22 的指针补上精确节号。评审报的「19、21 也有 qk-norm+rope pass/开关混淆」「11 把 deferred finalize 写成延后完成证据」「sglang 页『十余个 pass』偏低」三条，回源码核实后均不成立，未改。
+- **图的裁定**：20 新增一张 SVG `vllm_w2_20_marlin_warp_tile.svg`，第二根轴确实承载逐格决策（lane 归属须 `4·(n mod 8) + ⌊(k mod 8)/2⌋` 两轴共同决定），评审独立重放 `gptq_marlin_repack_kernel` 与图一致。首版底部面板超出 viewBox 被裁、有两处文字重叠，而原 5 项测试只查数值自洽抓不到——测试已扩到 8 项，新增元素越界与文本框重叠断言，对旧 SVG 可报出全部 6 处缺陷。21、22 不加 SVG（候选矩阵格子间无几何邻接语义，表格无损承载）。三页各新增一张闭环位置图，全库 mermaid 由 517 块增至 520 块。
+- 三页复审均为 `feature: pass`。门禁：`check_links --strict` 452 页 0 broken/ambiguous/bare_index/stale_section/orphans；43 个改动文件的数学、Markdown、资源检查各 0 错 0 警告；`tools/figs/svg/*.test.mjs` 25/25；`mermaid-corpus.test.mjs` 真实解析全库 520 块通过；`mkdocs_site.cli build --changed` 38 页 0 broken_links/missing_anchors/missing_assets/missing_legacy_routes，新 SVG 在构建产物中；MathJax 12 个公式渲染通过。三页均无 `path:line` 引用。
+- 新登记的无归属或他页缺口（本轮只登记）：P/D 的 `toy_proxy_server` 与 router 路由约定（全库零命中，属 13）；`enable_bf16x3_router_gemm` 背后的 router GEMM kernel；两个 KV-insert rope kernel 与 `QkNormRopeKvCacheFusionPass` 产出 op 的内部（20 只点名）；`VLLM_NIXL_EP_MAX_NUM_RANKS`（只读于 `all2all.py`，属 18）；`VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES`（属 23）；08 的配置契约是否覆盖 Offloading/SimpleCPUOffload 键与 `VLLM_KV_OFFLOAD_MAX_BATCH_DESCRIPTORS`；上游 `docs/design/fusions.md` 的 `†` 脚注、QK-Norm+RoPE「Low」标签与 `PassConfig` docstring 的 FI 阈值表落后源码。沿用前几轮的：EPD/encoder-only 部署拓扑整体（含 EC 平面 rank 约定）、LoRA、前端 GPU 媒体路径、`vision_chunk`、视频剪枝、custom proposer 与 Medusa/`mlp_speculator`、MRV2 平台子类投机支持、`PromptLogprobsWorker`、三个非 xgrammar grammar backend、pooling runner、diffusion 模型、KV sharing fast prefill；07 缺 `pad_spec_decode` 与 `dynamic_sd_lookup` 调度侧算术（07 由他人持有）。本轮只做固定源码静态核对，未运行 GPU、多节点、外部传输服务或完整 vLLM 测试，未提交。
+
+## 2026-09-13：vLLM 17–19 按 07 的流程标准补齐核心流程、姊妹轴与配置契约
+
+- 延续 09–12、14–16 两轮，对 [[17_vllm_quantization_analysis|17 量化]]、[[18_vllm_distributed_inference_analysis|18 分布式推理]]、[[19_vllm_compilation_cudagraph_analysis|19 编译与 CUDA Graph]] 施加同一标准（核心流程清单并标注基础/条件、边上带交接对象的闭环图、逐流程"触发—阶段—完成点"、ASCII 调用树、所有权表、配置契约与覆盖率、成本账与运行包线）。流程仍是：三个独立评审代理审查 → 三个写作代理并发改（一页一人）→ 原评审代理复审（评审与作者始终不同人）→ 协调者应用复审剩余项、维护索引与本日志。基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，三页由 265、340、236 行增至 583、602、605 行。
+- **首轮查出三处事实错误**（我逐条回源码复核后才交给作者）：17 §4.2 把 Marlin warp/tile 布局的 owner 写成 24（扩展插件系统），实为 20 —— 裸数字，`check_links` 检不出；18 §2.2 `get_pp_indices` 的余数方向说反，源码 `for i in range(2, remaining+2): partitions[-i] += 1` 是从**倒数第二个**向前补，9 层 PP=4 得 `[2,2,3,2]`；`GPUWorker` 是**不存在的符号**，`vllm/v1/worker/gpu_worker.py:177` 是 `class Worker(WorkerBase)`，全仓 `class GPUWorker` 零命中。**19 页零事实错误**——range 切分、descriptor 七字段、512/1024 上限、cache key 四因子等全部被重放通过。
+- 17 新增：MoE 量化 method 整条数据面（w13/w2 三维 ABI、`_zero_padding` 的真实位置与仅两个调用点、per-tensor 实为 per-expert、w13 无 collective 而 w2 有）、KV scale 参数生命周期（四个 −1.0 哨兵、scalar-only loader、三条早返回加一段无条件尾巴，以及 `kv_cache_dtype="auto"` 这条最常见却最容易被漏掉的路径）、12 条核心流程与三条主流程的阶段表、24 行配置契约、12 行成本账、调用树、所有权表 17 行。
+- 18 新增：13 条核心流程（含此前全库无人拥有的 **Elastic EP 扩缩容重配**）、闭环位置图 15 条边全带对象真名、PP 传递与 EPLB 各自的**两个不同完成点**、`ParallelConfig` 37/57 字段契约并逐名列出未写的 20 个、13 行成本账、两代 Runner 的微批对照收紧。
+- 19 新增：MRV1 的 `CudagraphDispatcher` 派发（它是 live code —— `gpu_model_runner.py:919` 加两个 spec-decode proposer 三处实例化，此前 §9 的纠错块让人误以为已死）、encoder / speculator / DFlash 三条姊妹轴（15 页有四处指向 19 的悬空指针，16 页一处）、varlen decode 图、workspace 锁定、18 条核心流程、36 字段配置契约（19 点名 + 8 移交 + 9 内部）。
+- **协调者的归属裁定**：MoE 量化 method 与 KV scale 参数生命周期归 17（依据：20 页头自书"量化ABI归17"；`BaseKVCacheMethod` 在 08/10 均无覆盖，而 17 已拥有 `get_cache_scale_mapper()` 产出的名字，名字有 owner 而唯一消费者无 owner 是断链）——但明确不收 KV 物理 layout（08）与 `kv_cache_dtype` 的 backend 能力协商（10）。MRV1 graph 派发、encoder/speculator/DFlash graph、varlen decode 图、workspace 锁定归 19；LoRA capture 特化由 19 **临时代管并显式声明本域无 LoRA 专页**（未在 index 加待建页占位行，index 的契约是只列真实存在的页）。Elastic EP 归 18；EPD/PD 的 rank 约定仍归 22，18 补上回链（此前 22 单向链到 18）。
+- **写作代理反查出评审自身错误 20 处，复审逐条认下（17 页 2/3 成立、18 页 8/8、19 页 9/9）。** 其中三处我自己复核过：`_zero_padding` 不在基类 post-load 里而是独立 helper 且只有两个调用点；`g_idx_sort_indices` 是 layer 上的 `nn.Parameter`（真正"参数以外仍须保地址"的只有 kernel 对象上的 `workspace`）；挤压 KV 预算的是 `cudagraph_memory_estimate_applied`（`gpu_worker.py:616`，受 `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS` 门控），`cuda_graph_memory_bytes` 在全仓零命中 —— **最后这条是我从评审报告转述进作者 brief 的，错在我这一环，由作者查出。**
+- **复审在新材料里查出、我已逐条应用的修正**：17 的 fnuz 只有两态加倍（"两个都 < 0"取常量 1.0 不加倍）、`AutoGPTQConfig.group_size` 是构造期 `verify_marlin_supported` 硬 `ValueError` 而非换候选、`--linear-backend` 21 个取值、`moe_kernel` 属主是 method 不是 layer、调用树把三个层构造错挂在 `configure_quant_config` 下（应是 `model_class(...)` 的子节点）、闭环图两条边标；18 的 `remaining == pp_size-1` 时首 stage 也会分到额外层（补 7 层 PP=4 → `[2,2,2,1]` 边界算例）、`sampled_tokens` 而非 `sampled_token_ids`、跨 `Worker→EplbState` 的是 `expert_load_view` 而非 `capture_fn` 的 topk_ids、三个配置默认值（`all2all_backend` 字面 `"allgather_reducescatter"`、`ubatch_size` 为 0、`is_moe_model` 为 None）、`ParallelConfig` 三个 validator 早于 `VllmConfig.__post_init__`、dense 部署下 `_EP`/`_EPLB` 保持 None；19 的 encoder 与 decoder **不共享 pool 也不同上下文**（encoder 恒取独立 `graph_pool_handle()`）、`VLLM_USE_AOT_COMPILE` 在 torch ≥ 2.10 且未禁 cache 时**默认为 1**、autoregressive 只窄化 decode manager（prefill 沿用目标 mode，故 draft 图集**不是**目标的子集）、DFlash 另有一次 draft 侧 `attn_cg_support` 求交、`_create_padded_batch_descriptor` 漏了外层 `min`、`is_captured()` 在 capture 开始时即为真不能当完成点。
+- **跨页防撞**：18 与 19 同时在写 DP 的 all_reduce。两者都对但不是一回事 —— MRV1 `vllm/v1/worker/dp_utils.py::_run_ar` 是 `torch.zeros(4, dp_size)`，MRV2 `vllm/v1/worker/gpu/dp_utils.py::sync_cudagraph_and_dp_padding` 是 `torch.zeros(6, dp_size)`。已在 19 §7.4 加一条"这六行只属 MRV2"的声明并点名 18 为 `_run_ar` 的共同 owner。
+- **顺带修掉的越界项**：`GPUWorker` 这个不存在的符号在 02（2 处）与 08（5 处，其中 3 处在显式 `path::symbol` 锚点里）也有，上一轮已记录未改。本轮既已两次核实其不存在，一并改为 `Worker`，不再累积。
+- **图的裁定：三页都不需要新增 SVG，也未改现有 SVG。** 17 的 `vllm_w2_21_pack_layout.svg` 介质恰当（同一 8×8 网格沿 N 轴决定 nibble slot、沿 K 轴决定 word，两轴都承载逐格决策），且其 `.test.mjs` 会读取 17 页 Markdown 断言页面文本包含那些十六进制与数值 —— 图文一致有自动化守卫，重写后复跑仍 2 passed。18 的 rank 坐标第二根轴只承载派生索引；19 的 `_is_compatible` 是可因式分解的合取式、`_candidates` 精确命中而非网格扫描。全部图工作都是 mermaid：给现有边补跨越对象真名，三页各新增 1–3 张。
+- 三页复审均给出 `feature: pass`。门禁：`check_links --strict` 452 页 0 broken/ambiguous/bare_index/stale_section/orphans；改动文件的数学、Markdown、资源检查各 0 错 0 警告；仓库自带 `mermaid-corpus.test.mjs` 用真实 mermaid 解析全库图块通过。`13_vllm_serving_control_plane_analysis.md:151` 指向 18 §5.3 的入向指针经独立确认仍有效（作者把新内容全部放在 §1.1–§1.4、§4.3 与 §9–§11），13 未改。
+- 仍无归属页的内容（本轮只登记，未开新页）：**LoRA**（adapter admission 上限与 `LoRAConfig` 语义，19 只代管 capture 特化那部分）、以及沿用上一轮的 EPD/encoder-only 部署拓扑、前端 GPU 媒体路径、`vision_chunk`、视频剪枝算法、custom proposer 与 Medusa/`mlp_speculator` 接口契约、MRV2 平台子类的投机支持、`PromptLogprobsWorker` 内部、三个非 xgrammar grammar backend 内部、pooling runner 内部、diffusion 模型、KV sharing fast prefill。07 缺 `pad_spec_decode` 与 `dynamic_sd_lookup` 调度侧算术这条仍未动（07 由他人持有）。本轮只做固定源码静态核对，未运行 GPU、多节点、分布式或完整 vLLM 测试，未提交。
+
+## 2026-09-12：vLLM 14–16 按 07 的流程标准补齐核心流程、上下游交接与配置契约
+
+- 延续上一条的做法，对 [[14_vllm_sampling_structured_output_analysis|14 采样与结构化输出]]、[[15_vllm_multimodal_execution_analysis|15 多模态执行]]、[[16_vllm_speculative_decoding_analysis|16 投机解码]] 施加同一标准（核心流程清单并标注基础/条件、边上带交接对象的位置或闭环图、逐流程“触发—阶段—完成点”、ASCII 调用树、所有权视图、配置契约、成本账与运行包线）。流程为：三个独立评审代理先按 base rubric + feature 画像 + 07 流程标准审查 → 三个写作代理并发修改（一页一人）→ 原评审代理复审（评审与作者始终不同人）→ 协调者应用复审剩余项、维护索引与本日志。基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，三页分别由 295、267、336 行增至 593、661、648 行。
+- **首轮评审的结论值得单独记下：三页都没有查出事实错误。** 14 的过滤/采样推导、15 的 Qwen2-VL M-RoPE 坐标与稀疏 mask 前缀映射、16 的 ρ/M/h 与九条 proposal 链的守恒枚举（严格等于 $p_1\otimes p_2$）、synthetic 速率换算、FP32 分块行数与 adaptive 成本比值均被逐一手算复现。三页被否的原因全部是结构缺失与整条流程缺失，而不是写错。
+- 14 新增：`return_sampling_mask` 采样分布 replay（准入门、紧凑行与位图两种表示及其精确回退、必须配 `processed_logprobs` 的原因、完成点在请求结束的 `CompletionOutput.sampling_mask`）、batch-sharded sampling（按 `owner = req_state_idx % tp_size` 切请求、两次集合通信、gather 丢弃 sampling mask 的能力损失）、trace replay 覆盖、sample logprobs 的三种观察点与四种形状、有 draft 时整个普通 sampler 被绕过的三分支、logits processor 与 grammar backend 的枚举依据（`auto` 永远到不了 `lm-format-enforcer`）、兄弟轴（pooling 不采样、prompt logprobs 属 runner 侧、TPU 无 custom processor）、V1 与 MRV2 的容量不对称（2000 个 allowed id 在 V1 被接纳、在 MRV2 被拒），并把 Triton 主路径改正为高斯 sigma 截断起步的三分搜索。
+- 15 新增：`strip_covered_mm_data` 这条被前缀缓存覆盖而清空 `data` 的第二成因（此前只写了 IPC 命中一种）、抢占时 `scheduled_encoder_inputs` 的预算回退、`can_allocate` 内部已提交逐出而无回滚（牺牲的 tensor 可能为一个最终没跑的 item 而死）、encoder-only 实例 `MMEncoderModelRunner` 及其专有完成条件与强制关闭前缀缓存、XD-RoPE（已接线但树内暂无模型）、`mm_encoder_tp_mode="data"` 轴（机制归 18）、`prompt_embeds` 纯模式与混合模式的真实分界、HF processor 的依赖边界（四项可证、三项不可证、该路径无版本门）、19 行成本账与运行包线、五条数据面用同一教学 item 对照，并补上 `identifier` 也是 KV block hash 的 extra key（组成算法仍归 08）。
+- 16 新增：整条启动构造流程（`SpeculativeConfig` 解析与校验 → drafter 构造 → 草稿权重加载 → 按集合差分离 draft 注意力层 → `set_attn` → graph 捕获）、草稿 KV 与 target 同池及 `_annotate_eagle_groups` 的两条判定与判不出时的代价、`VllmConfig.num_lookahead_tokens` 与 `max_num_new_slots_for_drafting`、`uniform_decode_query_len` 三个易混宽度、草稿发布的三条路径（`take_draft_token_ids` → `post_step` → `update_draft_token_ids`，batch queue 另走 `update_draft_token_ids_in_output`）、主力 EAGLE/MTP proposer 的逐步重放、`-1` 的四种来源、方法枚举依据（39 项字面量折叠为 13 个实际分支，`mlp_speculator` 可配但两个 runner 都抛错）与覆盖 31/37 字段的配置契约。§8.2 的 CPU 结算算术改为引用 07 §8.1，只保留本页独有的设备侧 12/13 之别。
+- 协调者的归属裁定：采样分布 replay、trace replay、batch-sharded sampling 与 sample logprobs 计算归 14（12 原本写“本域暂无专页”，两处已改为指向 14 §4.6）；草稿 KV 归属、`num_lookahead_tokens` 与草稿发布归 16，解开 08↔16、11→16 的互相推诿（11 §1.4 的指向已精确到 16 §8.3）；`prompt_embeds` 的 worker 侧平面与 XD-RoPE 归 15，公开请求面仍归 03；prompt logprobs 内部仍属 11/12。
+- 复审在新材料里查出并已修正：14 §3.7 紧凑缓冲上限应为 $R\times\min(V,2048)$ 而非 $R\times V$；15 §9.1 的 encoder slot 上限不是 `min(compute_budget, cache_size)`——每步闸门只有 `Scheduler.max_num_encoder_input_tokens`，缓存容量是跨步独立池，`min` 只是启动期量；16 的 Step3.5 MTP 在 MRV2 并非“无分支落回 V1”而是静默按通用 `MTPSpeculator` 运行、`n_predict` 只在 `k > n_predict` 且不整除时抛错、被拒草稿的陈旧 KV 在 target 组而非 draft 组、`_warn_if_unannotated_eagle_mamba` 的门是 `use_eagle()` 而标注与 flag-all 的门是 `use_eagle_block_drop`（故该 warning 不能当作“prefix 复用已归零”的证据）。另有三页各若干条写作代理反查出的评审自身措辞错误（如 `MTPModelTypes` 实为 27 项、`logits_cache` 由草稿侧填写、MRV2 的 `-1` 在同步调度下也出现），复审均判定写作代理正确。
+- 图的裁定：15 页 layout 触发是否必须补一张二维 SVG，由复审按 `drawing-wiki-figures` §2 判为**不需要**——决定性一步 `inputs_embeds[is_multimodal] = mm_embeds_flat` 只沿行轴做布尔掩码写入，隐藏维不承载逐列决策，第二根轴只是图例而非独立数据轴；现有一维 mermaid 已从命名输入重放到输出位置并暴露不变量。故未新增生成器与回归测试。
+- 三页复审均给出 PASS（`feature: pass`）且守恒检查通过。门禁：`check_links --strict` 452 页 0 broken/ambiguous/bare_index/stale_section/orphans；三页与 index、11、12、本日志的数学、Markdown、资源检查 0 错 0 警告；仓库自带 `mermaid-corpus.test.mjs` 用真实 mermaid 解析全库 513 个图块全通过。
+- 仍无归属页的内容（本轮只记录，未开新页）：EPD/encoder-only 部署拓扑（`mm_processor_device="auto"` 解析、EC connector 角色与 1P1D rank 约定）、前端 GPU 媒体路径（`mm_ipc_gpu_memory_gb`、GPU 视频 backend）、`vision_chunk` 作为统一 modality、`vllm/multimodal/video_prune/` 的剪枝算法、custom proposer 与 Medusa/`mlp_speculator` 的接口契约、MRV2 平台子类与 `MMEncoderModelRunner` 的投机支持、`PromptLogprobsWorker` 内部、guidance/outlines/lm-format-enforcer 三个 grammar backend 内部、pooling runner 内部。另发现 07 没有覆盖 `Scheduler.schedule` 的 `pad_spec_decode` 与 `dynamic_sd_lookup`/`num_spec_tokens_to_schedule` 的调度侧算术（16 已点名并归因给 Scheduler），07 由他人持有本轮未改。本轮只做固定源码静态核对，未运行 GPU、分布式或完整 vLLM 测试，未提交。
+
+## 2026-09-12：vLLM 09–12 按 07 的流程标准补齐核心流程与上下游交接；skills 取消 500 行页面约束
+
+- 应用户要求删除 skills 中的 500 行页面约束：`maintaining-llm-knowledge` 的“页面超过 500 行时提议拆分”与 `feature-tree-analysis` 的“spec 页超过 500 行按子模块拆分”均已移除，页面长度不再作为评审标准；`skills/` 门禁（另加 feature tree 检查器测试）86 项通过。
+- 以 [[07_vllm_scheduler_analysis|07 Scheduler]] 的流程写法为标准——核心流程清单、边上标交接对象的位置或闭环图、逐阶段“读入—决定—流向”与完成点——由四个并发子代理在同一基线 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 上继续修改 09–12，四页分别为 560、610、651、635 行：
+  - [[09_vllm_model_library_analysis|09 模型库]]：新增核心流程清单与“加载在引擎启动时序中的位置”（EngineCore → executor → `init_device` → `load_model` → KV 规格与布局解析 → 显存 profiling → KV 初始化 → compile/warmup，含失败传播、dummy 与 elastic-EP 入口），新增主加载流程阶段表，静态模块目录与 LoRA 接缝对齐该时序。
+  - [[10_vllm_attention_backends_analysis|10 Attention Backend]]：新增核心流程清单、三阶段位置图、从 `allocate_slots` 到 FlashAttention kernel 的七跳块号交接链、MRV1 每步调用树、KV 初始化与每步两张阶段表，以及 graph 能力上报流程；类图重排并改用 07 的子图配色。
+  - [[11_vllm_model_runner_v1_analysis|11 Model Runner V1]] 与 [[12_vllm_model_runner_v2_analysis|12 Model Runner V2]]：新增核心流程清单、单步闭环图，以及 `SchedulerOutput` 22 个字段与 `ModelRunnerOutput` 12 个字段的逐字段契约；接上 Scheduler placeholder 与 runner 侧（MRV1 的 `-1` 占位、MRV2 的 GPU `last_sampled`）的对应关系，并补启动时序定位。12 另补 pooling 输出流程。batch queue 只保留 runner 可见差异并链接 [[06_vllm_engine_architecture_analysis|06 Engine 架构]] §4，字段消费语义链接 07 §8，不与 owner 页重复。
+- 独立复审（非作者）发现并已修正的事实错误：`num_spec_tokens_to_schedule` 也被 `AsyncScheduler._update_after_schedule` 读取；MRV1 的 `free_encoder_mm_hashes` 与 `ec_manager_metadata` 只进入基类直接 `del` 掉的 `_cache_encoder_output()` 钩子，真正释放点是 `_process_encoder_cache_scheduler_output()`；`all_token_ids` 的发送条件（`_make_cached_request_data`：非 MRV2 且上一步未调度）与消费条件（async 且已有输出 token）不同；`preempted_req_ids` 的 KV connector 读取都在调度侧 `build_connector_meta`。09 另补 KV layout 解析先于显存 profiling、后处理含 `finalize_layerwise_processing`。
+- 四页均由非作者独立复审给出 PASS（base rubric、feature 画像与本轮的 07 流程标准）；各页改动后均通过 T0 链接、数学、Markdown、资源检查与三个图文测试。仍无归属页的内容：Mamba backend 的 metadata 与 kernel、MLA 与 TurboQuant 算法、不在枚举中的 cache-layer backend、XPU/CPU 平台 runner、pooling 内部与 batch-sharded sampling。08 仍有 5 处 `GPUWorker` 应为 `Worker`，属他页未改。本轮只做固定源码静态核对，未运行 GPU、分布式或完整 vLLM 测试，未提交。
+
+## 2026-09-11：vLLM 09–12 按特性分析画像重写模型库、Attention Backend 与两代 Model Runner
+
+- 应用户要求，参考 Megatron-LM 12 号与特性分析 profile，由四个并发子代理分别重写 [[09_vllm_model_library_analysis|09 模型库]]、[[10_vllm_attention_backends_analysis|10 Attention Backend]]、[[11_vllm_model_runner_v1_analysis|11 Model Runner V1]]、[[12_vllm_model_runner_v2_analysis|12 Model Runner V2]]；源码基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，文件名与单页边界不变。四页均补特性概览与收益/代价表、所有权类图、ASCII 调用树、带测试的统一源码阅读路线、约束表、总成本账与按配置类分组的配置契约；共享教学例 B5/A18/A19（slot 453/210/211）在 10–12 页保持一致，域索引同步 10、12 两行。
+- 09：以 `_LOAD_FORMAT_TO_MODEL_LOADER` 为枚举依据列出全部加载格式及归属；补 `ShardedStateLoader` 预切数据平面、`enable_ep_weight_filter`（只有 lazy/torchao 读取策略真正省读盘）、按层与按参数两种 MTP 完整性检查、checkpoint 驱动的 tying 协调，并新增 Default/sharded/IPC 三通道对照图。纠正旧稿：`bind_kv_cache` 位于 `vllm/v1/worker/utils.py`；`ForwardContext` 没有 virtual engine 字段；两代 runner 直接调用 `get_model_loader` + `load_model`；GPU runner 实际使用 LRU LoRA 管理器按容量淘汰，而不是报 `No free … slots`（页内保留 contradiction 说明）。
+- 10：明确 `AttentionBackendEnum`（39 项）只是选择器注册表，补非枚举 cache-layer backend、Mamba/SSM/线性注意力的独立选择轴（`MambaAttentionBackendEnum`）与 attention 层类型；slot → 元素 → 字节地址改用主例 A19 → slot 211（H=2、D=64，LBNHC 下 K 108042 B、V 108170 B，另给 LBHNC 对照），并移到布局与块粒度之后；重生成 `vllm_kv_slot_address_layout.svg`，新增 `tools/figs/svg/vllm_kv_slot_address_layout.test.mjs` 锁定图文数值。
+- 11：Scheduler 侧 CoW 引用保留与释放转交 08 §5.1.1，只保留 runner 侧“清零 → 复制”顺序；纠正 `swap_states(0,1)` 为 `swap_states(1,0)`（生成器、SVG 与测试同步），worker 类名为 `Worker`；补 `broadcast_pp_output` 交付分支，并注明 preempt-resume 替换块表的分支在本基线没有直接单测。
+- 12：新增 MRV2 `ModelState` 抽象（选择顺序、钩子、四个内置实现与模型自带状态类，LongCat 在自身构造器中强制 MRV2）；runner 选择前移，阻断矩阵归入约束节；补 XPU/CPU 平台子类与 PyTorch/CUDA 依赖边界；纠正 copy helper“独立 head groups”的旧说法。
+- 每页由非作者独立复审（base rubric + feature 画像）：首轮四页均 REJECT，逐项修复后复审均 PASS；原有概念、纠正、链接、图与测试按守恒核对保留、纠正或转交。发现但未修改：08 仍有 5 处写作 `GPUWorker`（应为 `Worker`）；Mamba backend 元数据与 kernel、MLA/TurboQuant 算法、非枚举 cache-layer backend、XPU/CPU 平台 runner 与 pooling 输出路径暂无归属页。只做固定源码静态核对，未运行 GPU、分布式或模型测试，未提交。
+
+## 2026-09-11：slime 16、17、18 按特性分析画像重写权重同步、训推一致性与容错
+
+- 重写 [[16_slime_weight_sync_analysis|权重同步]]、[[17_slime_train_inference_consistency_analysis|训推一致性]] 与 [[18_slime_fault_tolerance_observability_analysis|容错与可观测性]]，结构对齐 11–15：特性概览 → 最小实例 → 逐组件（职责、为何、怎样、代价）→ 变体与成本账本 → 所有权视图、调用树、源码路线 → 配套机制 → 约束、误读、适用、趋势 → 配置契约。沿用 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，本机经冻结 worktree 取证。三页原有 slime `path:line` 链接（16 页 97 处、17 页 64 处、18 页 68 处）全部换成稳定符号锚；16 页引用的 8 处 SGLang 定位因本机没有 `0b3bb0cb` checkout，保留旧版记录的行号链接并标为未复核（`check_locators` 只报环境缺口）。
+- 三张数据驱动 SVG 与配套 `node --test`（读取页面正文核对数值）：`slime_weight_sync_planes.svg`（`tools/figs/svg/slime_weight_sync_figures.mjs`，6 项）用同一个 GLU fc1 复现 all-gather 的 GLU 重排、HF 转换、三种分桶规则、NCCL 建组、共卡前缀与越界划分、MoE 定向路由装批、增量字节编码与主机侧 `pull` 版本逻辑，并按源码顺序标出四条数据面的暂停窗口；`slime_train_infer_replay.svg`（`slime_train_infer_consistency_figures.mjs`，6 项）复现 top-p keep mask（含 TP 分片与空 nucleus）、路由重放的两个 cursor、route 梯度逐 slot 的 BF16 舍入与四种校正函数；`slime_fault_recovery_timeline.svg`（`slime_fault_recovery_figures.mjs`，5 项）复现故障注入时间线、三组健康检查参数的检测上界与 CI 等待、保存点与撕裂重启。三张图都经浏览器 `getBBox` 检查无越界无重叠。
+- 16 页守恒：四个被否方案分散进各组件的"为何"，六个不变量改写为提交协议的六个动作，拓扑维度表、SGLang 依赖语义、同步占比公式与重叠表、量化 ignore list 静默失败、两组 TODO 趋势与指向 19 页的链接均保留。新增：updater 与 `RayTrainGroup` 两个版本计数器；两套迭代器的守卫差异；张量路径初始化时建桶表而整份磁盘每次同步重建；共卡越界 engine 不在 pause/flush/量化前后处理名单里；offload 下 NCCL、整份磁盘与增量 updater 读的是已 pause 的 GPU 参数（`translate_gpu_to_cpu` 无调用方）；主机本地 `.weight_sync` 标记跨运行残留会让低版本 `pull` 静默跳过；增量首次调用只捕获快照；`--check-weight-update-equal` 的比较对象；`train.py` 每轮都更新；external engine 文档列出的 `delta + nccl` 被参数校验拒绝；增量目录不清理。
+- 17 页守恒：六层模型、五个被否方案、对齐环境的职责边界、δ 与 q 公式、Sample 守卫与两类 dump、top-k 不重放的警告、stage 表、DeepGEMM MoE 流程图、确定性 route kernel 例子、三种确定性、CI 门禁表与文档/workflow 出入、TIS/MIS 两张参数表与日志键表、YAML 晚于校验、排查流程与七步清单、两条 TODO 趋势均保留。新增：keep mask 写回目标 logit（支持集是 S ∪ {y}，工具 token 得 0 而非 NaN）；ref、teacher、old 三种前向都用同一支持集；`train_rollout_logprob_abs_diff` 的比较对象；路由重放经 Megatron 补丁安装、只对 actor 开启；后向 cursor 只在重算时前进；GLM-5 门禁用 ICEPOP 与共卡 IPC、阈值以 `<=` 断言；并行检查覆盖两种 loss 口径；示例 README 的 flag 与指标名和实现不符。
+- 18 页守恒：故障域表、三种策略的取舍、HTTP 重试、监控状态机、整组标死、恢复调用链、更新边界警告、多模型限制、续训与 DataSource、dump 对照表、forge、五种尺度的观测、两处文档与代码矛盾、profiling 流程、"恢复成功"证据表、CI 分层、故障注入细节、取证流程与三条纪律、四个缺口、TODO 趋势均保留。更正：global dataset 默认开启，checkpoint 用例其实写读了 DataSource 文件，只是没有断言。新增：故障注入落在最后一轮，重建的 engine 没有再服务请求；冻结模型的 engine 被标死后没有调用方重建；检测上界 interval + timeout；撕裂保存的重启回放与共同切点；异步保存的对照情形；非 Megatron `--load` 把起始 id 缺省为 0；有 critic 时起始 id 的 TODO 与代码不一致。
+- 入链迁移：15 页指向 17 页旧 `#11.2` 的锚、13、19、31 页指向 18 页旧 `#3.` 的锚，都改指所在的 `###` 节（17、18 页的 `#2.2`），标签带 §2.2.9 / §2.2.2。原因是 MkDocs 构建器的 `tools/mkdocs_site/inventory.py::_headings` 只收 `##`/`###`，指向 `####` 的锚会让构建报 missing target anchor，而 `check_links` 不查这一点；同一原因一并修正 slime 域其余 13 处同类锚（01、10、16 → 11 §3.2.3；12、15 → 14 §2.1.1/§2.2.3/§2.2.4；14 → 15 §2.2.1/§2.2.4/§2.2.5；30 → 13 §2.3.2），这也是其他会话记录的"slime 01→11 失效章节锚阻断整站构建"的根因。vLLM 11 → 08 §5.1.1 的同类锚属另一会话的在编页面，未改。slime 索引 16–18 行的说明同步更新；31 页把 clipping/OPSM 的归属改回 15，10 页不再声称 17 页有 policy-age 校正。
+- 独立复审：16 页首轮 REJECT（spot-check 17/20；§2.2.2 的守卫只在 NCCL 与增量迭代器、§2.2.8 的 SGLang 定位与 pause 语义丢失为两项 major，另有 16 项 minor/nit），逐条对冻结源码核实后修正；复核 `re-verify: PASS`，另按复核把图 ③ 的 barrier 说明与 §2.2.4 的 onload 因果改为推断。17 页首轮 REJECT（M1 列顺序例子回放的是训练侧反向而正文按 SGLang 前向论证、M2 概率写错、M3 未引 SGLang top-p 补丁、M4 keep mask 成本未记、M5 CPU 矩阵列错，另有 8 项 minor、4 项 nit 与 5 项守恒缺口），逐条核实后修正：前向与反向两个平面分开写，引出 `sglang-top_p.patch` 的重归一与 force-keep，补 R2 配 `--use-rollout-logprobs` 时的 `IndexError`、veto 只在 `use_rs` 下执行、batch 归一的均值含被拒 token 等；第二轮只剩"未打补丁"与"设了 `SGLANG_RETURN_ORIGINAL_LOGPROB`"两种情形混写一项，拆开后 `re-verify: PASS`。18 页首轮 REJECT（外部 engine 下 `--use-fault-tolerance` 实际无效、ckpt 用例加载后一轮不跑且异步保存立即 finalize 两项 major，另有检测上界并非最坏情形、`_kill_engine` 同一 try 里跳过 `ray.kill`、端口 TODO 的转述与实现不符、用例 docstring 矛盾、critic 切点等 13 项与 6 项守恒缺口），逐条核实后修正，一般上界 5 + 4 × 10 = 45 秒由生成器计算并锁进测试；复核 `re-verify: PASS`，两条 nit（epoch 触发只在轮数由 `--num-epoch` 推出时生效、§2.3 上界限定语）已补。
+- 终审：`check_links --strict` 452 页 0 broken/ambiguous/bare_index/stale_section/orphans，`check_math`/`check_markdown`/`check_assets --changed --strict` 0/0，`check_locators --changed` errors 0（只有环境缺口）；三组图测试 6/6、6/6、5/5，三张 SVG 经浏览器 getBBox 无越界、重叠与溢框；用构建器自身的 `_heading_anchors` 扫描全库，slime 域指向未索引标题的锚已清零。未跑 MkDocs 整站构建（另一会话在并行编辑），未运行 slime 训练、SGLang 服务或故障注入；未提交。
+
+## 2026-09-11：补齐 Scheduler 服务职责与逐轮结果处理主线
+
+- 在 [[07_vllm_scheduler_analysis|Scheduler]] 增加从服务需求出发的职责核对表，区分普通生成基础职责与流式输入、grammar、远端 KV、多前端等条件能力；补充接入/取消/续接、暂停恢复、缓存失效和无 token 时的后台收尾机制。保留原单页边界、原章节链接与 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 源码基线。
+- 用普通生成与 EOS 轮建立 `update_from_output()` 的“有效进度 → 生命周期 → 输出清理”主线，新增流程图，明确内部下一轮状态与外部增量结果两个产物；补齐按客户端交付、三种完成信息、空 token 错误输出、MoE 路由跨轮保存及服务观测链路，并同步域索引与成本总账。
+- 源码复核纠正旧终态表：grammar 推进失败的 ERROR 可携带本轮 token，LENGTH 也先判断 resumable 续接再决定最终释放；在原纠正说明中保留旧说法与源码差别。
+- 新增范围独立 base/feature 复审 PASS，6 组源码锚点核验通过。新增图及修订状态图已渲染目检；Scheduler 页与导航的隔离 MkDocs 构建通过，浏览器确认 11 幅图正常渲染、无脚本错误和泄漏 wikilink，所选页无 MathJax 公式。整站构建仍被既有 Slime 01→11 的失效章节锚阻断，隔离构建不替代整站验证；未执行模型/GPU/connector 测试，未提交推送。
+
+## 2026-09-11：重构 vLLM Serving 控制面与 DP Coordinator
+
+- 按特性分析 profile、参考 Megatron-LM 12 号，将 [[13_vllm_serving_control_plane_analysis|Serving 控制面与 DP Coordinator]] 重组为特性概览、DP 路由/wave、代码协作、配套机制、总成本、配置与验证；固定源码仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，不新增正文页。
+- 补正常/过期 wave、显式 pause 与 resume、三方状态副本、消息通道和实际调用路径；新增三张 Mermaid 图，保留原负载评分图。保留动态端口、分阶段 READY、准入纠正、健康/FT 与共享退出预算，并更新域索引入口。
+- 核实前端 `FIRST_REQ` 的 bytes 身份与 Engine 整数排除判断不匹配，将设计意图与实际广播行为分开记录；补队列计数变化才附带 KV usage 上报、dense external LB 的配置支持范围。仅作冻结源码分析，不修改 vLLM 源码。
+- 独立复审 PASS，四图已渲染并目视检查；全库链接与 T0 文档检查通过。本页及导航的隔离 MkDocs 构建通过；全站构建仍被工作区既有 slime/01 指向 slime/11 的失效章节锚阻断，未修改无关正文。未执行 GPU 模型或故障注入。
+
+## 2026-09-11：vLLM 08 重整特性主线与子模块数据交互
+
+- 按用户确认的方案重构 [[08_vllm_kv_cache_management_analysis|08 KV Cache]]，参考 Megatron-LM 12 的原理—系统—实现—配套机制递进，保持源码基线 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`、文件名及单页边界不变。
+- 将开篇明确为问题、方案、职责与成本；保留 A/B 分块共享例子，分清启动期建池和运行期查找、分配、设备交付、结果对账、安全释放；补充生命周期图、子模块所有权图与真实调用树。
+- 补齐规划器、请求级 Manager、Coordinator、group manager、BlockPool、Runner/Backend 与 connector 的输入—处理—输出—完成边界；区分 CPU 块对象、分组整数 IDs、设备 views 与内容 key，按源码工厂和 registry 说明选择轴。
+- 保留原容量公式、索引与旧图口径纠正、hash/LoRA 版本边界、partial CoW、Mamba producer pin、packed/GLM5/PP/DSv4、共同命中及 native CPU 完成协议；为扩展机制增加承接背景，汇总收益、成本与使用边界，并同步域索引。超过 500 行已提示后续拆分评估，本轮保留获批单页。
+- 复审核实并补入普通查询的 `_get_local_prefix_cache_hit` 调用跳转；纠正原 CoW 图在非空 step 在途、延迟释放生效时取消请求的引用计数：请求引用转交延迟队列，D 保持 2，满足 fence 后两份引用才分别释放，旧说法保留为 contradiction 说明。
+- 独立 base/feature 复审 PASS，三处关键锚点复核 3/3；8 幅 Mermaid 和原 packed SVG 渲染目检通过，原 12 个链接目标与容量公式保留，T0 链接/数学/Markdown/资源检查通过。全站构建仍被既有 slime/01→slime/11 的失效章节锚阻断；未修改无关页，未执行模型/GPU/传输或性能测试，未提交推送。
+
+## 2026-09-11：vLLM Scheduler 按特性分析复审整改
+
+- 更新 [[07_vllm_scheduler_analysis|07 Scheduler]]，保持源码基线 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 与原单页边界；保留原有状态、token/input/spec/encoder/Mamba、LoRA、DP 容量、prefix 择优、stale 与失败恢复内容及相关页链接。
+- 修正当前请求成为 victim 后结束 running 扫描、priority 重新入堆而非插队首、计划形成与 Core 提交执行的不同边界；澄清 SchedulerOutput 对账身份与 deferred grammar 受控更新，纠正 Runner 11/12 的编号残留。
+- 补充从真实工厂/队列选择点建立的变体关系、R/P/Q 两策略同例、L/H 双策略抢占、R 的 S0/S1 同步/异步计数对照；新增所有权视图与真实调用树，补齐默认完整输入准入检查、watermark 与异步 load 保留容量的区别，以及收益—代价—上限总账。同步域索引，保留主线不新增页面。
+- 原页最近更新说明中已有的有序填充、本地/远端 prefix、LoRA、DP、PP/Mamba 校正均保留在正文；本次仅压缩页头更新摘要。超过 500 行已向用户提示后续拆分评估，本轮按已批准的连续主线保留单页。源码测试仅静态核查，未执行模型、GPU 或 connector。
+- 独立 feature/base 复审 PASS，选择/队列、完整输入/水位准入、异步计数三组抽查 3/3；10 幅 Mermaid 渲染与目视检查通过，原 12 个不同链接目标全部保留，T0 四项零错误零警告。全站构建被已有 slime/01 指向 slime/11 的失效章节锚阻断；隔离验证已生成本页与索引 HTML，但不包含外链目标，不能替代全站严格构建通过的证据。
+
 ## 2026-09-11：归档并吸收用户 KV Cache 图解
 
 - 在 `raw/02_engineering/03_infer_frameworks/vllm/kv_cache_diagram_20260911/` 保留原 v0.10.2 HTML 快照，另存对齐 `199cb9b964822e59ab9b58d88e7be31eb419a2ae` 的 HTML、完整 Markdown 转换件与六幅独立 SVG；原快照 SHA256 校验不变，知识库源码基线未改变。
 - 将独有内容分配到既有正文：[[08_vllm_kv_cache_management_analysis|08 KV Cache]] 增加 slot/page/block 容量、单 rank/TP 口径、尾块浪费与初始化/运行时分配边界；[[10_vllm_attention_backends_analysis|10 Attention Backend]] 增加四维索引、K/V 切片、字节 stride 寻址与 LBNHC/BLNHC 布局图；[[11_vllm_model_runner_v1_analysis|11 Model Runner V1]] 增加请求行、展平 token 行、position、CPU token-store 与 KV slot 的索引对照。同步更新 vLLM 域索引，不增加主分析页。
 - 修正网页中已不适用的分层独立分配、外层 K/V 二分布局、block 粒度混用、CPU slot 计算、KV 写入依赖和空闲队列表述；补充 manager/kernel block 换算、partial-hit 可写性与 CoW、压缩 state/padding/异构 group 的适用边界。保留原六图阅读主线。
 - 新增段落与布局图独立源码复审 PASS（08/10/11 各抽查 3/3），布局图经修订后目视通过；HTML 六图无文字重叠、越界或失效内部锚，390 px 移动视口无横向溢出。T0 链接、公式、Markdown、资源检查均通过；三篇页面独立 MkDocs 构建通过，浏览器 MathJax 实际渲染 20 处公式通过；全库构建被已有 slime/01 指向 slime/11 的失效章节锚阻断，未修改无关正文。
+
+## 2026-09-11：DeepSeek-V4.1-Flash 逐项推导 mHC 激活读写量
+
+- 扩充 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] §2.5，将报告 20d→14d→10d 拆为残差更新、系数预测、输入混合、pre-norm 的读写表；说明融合先省 nd+2d、Single-Pass 再省 nd，以及新多路残差仍需保存。
+- 给出 n=4、d=5120、统一 BF16 的 200/140/100 KiB 教学账本；区别元素/字节、单次过渡/整模型、50%与28.6%的不同基准。模型和 DeepGEMM 冻结基线均未改变。
+- 显式说明排除系数预测器权重、归约/同步/工作区和主干计算；对照公开测试的 Norm/Cast 中间态，报告理想大激活主项不作为当前 kernel 全部 HBM 流量的实测结论。
+- 独立限定复审 PASS：三档读写公式、BF16 换算与不同基准的缩减比例均正确，报告主项与实际 scratch 边界清楚；算术复算及 T0 四项检查通过。
+
+## 2026-09-11：DeepSeek-V4.1-Flash 补入 Mega-mHC 发布性能与融合边界
+
+- 更新 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] §2.5，增加独立 DeepGEMM 发布基线 `39d8c4cacc2c07c1fa9921c6c29c6a8a2da75359` 及 raw 发布说明索引，HF 模型基线不变。
+- 核查 PR #432 的 45%–85% speedup 声明与性能脚本：区分官方汇总、20d/14d/10d 访存推导、normal/shifted 各自融合基线测试，明确测试 H=4096/7168 与当前模型 H=5120 不一致，未执行 GPU benchmark。
+- 增加融合边界图：Mega-mHC 包含残差更新、输入混合、系数预测、RMSNorm/可选 FP8，不含 Attention/MoE 主计算；区分 warp-group 内部流水、跨子块并行与 roofline 实测，逻辑带宽估算不作为 HBM profile 证据。
+- 独立限定复审 PASS：官方 PR、API/实现融合边界、测试脚本比较口径均核实，新增图目视通过；T0 四项零错误零警告。未运行 GPU benchmark，未声称端到端速度复现。
+
+## 2026-09-11：DeepSeek-V4.1-Flash 澄清 prefill 图中数字
+
+- 更新 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] §2.1 补充图 2：图内改为输入位置、经过层数与输出去向；相邻表逐项解释 81,920、2,560、84,480、163,840 的来源。说明 4096 为假设输入长度、20+20 为主干层数、128 为 replay 窗口；位置×层计数不是生成数量、串行 GPU 调用或精确 FLOPs。
+- 明确对照是同一 40 层主干完整前向；前 3968 个位置仍形成全局历史，尾部近似 replay 的限制及生产实现边界保留。
+
+## 2026-09-11：DeepSeek-V4.1-Flash 补全 Single-Pass mHC 逐子块机制
+
+- 扩充 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]] §2.5：语言主干 40 层的 Attention/MoE 共 80 个残差子块；四路残差混入单次子块计算，再混合/注入回四路。对齐报告 Eq.6 与 `Block.forward`，明确仅输入系数 A 后移一个子块，B/C 当场更新残差，区别深度传递与跨 token 缓存。
+- 新增完整变换图、L7 Attention→L7 MoE→L8 系数表、单通道手算例；说明 20,480→24 维系数预测、sigmoid/Sinkhorn、首层 one-hot 和末层收束。修正旧访存图的“系数”泛称为输入混合系数 A，保留原访存推导、训推实现区别、原报告图和其他章节内容。
+- 独立复审 PASS：机制、源码路线、手算与图示通过，抽查 3/3；补明 `comb` 的输入路/输出路存储约定及其与报告左乘矩阵 B 的转置关系。
+- 沿用冻结发布基线；参考代码证明数学路径，未运行权重或 Mega-mHC 性能测量。链接、公式、Markdown 和资源检查通过，机制图渲染目视通过；全库构建仍被其他任务 slime 页的失效节锚阻断。
+
+## 2026-09-11：slime 14、15 按特性分析画像重写 Megatron 训练后端与 loss 归约
+
+- 重写 [[14_slime_megatron_training_analysis|Megatron 训练后端]] 与 [[15_slime_loss_parallelism_analysis|Loss 与并行归一化]]，结构对齐 slime 11–13：特性概览 → 最小实例 → 逐组件（职责、为何、怎样、代价）→ 变体与成本账本 → 所有权视图、调用树、源码路线 → 配套机制 → 约束、误读、适用、趋势 → 配置契约。沿用 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，本机检出经 `git show` 取冻结 commit 取证。两页原有 `path:line` GitHub 链接（14 页 79 处、15 页 39 处）全部换成稳定符号锚，不再适用 `check_locators`。
+- 两页共用一个最小实例（dp=2、cp=2、4 个逻辑 rollout、5 条样本，其中 rollout 2 是 compact 扇出的两个片段、s0 含一个工具 token），由同一份 `CFG`/`SAMPLES` 驱动两张数据驱动 SVG：`slime_megatron_train_step.svg`（`tools/figs/svg/slime_megatron_train_step_figures.mjs`）复现 `build_dp_schedule` 的组步、first-fit、拆 bin 对齐与轮询分发、`slice_with_cp`/`get_batch` 的 zigzag 切片、THD 拼接与 mask 对齐、`train_actor` 的 tag 切换与 `can_reuse_log_probs_in_loss`、`train_one_step` 与 scheduler 计数；`slime_loss_reducer_ledger.svg`（`tools/figs/svg/slime_loss_reducer_figures.mjs`，导入前者）复现三种估计量、reward 分组回落、DP×CP×micro-batch 归约账本与缩放链、局部分母的错误值、per-token 报告分母与 rejection 的分子/分母分离。14 页图另含 `allgather_cp` 的整体拼接对照与 `balance_data` 的 Karmarkar-Karp 分发，15 页图另含 per-token 梯度路径、GSPO 序列重建回放与 PPO reward 落点表。配套 `node --test` 读取页面正文核对数值（14 页 7 项、15 页 5 项），并用浏览器 `getBBox` 检查文字越界与重叠。figure-trigger：14 为 transform、layout、timing，15 为 transform、layout。
+- 14 页守恒：四条训练侧不变量、"adapter 而非统一 trainer"、"CPU tag 而非常驻 trainer"、"RolloutManager 算一次 schedule 而非各 rank 自读"三段设计分析（改为标注推断的组件"为何"）、角色表、backup 与 sleep/wake 的区分、tag 切换与 `load_other_checkpoint` 的非 `finally` 边界、`rollout_actor → old_actor` 队列、静态拒绝与动态拆分、KK 只均衡估算 FLOPs、per-rank bundle 字段、并行 rank 的数据关系表、不走 Megatron Dataset/DataLoader、advantage 在训练边界内、`can_reuse_log_probs_in_loss` 条件、三种边界、stateless Adam、checkpoint 分派与 `save_hf` 边界、角色 YAML 限制、custom loss 定位、误读表、两条 TODO 趋势均保留。新增：`expand_bins_by_splitting` 的并列取下标大者规则、`get_batch` 的 mask 左补 `prompt_len−1` 右补 1 与 `cu_seqlens × cp_size`、短样本在某 CP rank 上零 response 位置、`allgather_cp` 兄弟轴、`train_parallel_config` 的 DP 不含 CP、LR scheduler 的 `train_iters` 估算公式、critic value head 重初始化、`reset_optimizer_states`、forward pre-hook 的首步禁用、PP>2 的 wake 预热 barrier、`disconnect_rollout_engines` 条件、六个钩子路径、logprob 捕获、三处新 TODO。12 页指向本页旧 `#4`、`#4.2`、`#4.4`、`#4.5` 的四个锚改为 `#2.2.3`、`#2.1.1`、`#2.2.3`、`#2.2.4`。
+- 15 页守恒：符号与四条不变量、目标函数与归约器分离的理由、`custom_loss` 与 `custom_pg_loss_reducer` 的边界、prompt 分组公式与 reshape 回落、GAE 递推与 `chunked_gae`、白化与 CP 测试、基线后 `045310b2b4` 的 KL 修复说明、ρ/ℓ_PPO 公式、dual-clip 断言、CISPO、GSPO all-gather、目标函数分工表、三种均值公式与差异例（改用共用实例的数值）、官方文档 per-sample 说法的矛盾标注、`rollout_mask_sums` 与 `test_cp_utils`、零连接梯度、`step_global_batch_size` 三重角色与缩放式、CP2×DP2 账本（改为共用实例的 DP×CP×mb 账本）、校正 mask 的两个 reducer、前提/代价/故意不做、症状表、两条 TODO 趋势、七项检查清单均保留。新增：`compute_approx_kl` 四种估计器与 `use_unbiased_kl`、OPSM 规则、OPD 反向 KL、REINFORCE++ 的末有效 token 注奖、`reduce_train_step_metrics` 与 `rollout_log_metric_contribution` 的 `(sum, count)` 报告口径、测试矩阵表、`icepop_function` 只经自定义路径可达、两处新 TODO。
+- 独立复审首轮两页均 REJECT。14 页：algorithm-replay 失败，`num_steps_per_rollout=2` 时的前向次数混用了全批前向与 `forward_backward_func` 调用两种单位（页、图、测试同错），`allgather_cp` 数据面未回放；另有 `SLIME_DESTROY_WORLD_PROCESS_GROUP` 语义写反、`--log-probs-max-tokens-per-gpu` 在冻结基线无读者、`forward_only` 的动态重排实为恒等映射、critic 与 actor 共卡而非翻倍、`--balance-data` 的 help 与代码不符、`valid_step` 只在 NaN 检查关闭时由 slime 预检等 minor，以及 `load_other_checkpoint` 更新 active tag、Megatron teacher 须同架构两处守恒遗漏。15 页：algorithm-replay 失败，GSPO/OPSM 的 CP 序列重建未回放，per-token 模式下 Megatron 的缩放写成与非 per-token 相同；复审还发现 PPO 在 gather 之前对 cp0 本地张量做 `k[-1] += reward`，cp0 尾段不覆盖末 token（`chunk < pad + 2`）时本地为空即抛 `IndexError`、非空则 reward 静默错位；另有自定义 converter 缺 `rollout_mask_sums` 时静默退回 sample 均值、`opsm_clipfrac` 不走 reducer、GSPO 未列入变体、三处配置默认值与途径、s2b 空 rank 的原因写错等 minor，以及全 mask 样本仍给 token 分母贡献 1 的守恒遗漏。全部按冻结源码核实后修正：两页各补回放与 §5.1 行，14 页图加 allgather 两行与 KK 行，15 页图加 per-token 梯度行与面板 5，两个生成器新增 `getBatchAllgather`、`karmarkarKarp`、`gspoReplay`、`ppoRewardSlot` 及对应测试，其中 PPO 落点判据在 cp ∈ {2,4}、T 4–48 上逐位扫描验证。14 页压到 500 行。
+- 复核：15 页 `re-verify: PASS`，12 项与守恒项全部 FIXED；另按复核补正四处措辞：面板数改为五，§2.4 与 §3.1 补 per-token 契约，§2.2.4 的 all-reduce 按样本计数，GSPO 的量改称序列均值 log-ratio 并给 `chunk ≥ pad + 2` 补 total ≥ 3 前提。14 页第一轮复核 REJECT 于 §2.3 两行：old logprob 行残留"两步则 4 次"；`balance_by_flops` 打包未回放，且此前称其分组依赖 FLOPs 系数有误。冻结源码的 KK 对任意正系数都分出 `{s0}`、`{s1,s2b}`、`{s2a,s3}`，只有被强制打开的 `balance_data` 在 a = 22b 处改变 rank 分配。已补回放、图中一行与边界两侧的测试，并改四处 nit：§1.3 的 `kl_coef = 0`、环境变量的 0/false/no 取值、`ref_ckpt_step` 的生效条件、§5.1 新行的影响条件。
+- 终审：14 页第二轮 `re-verify: PASS`，两行与四处 nit 全部 FIXED，`balance_by_flops` 回放经冻结源码十组系数核对；15 页 `re-verify: PASS`。两页无 `path:line` 引用，14 页 500 行、15 页 464 行；图测试 14 页 7/7、15 页 5/5，两张 SVG 经 `getBBox` 检查无越界无重叠；T0 四项零错误零警告，链接检查 452 页无断链、无孤页、无失效节锚。本次未运行 slime 训练或分布式测试，账本、前向次数、打包与 reward 落点的数值均为按冻结源码复现的 CPU 计算。
+
+## 2026-09-10：DeepSeek-V4.1-Flash 补齐 KV 增量实例与并行亲和
+
+- 更新 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]]：§2.1 区分因果 encoder 的角色和末端表示的两条用途；§2.2 用 A…F→G→H 连续实例、共享/重算表与半组状态图解释 CSA2。核查 `Compressor.forward`、`Attention._window_kv` / `_compress_kv` / `_compress_topk_idxs`，说明未组满只延后 global entry 发布，SWA 仍能继续计算。
+- §2.9 汇总结构变化实际节省的资源及训练适配；§3.2 加入 PP/CP/TP/EP/Engram 亲和分析和跨 stage 状态图，明确部署建议是依赖推导、逻辑共享不保证物理单副本；§3.4 补运行时缓存清单及半组跨请求恢复的公开证据边界，§3.5 补源码路线。
+- 沿用 `fb2764a5cf321eaa5070ca8f9e892818f477c16d`，只追加机制说明，保留原正文与三张报告原图；新增三张 Mermaid 已渲染目视。按用户要求保留同一篇五章阅读主线，未拆页。同步更新 DeepSeek 索引；未运行权重推理或集群性能测量。
+- 独立复审 PASS：beat2、hop-walk、delete-code、algorithm-replay 均通过，抽查 `Compressor.forward`、`Attention._compress_kv/_window_kv`、报告 §3.1.2 为 3/3；补明图中共享状态须涵盖反向/重算后才可释放。
+- T0 链接、公式、Markdown、资源检查通过；本页及索引的 MkDocs 转换通过。全库变更页构建被其他任务的 slime/01→slime/11 失效章节锚阻断，未修改无关页面。
+
+## 2026-09-10：slime 12、13 按特性分析画像重写数据契约与请求数据面
+
+- 重写 [[12_slime_sample_datasource_analysis|Sample、DataSource 与训练数据契约]] 与 [[13_slime_sglang_rollout_engine_analysis|SGLang rollout engine]]，结构对齐 Megatron-LM 12 与 slime 11：特性概览 → 最小实例 → 逐组件（职责、为何、怎样、代价）→ 变体与成本账本 → 所有权视图、调用树、源码路线 → 配套机制 → 约束、误读、适用、趋势 → 配置契约。沿用 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，本机检出经 `git show` 取冻结 commit 取证。两页原有 `path:line` GitHub 链接（12 页 54 处、13 页 69 处）全部换成稳定符号锚，不再适用 `check_locators`。
+- 新增两张数据驱动 SVG 及配套 `node --test`：`slime_sample_data_contract.svg`（`tools/figs/svg/slime_sample_data_contract_figures.mjs`）复现 `append_response_tokens`、`generate_and_rm` 入口、`abort` 标记、带 buffer 的 DataSource、converter 兜底 id 与 `rollout_mask_sums`、`build_dp_schedule` 分步，用两条各自可执行的运行回放中断续生成与 compact 扇出；`slime_rollout_admission_timeline.svg`（`tools/figs/svg/slime_rollout_admission_figures.mjs`）复现接收循环的两个计数器、动态过滤与 `with_fallback`、整波补采、abort 与 fully-async 的池、qsize 闸门与按缺口 drain。两份测试都读取页面正文核对数值。figure-trigger：12 为 transform、layout，13 为 timing、coupled-planes。
+- 12 页守恒：五行 rollout/训练矛盾表并入问题背景；四条不变量、被否方案表（分配到各组件的"为何"并整体标为推断）、三种标识与注释出入、五类字段、`to_dict/from_dict`、状态映射与 FAILED 语义、SpecInfo/PrefixCache 累计公式、append 三种追加与守卫、top-p/路由合并规则、DataSource 接口与 Dataset 参数表、buffer 非回放池、partial 两种 mask 模式、嵌套输出与扇出、converter 字段与条件、`_post_process_rewards` reshape 规则、白名单缺 `metadata`、数据路径经 CPU/Ray、单轮 JSONL 例子、误读表、十项检查清单、三组 TODO 及推断均保留。新增：mask-offpolicy 在 `generate_and_rm` 入口清零、已完成兄弟样本分母为 0 并由 reducer 钳到 1；一轮内 sample task 返回值必须同深度，partial 回收组的已完成成员早退与返回 list 的自定义生成函数不兼容；`get_samples` 跨 epoch 无守卫；`source_names` 恒存在；白名单空转键 `prompt`；`create_rollout_manager` 的 `enable_tensor_transport`。
+- 13 页守恒：五个约束、并发上限公式、三段设计分析（改为标注推断的组件"为何"）、五层职责、请求路径（改为 ASCII 调用树与原理图）、payload 与响应细节、RM 分派链与重试常数、动态过滤与 `keep_when_insufficient`、四组候选例子、fully-async 细节、abort 协议、streaming、恢复边界、受控透传、部署三支、整轮函数替换表、误读表、两条代价、两条趋势均保留。新增：`GenerateState` 单例的插件签名判据、abort 负路径（POST 失败只告警、`while True` 无上限）、`skipped_args` 十五项全列、`_resolve_sglang_config` 第四支、fully-async 下 ABORTED 只能来自自定义生成函数、streaming 不受 `--use-distributed-post` 影响、评估采样参数的回落归属、`--data-source-path` 兄弟轴。
+- 15 页指向 12 页旧 `#8.1` 的锚改为 `#2.1`；30 页指向 13 页旧 `#4.6`、`#4.7` 的锚改为 `#2.1`、`#2.3.2`。
+- 独立复审：12 页首轮 REJECT（algorithm-replay 失败：mask-offpolicy 例子未计入已完成兄弟样本被清零；混合深度的例子在冻结基线不可执行），另 8 项 minor/nit；最小实例拆成两条可执行运行并重做图、测试与正文后复核，结论见下一条。13 页首轮 PASS（beat2/hop-walk/delete-code/algorithm-replay 通过，抽查 14/14），13 项 minor/nit 全部修正后复核。T0 四项零错误零警告，链接检查 452 页无断链、无孤页、无失效节锚。本次未运行 slime 训练或 SGLang 服务，所有等待时长与容量均为源码常数或未测量项。
+- 独立复核：12 页第二轮 PASS（beat2/hop-walk/delete-code/algorithm-replay 通过，新抽查 3/3，F1–F10 全部 FIXED），另指出三处措辞（partial 与返回 list 的自定义生成函数在 abort 处就不兼容、混合深度最早在 `compute_metrics_from_samples` 抛错、运行 ② 按 `over_sampling_batch_size` 提交三组）已补正并同步到图生成器；13 页复核 `re-verify: PASS`，13 项全部 FIXED，`no_stop_trim` 回落常量 `True` 的措辞已收紧。两页无 `path:line` 引用；图测试 12 页 5/5、13 页 4/4。
+
+## 2026-09-10：slime 11 按特性分析画像重写 Ray 控制面
+
+- 重写 [[11_slime_ray_control_plane_analysis|slime Ray 控制面]]，参照 Megatron-LM 12 的特性页结构：特性概览（问题、方案形态、收益/开销、术语）→ 最小实例（actor 4 卡加 rollout 4 卡在 colocate 与 disaggregate 下的布局、排序、绑定、`needs_offload` 与端口）→ 六个承重组件各答职责、为何、怎样、代价 → 并发模型与成本账本 → 对象视图、三棵调用树与七条集中源码路线 → 配套机制 → 约束、误读、适用、趋势 → 配置契约。沿用 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`，本机检出经 `git show` 取冻结 commit 取证，未移动工作区。
+- 新增数据驱动 SVG `slime_ray_control_plane_layout.svg`：`tools/figs/svg/slime_ray_control_plane_figures.mjs` 复现 `_get_placement_group_layout`、`sort_key`、`ServerGroup.start_engines` 与端口分配算法后生成，`tools/figs/svg/lib/slime_ray_control_plane_figures.test.mjs` 锁定模型、已跟踪 SVG 与正文数值三方一致，并检查画布越界。figure-trigger 为 layout；渲染目视通过。
+- 守恒：保留原页两个被否方案与"是否需要独立进程、资源放置、故障边界或远程串行状态"的判据、四类状态归属、SPMD 纠正、布局分支与单测、端口注释 `4 + dp_size` 与实际 `30 + dp_size` 的出入、full+disk 调用树与无回滚边界、六元组契约、两条 GPU 复用轴、四种生命周期动作、误读表、三处 TODO 及其推断。新增：布局分支与 weight updater 四路选择的枚举依据、driver 何时在 trainer 前等待 engine 健康的条件、`LOCAL_RANK` 的两个分支、external engine 的零 GPU actor、`recover_updatable_engines` 早退条件、`start_rollout_ids` 单值断言、trainer 环境变量全表、`actor_cls` 选择轴。
+- 45 处 `path:line` GitHub 链接改为稳定符号锚；本页不再适用 `check_locators`。10 与 01 两页指向本页 `#6.1` 的三处标题锚改为 `#3.2.3`。
+- 独立复审首轮 REJECT：hop-walk、delete-code、algorithm-replay 通过，抽查 5/6，失败项为 §6 把内部属性 `update_weight_start_version` 误列为 CLI 参数，另有 colocate 下 `offload_rollout` 措辞过强、`LOCAL_RANK` 无条件化、成本账本步数与健康线程条件、两处守恒遗漏、`actor_cls` 选择轴未点名、encoder-only 健康等待的依赖边界、两棵调用树缺 hop。全部修正后复核结果见本条末行。T0 四项零错误零警告，链接检查 452 页无断链、无孤页、无失效节锚。
+- 独立复核：十项全部 FIXED，未引入新错误，`re-verify: PASS`；复核另指出的两处措辞（健康监控线程的条件、重连条件中的 `use_critic`）已补正。本次未运行 slime 训练或 Ray 集群，所有等待时长均为源码常数或未测量项。
+
+## 2026-09-10：DeepSeek-V4.1-Flash 按模型骨架与训推协同重组
+
+- 按用户指定的五章重构 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]]：背景与完整骨架、结构实现/选型/消融、pretrain/posttrain/inference 工程、主流模型对比、总结；沿用 `fb2764a5cf321eaa5070ca8f9e892818f477c16d`，保留原参数、成本推导、示例、评测口径、API 契约与来源冲突。
+- 按用户要求保留报告 Figure 3/4/5 的原始结构图与英文图注，矢量提取仅裁掉外围正文；中文骨架及五张 Mermaid 作为六张补充图分开编号。原图提取程序校验源 PDF SHA256，骨架生成器记录同一配置基线。
+- 补充 CED/CSA2/FP4/mHC/Engram/视觉/DSpark 的训推取舍，明确缺少组件完整定量消融；新增视觉预训练、shadow indexer 与跨 stage 状态生命周期、Engram 预取/优化器、异步 rollout 恢复和主流模型同表对比。DSpark 明确为前代正式权重已具备的组件。
+- 独立复审 PASS：beat2、hop-walk、delete-code、algorithm-replay 均通过；本轮抽查 `Gate.forward`、`Aligner.forward` 和报告 §3.1.2（单 owner / 最后消费者释放）3/3。对照改前正文未发现知识丢失，三张原图和六张补充图已渲染目视；修复工程图过宽问题。同步更新 DeepSeek 索引，未运行权重推理或付费 API。
+
+## 2026-09-10：DeepSeek-V4.1-Flash 首发报告与实现交叉分析
+
+- 新增 [[19_deepseek_v4_1_flash_analysis|DeepSeek-V4.1-Flash]]，冻结官方 HF 发布仓 `fb2764a5cf321eaa5070ca8f9e892818f477c16d`，阅读 51 页报告的机制、训练、评测与限制章节，并核查配置和参考推理代码；新增 raw 来源索引、文件哈希及动态 API 读取记录。
+- 解释 CED 的 prefill / decode 非对称计算、CSA2 缓存 / 索引跨层复用、890 bytes/token 的量化载荷推导、encoder / decoder 两类近似 SWA replay；三张原理图保持报告设计与参考代码边界。记录 552B backbone 与另列 196B Engram、45T 训练、数据环境驱动的 RL/OPD、harness / effort 差异与 API 路由定价。
+- 保留 NL2Repo 65.4（报告/发布）与64.0（模型卡）、reasoning top-p、整体超越 Pro 与单项落后的差异；特别注明参考代码完整跑40层、先全域评分再候选mask、量化反量化写回，不构成 CED/replay/物理FP4缓存生产优化的复现。
+- DeepSeek 索引新增入口；[[31_deepseek_v4_released_checkpoints_analysis|V4 权重对账]]补版本交接，不改变其0731/0813历史结论；主索引模型与DeepSeek篇数由文件重新统计。本次未运行付费API或权重评测。
+- 独立评审：beat2 / hop-walk / delete-code / algorithm-replay 均 pass，figure-trigger 为 transform、layout、timing、coupled-planes；抽查 `Indexer.forward`、`fp4_act_quant` 与 `Transformer.forward` 3/3。修正 Base/Instruct 评测范围并补齐 harness 版本和网络条件；三图渲染目视通过。T0 四项零错误/警告，链接检查452页无断链/孤页；局部页面构建9路由的链接、锚点与资源问题均为0，MathJax实际渲染12处公式/2页通过；参数量、890B载荷、CED层计算量和计费示例独立复算通过。
+
+
+## 2026-09-10：vLLM 02 按软件架构主线重构
+
+- 重构 [[02_vllm_architecture_overview_analysis|vLLM 软件架构]]，参考 Megatron-LM 01 的背景与设计原理、静态/动态视图、模块设计、代码映射、使用场景和阅读交接。沿用 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`，六个职责模块贯穿正文、图示和源码路线；补齐启动顺序、输入输出合同及主要场景的命令、调用树与完成条件。
+- 保留 admission、KV 副作用、Runner 选择、异步结果与安全释放、旧入口兼容等既有知识，补明 KV 整请求预检，并记录批接口旧注释与多 endpoint 实现的差异。增加静态 SVG 及模块、场景图，用 A/B/C 例子连接调度与设备输入，并以同一 A/B 状态比较两代 Runner。
+- 同步更新 vLLM 索引。正文超过 500 行，按已批准的一篇架构文档范围保留完整阅读主线，具体算法与详细部署仍归现有专题。独立架构复审通过，六部分结构与场景合同已对照 Megatron-LM 01；本次未运行 GPU 推理或多机性能测量。
+- 原页 24 个专题链接目标全部保留；1 张静态 SVG 与 18 个 Mermaid 图完成渲染及目视检查。T0 与变更页构建通过，页面链接、锚点及本地资源无新增问题。
+
+## 2026-09-10：slime 01 按软件架构主线补全背景、分层与模块设计
+
+- 扩充 [[01_slime_architecture_overview_analysis]]，参考 Megatron-LM 01 的分析深度，按背景与设计原理、静态软件分层、动态协作、八个模块的概要设计、代码映射和使用场景组织；保持 slime 源码基线 `681b3adca54105d5ecd3fb822fa0dc58a427e0f9`。
+- 区分四层逻辑职责与实际进程/目录，补齐模块输入输出、状态所有权、设计取舍、约束与源码路线；增加生成/训练/发布三条通路和最小示例图。保留三 namespace、router 混合前缀、NIXL、full-disk 版本、offload/release、external 与多模型限制；完整 DP/loss/传输算法继续归既有专题，未改外部源码。
+- 同步更新 slime 索引的 01 入口描述；文档规模超过 500 行，本轮按用户要求保持单篇架构阅读主线，场景操作的后续收敛位置为既有 02 与专题页。
+- 独立架构复审 PASS：核对层名与模块合同、真实调用父子关系、生成 HTTP 直连 router、角色恢复与优势计算顺序；1 张静态 SVG 与 11 张 Mermaid 已渲染目视。T0 与变更页构建通过；未运行 GPU 训练。
 
 ## 2026-09-10：slime 系列按专家意见核实整改并补齐三条机制路径
 

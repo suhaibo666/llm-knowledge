@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" role="img" aria-labelledby="title desc">
+<title id="title">slime 故障域局部恢复：一次故障注入的检测与重建时间线，以及续训的共同恢复切点</title>
+<desc id="desc">上半部分按轮画出 CI 故障注入：generate 期间监控线程把坏 engine 整组标死，本轮用剩余 engine 完成，重建与重新推送发生在训练之后的 update_weights，并对比三组健康检查参数的检测上界与 CI 等待时间。下半部分画出保存间隔 2 时的保存点与三种重启情形：两份文件都在、两次写之间崩溃导致 DataSource 游标静默归零、异步保存尚未 finalize。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4}
+</style><rect width="1180" height="900" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">故障按域恢复：检测在监控线程里，重建在更新边界上；续训的恢复点由两份顺序写的文件共同决定</text>
+<text x="24" y="56" class="su" text-anchor="start">CI 故障注入 E2E：actor 模型 4 个 engine，interval 5 s、timeout 10 s、first-wait 0 s，num_rollout 3，rollout_id ≥ 2 注入一次</text>
+<rect x="24" y="72" width="1132" height="430" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① 一次故障注入：generate 里标死，训练之后的 update_weights 里重建并推送</text>
+<text x="40" y="136" class="tx" text-anchor="start">rollout 0</text>
+<rect x="110" y="120" width="136.85000000000002" height="24" rx="4" class="neutral"/>
+<text x="178.425" y="136" class="sm" text-anchor="middle">generate：resume 监控</text>
+<rect x="251.85000000000002" y="120" width="106.40000000000002" height="24" rx="4" class="neutral"/>
+<text x="305.05" y="136" class="sm" text-anchor="middle">4 个 engine 生成</text>
+<rect x="363.25000000000006" y="120" width="124.67000000000002" height="24" rx="4" class="ghost"/>
+<text x="425.58500000000004" y="136" class="sm" text-anchor="middle">offload：pause 监控</text>
+<rect x="492.9200000000001" y="120" width="44.45" height="24" rx="4" class="ghost"/>
+<text x="515.1450000000001" y="136" class="sm" text-anchor="middle">train</text>
+<rect x="542.3700000000001" y="120" width="99.26000000000002" height="24" rx="4" class="ghost"/>
+<text x="592.0000000000001" y="136" class="sm" text-anchor="middle">onload_weights</text>
+<rect x="646.6300000000001" y="120" width="204.89000000000004" height="24" rx="4" class="neutral"/>
+<text x="749.0750000000002" y="136" class="sm" text-anchor="middle">update_weights：recover（无死槽）</text>
+<text x="40" y="206" class="tx" text-anchor="start">rollout 1</text>
+<rect x="110" y="190" width="136.85000000000002" height="24" rx="4" class="neutral"/>
+<text x="178.425" y="206" class="sm" text-anchor="middle">generate：resume 监控</text>
+<rect x="251.85000000000002" y="190" width="106.40000000000002" height="24" rx="4" class="neutral"/>
+<text x="305.05" y="206" class="sm" text-anchor="middle">4 个 engine 生成</text>
+<rect x="363.25000000000006" y="190" width="124.67000000000002" height="24" rx="4" class="ghost"/>
+<text x="425.58500000000004" y="206" class="sm" text-anchor="middle">offload：pause 监控</text>
+<rect x="492.9200000000001" y="190" width="44.45" height="24" rx="4" class="ghost"/>
+<text x="515.1450000000001" y="206" class="sm" text-anchor="middle">train</text>
+<rect x="542.3700000000001" y="190" width="99.26000000000002" height="24" rx="4" class="ghost"/>
+<text x="592.0000000000001" y="206" class="sm" text-anchor="middle">onload_weights</text>
+<rect x="646.6300000000001" y="190" width="204.89000000000004" height="24" rx="4" class="neutral"/>
+<text x="749.0750000000002" y="206" class="sm" text-anchor="middle">update_weights：recover（无死槽）</text>
+<text x="40" y="276" class="tx" text-anchor="start">rollout 2</text>
+<rect x="110" y="260" width="136.85000000000002" height="24" rx="4" class="neutral"/>
+<text x="178.425" y="276" class="sm" text-anchor="middle">generate：resume 监控</text>
+<rect x="251.85000000000002" y="260" width="150.71000000000004" height="24" rx="4" class="acc2"/>
+<text x="327.20500000000004" y="276" class="sm" text-anchor="middle">注入 simulate_crash(e0)</text>
+<rect x="407.56000000000006" y="260" width="73.22000000000001" height="24" rx="4" class="acc2"/>
+<text x="444.1700000000001" y="276" class="sm" text-anchor="middle">CI 等 20 s</text>
+<rect x="485.7800000000001" y="260" width="106.40000000000002" height="24" rx="4" class="neutral"/>
+<text x="538.9800000000001" y="276" class="sm" text-anchor="middle">3 个 engine 生成</text>
+<rect x="597.1800000000001" y="260" width="97.58000000000001" height="24" rx="4" class="ghost"/>
+<text x="645.97" y="276" class="sm" text-anchor="middle">offload：pause</text>
+<rect x="699.7600000000001" y="260" width="44.45" height="24" rx="4" class="ghost"/>
+<text x="721.9850000000001" y="276" class="sm" text-anchor="middle">train</text>
+<rect x="749.2100000000002" y="260" width="99.26000000000002" height="24" rx="4" class="ghost"/>
+<text x="798.8400000000001" y="276" class="sm" text-anchor="middle">onload_weights</text>
+<rect x="853.4700000000001" y="260" width="279.6500000000001" height="24" rx="4" class="acc1"/>
+<text x="993.2950000000002" y="276" class="sm" text-anchor="middle">update_weights：recover e0 → connect → 推送</text>
+<text x="110" y="310" class="sm" text-anchor="start">监控线程</text>
+<rect x="170" y="294" width="136.22000000000003" height="24" rx="4" class="ghost"/>
+<text x="238.11" y="310" class="sm" text-anchor="middle">其余检查 + ≤ 5 s 间隔</text>
+<rect x="311.22" y="294" width="194.39000000000004" height="24" rx="4" class="acc2"/>
+<text x="408.4150000000001" y="310" class="sm" text-anchor="middle">health_generate 失败（≤ 10 s）</text>
+<rect x="510.61000000000007" y="294" width="294.55999999999995" height="24" rx="4" class="acc2"/>
+<text x="657.8900000000001" y="310" class="sm" text-anchor="middle">shutdown + ray.kill 整个逻辑 engine → 槽位 None</text>
+<text x="170" y="338" class="sm" text-anchor="start">检测上界 5 + 10 = 15 s（其余检查可忽略时；一般 ≤ 5 + 4 × 10 = 45 s）&lt; CI 等待 5 + 10 + 5 = 20 s</text>
+<text x="170" y="356" class="sm" text-anchor="start">simulate_crash 只经 shutdown 注销 router worker 并杀掉 SGLang 子进程树；Ray actor 由监控随后 ray.kill</text>
+<rect x="40" y="370" width="740" height="40" rx="5" class="acc2"/>
+<text x="52" y="386" class="sm" text-anchor="start">num_rollout = 3：注入落在最后一轮，重建与推送之后再无 rollout，</text>
+<text x="52" y="402" class="sm" text-anchor="start">重建的 e0 服务过的轮数 = 0；用例证明降容完成与更新边界重建，不证明重建后能正常服务</text>
+<rect x="800" y="328" width="340" height="160" rx="8" class="neutral"/>
+<text x="812" y="348" class="tx" text-anchor="start">三组参数：检测上界与 CI 等待</text>
+<text x="812" y="368" class="sm" text-anchor="start">来源</text>
+<text x="950" y="368" class="sm" text-anchor="start">间隔 / 超时 / 首等</text>
+<text x="1100" y="368" class="sm" text-anchor="end">上界</text>
+<text x="1130" y="368" class="sm" text-anchor="end">等待</text>
+<rect x="808" y="375" width="324" height="21" rx="3" class="ghost"/>
+<text x="814" y="390" class="sm" text-anchor="start">故障注入 E2E</text>
+<text x="950" y="390" class="sm" text-anchor="start">5 / 10 / 0</text>
+<text x="1100" y="390" class="sm" text-anchor="end">15 s</text>
+<text x="1130" y="390" class="sm" text-anchor="end">20 s</text>
+<rect x="808" y="399" width="324" height="21" rx="3" class="ghost"/>
+<text x="814" y="414" class="sm" text-anchor="start">arguments.py 默认</text>
+<text x="950" y="414" class="sm" text-anchor="start">30 / 30 / 0</text>
+<text x="1100" y="414" class="sm" text-anchor="end">60 s</text>
+<text x="1130" y="414" class="sm" text-anchor="end">65 s</text>
+<rect x="808" y="423" width="324" height="21" rx="3" class="acc2"/>
+<text x="814" y="438" class="sm" text-anchor="start">fault-tolerance.md</text>
+<text x="950" y="438" class="sm" text-anchor="start">10 / 5 / 300</text>
+<text x="1100" y="438" class="sm" text-anchor="end">15 s</text>
+<text x="1130" y="438" class="sm" text-anchor="end">20 s</text>
+<text x="812" y="474" class="sm" text-anchor="start">文档与实现不一致，以实现为准；first-wait 默认 0</text>
+<rect x="24" y="516" width="1132" height="344" rx="10" class="panel"/>
+<text x="40" y="540" class="pt" text-anchor="start">② 共同恢复切点：num_rollout 6、--save-interval 2 → 在 rollout 1、3、5 保存；先写 trainer，再写 DataSource</text>
+<rect x="110" y="558" width="54" height="26" rx="4" class="ghost"/>
+<text x="137" y="575" class="sm" text-anchor="middle">id 0</text>
+<rect x="172" y="558" width="54" height="26" rx="4" class="acc1"/>
+<text x="199" y="575" class="sm" text-anchor="middle">id 1 存</text>
+<rect x="234" y="558" width="54" height="26" rx="4" class="ghost"/>
+<text x="261" y="575" class="sm" text-anchor="middle">id 2</text>
+<rect x="296" y="558" width="54" height="26" rx="4" class="acc1"/>
+<text x="323" y="575" class="sm" text-anchor="middle">id 3 存</text>
+<rect x="358" y="558" width="54" height="26" rx="4" class="ghost"/>
+<text x="385" y="575" class="sm" text-anchor="middle">id 4</text>
+<rect x="420" y="558" width="54" height="26" rx="4" class="acc1"/>
+<text x="447" y="575" class="sm" text-anchor="middle">id 5 存</text>
+<text x="40" y="575" class="sm" text-anchor="start">保存点</text>
+<text x="492" y="575" class="sm" text-anchor="start">should_run_periodic_action：(id+1) % interval == 0、epoch 边界，或最后一轮</text>
+<rect x="40" y="604" width="330" height="44" rx="5" class="neutral"/>
+<text x="52" y="622" class="tx" text-anchor="start">正常：id 3 两份文件都在</text>
+<text x="52" y="640" class="sm" text-anchor="start">trainer 最新 iteration 3、DataSource 有 3</text>
+<path d="M372 626 L412 626" class="main"/>
+<rect x="416" y="604" width="724" height="44" rx="5" class="acc1"/>
+<text x="428" y="630" class="tx" text-anchor="start">start_rollout_id = 4，load(3)，游标恢复</text>
+<rect x="40" y="660" width="330" height="44" rx="5" class="neutral"/>
+<text x="52" y="678" class="tx" text-anchor="start">撕裂：trainer 3 已写、DataSource 3 未写</text>
+<text x="52" y="696" class="sm" text-anchor="start">trainer 最新 iteration 3、DataSource 只有 1</text>
+<path d="M372 682 L412 682" class="main"/>
+<rect x="416" y="660" width="724" height="44" rx="5" class="acc2"/>
+<text x="428" y="686" class="tx" text-anchor="start">start_rollout_id = 4，load(3) 找不到 → 只记日志，游标从 0 重来</text>
+<rect x="40" y="716" width="330" height="44" rx="5" class="neutral"/>
+<text x="52" y="734" class="tx" text-anchor="start">人工退回共同切点</text>
+<text x="52" y="752" class="sm" text-anchor="start">--ckpt-step 1（两份文件都在的最大 id）</text>
+<path d="M372 738 L412 738" class="main"/>
+<rect x="416" y="716" width="724" height="44" rx="5" class="acc1"/>
+<text x="428" y="742" class="tx" text-anchor="start">start_rollout_id = 2，load(1)，游标恢复</text>
+<rect x="40" y="772" width="330" height="44" rx="5" class="neutral"/>
+<text x="52" y="790" class="tx" text-anchor="start">异步保存：DataSource 3 已写、trainer 3 未 finalize</text>
+<text x="52" y="808" class="sm" text-anchor="start">tracker 仍指向 1（依赖侧：finalize 后才更新）</text>
+<path d="M372 794 L412 794" class="main"/>
+<rect x="416" y="772" width="724" height="44" rx="5" class="neutral"/>
+<text x="428" y="798" class="tx" text-anchor="start">start_rollout_id = 2，load(1)，两边一致</text>
+<text x="40" y="842" class="sm" text-anchor="start">游标归零的后果：sample_offset、epoch、sample/group 计数都回到 0，重新从第 0 个 epoch 的开头取 prompt，身份编号与此前样本重复；buffer 里的 partial 样本本来就不进 checkpoint</text>
+<text x="24" y="880" class="cap" text-anchor="start">阅读顺序：① 标死与重建分属两个时刻，恢复只在下一次权重更新时发生 → ② 续训只看 trainer 的 iteration，DataSource 缺文件不拒绝启动。</text>
+</svg>

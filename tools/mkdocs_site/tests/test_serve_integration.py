@@ -28,6 +28,14 @@ def _free_port() -> int:
         return int(listener.getsockname()[1])
 
 
+def _assert_port_rebindable(port: int) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        # Match HTTPServer.allow_reuse_address so macOS TIME_WAIT does not
+        # masquerade as a still-running preview process.
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port))
+
+
 def _wait_status(url: str, expected: int, timeout: float = 10.0) -> str:
     deadline = time.monotonic() + timeout
     last_status = 0
@@ -160,8 +168,7 @@ def test_serve_refreshes_create_rename_delete_and_navigation(
 
     assert result == 0
     assert evidence == ["create", "rename", "delete"]
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-        listener.bind(("127.0.0.1", port))
+    _assert_port_rebindable(port)
 
 
 def test_serve_retries_after_candidate_and_recovery_readiness_failures(
@@ -230,8 +237,7 @@ def test_serve_retries_after_candidate_and_recovery_readiness_failures(
             elif sleep_calls == 3:
                 assert all(child.poll() is not None for child in children)
                 assert len(list((repo / ".mkdocs-cache").glob(".serve-backup-*"))) == 1
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-                    listener.bind(("127.0.0.1", port))
+                _assert_port_rebindable(port)
                 (domain / "21_second.md").write_text(
                     "# Second healthy refresh\n", encoding="utf-8"
                 )
@@ -273,8 +279,7 @@ def test_serve_retries_after_candidate_and_recovery_readiness_failures(
         assert len(children) == 3
         assert all(child.poll() is not None for child in children)
         assert not list((repo / ".mkdocs-cache").glob(".serve-backup-*"))
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-            listener.bind(("127.0.0.1", port))
+        _assert_port_rebindable(port)
     finally:
         for child in children:
             cli._stop_mkdocs(child)

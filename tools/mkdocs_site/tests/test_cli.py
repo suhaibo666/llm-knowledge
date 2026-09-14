@@ -498,6 +498,9 @@ def test_refresh_stops_unready_recovery_and_keeps_backup_for_diagnostics(
         stopped = recovery.poll() is not None
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                # Match HTTPServer.allow_reuse_address so macOS TIME_WAIT does
+                # not masquerade as a still-running preview process.
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 listener.bind(("127.0.0.1", port))
             port_rebound = True
         except OSError:

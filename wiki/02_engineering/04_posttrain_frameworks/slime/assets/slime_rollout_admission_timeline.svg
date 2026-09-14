@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" role="img" aria-labelledby="title desc">
+<title id="title">slime rollout 接收循环：四个候选组如何得到两个训练组，以及 fully-async 的池与队列</title>
+<desc id="desc">上方时间线展示 over-sampling 提交、FIRST_COMPLETED 接收、动态过滤拒绝、目标满后 abort 与 partial 回收，以及 remaining_batch_size 与 len(data) 两个计数器；下方展示连续拒绝触发补采、with_fallback 兜底与 fully-async 的池容量、qsize 闸门和按缺口 drain。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11px;fill:#38414D}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .bar{fill:#E8ECF2;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .tick{stroke:#D9DEE7;stroke-width:1;stroke-dasharray:3 3}
+</style><rect width="1180" height="900" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">默认接收循环：四个候选组、两个计数器、一次 abort</text>
+<text x="24" y="56" class="su" text-anchor="start">rollout_batch_size=2 · over_sampling_batch_size=4 · n_samples_per_prompt=4 · 信号量 = sglang_server_concurrency 512 × 2 engines = 1024（本例 16 个请求不受限）</text>
+<rect x="24" y="76" width="1132" height="400" rx="10" class="panel"/>
+<text x="40" y="100" class="pt" text-anchor="start">generate_rollout_async：接收单位是整组（4 条 Sample 全部生成并打完 reward），FIRST_COMPLETED 取最先完成的组</text>
+<text x="221" y="124" class="sm" text-anchor="middle">t0</text>
+<path d="M160 132 L160 276" class="tick"/>
+<text x="343" y="124" class="sm" text-anchor="middle">t1</text>
+<path d="M282 132 L282 276" class="tick"/>
+<text x="465" y="124" class="sm" text-anchor="middle">t2</text>
+<path d="M404 132 L404 276" class="tick"/>
+<text x="587" y="124" class="sm" text-anchor="middle">t3</text>
+<path d="M526 132 L526 276" class="tick"/>
+<text x="709" y="124" class="sm" text-anchor="middle">t4</text>
+<path d="M648 132 L648 276" class="tick"/>
+<text x="150" y="151" class="sm" text-anchor="end">A · 样本 0–3</text>
+<text x="150" y="164" class="sm" text-anchor="end">reward 1 0 0 1</text>
+<rect x="164" y="140" width="358" height="22" rx="4" class="bar"/>
+<rect x="412" y="140" width="106" height="22" rx="4" class="acc1"/>
+<text x="465" y="155" class="sm" text-anchor="middle">完成 → 通过</text>
+<text x="150" y="185" class="sm" text-anchor="end">B · 样本 4–7</text>
+<text x="150" y="198" class="sm" text-anchor="end">reward 1 1 1 1</text>
+<rect x="164" y="174" width="236" height="22" rx="4" class="bar"/>
+<rect x="290" y="174" width="106" height="22" rx="4" class="acc2"/>
+<text x="343" y="189" class="sm" text-anchor="middle">完成 → 拒绝</text>
+<text x="150" y="219" class="sm" text-anchor="end">C · 样本 8–11</text>
+<text x="150" y="232" class="sm" text-anchor="end">reward 0 0 1 0</text>
+<rect x="164" y="208" width="480" height="22" rx="4" class="bar"/>
+<rect x="534" y="208" width="106" height="22" rx="4" class="acc1"/>
+<text x="587" y="223" class="sm" text-anchor="middle">完成 → 通过</text>
+<text x="150" y="253" class="sm" text-anchor="end">D · 样本 12–15</text>
+<text x="150" y="266" class="sm" text-anchor="end">reward 1 0 1 1</text>
+<rect x="164" y="242" width="602" height="22" rx="4" class="bar"/>
+<rect x="656" y="242" width="106" height="22" rx="4" class="acc2"/>
+<text x="709" y="257" class="sm" text-anchor="middle">在途 → abort</text>
+<text x="150" y="304" class="mono" text-anchor="end">remaining_batch_size</text>
+<rect x="168" y="288" width="106" height="22" rx="4" class="cell"/>
+<text x="221" y="303" class="mono" text-anchor="middle">4</text>
+<rect x="290" y="288" width="106" height="22" rx="4" class="acc1"/>
+<text x="343" y="303" class="mono" text-anchor="middle">3</text>
+<rect x="412" y="288" width="106" height="22" rx="4" class="cell"/>
+<text x="465" y="303" class="mono" text-anchor="middle">3</text>
+<rect x="534" y="288" width="106" height="22" rx="4" class="cell"/>
+<text x="587" y="303" class="mono" text-anchor="middle">3</text>
+<rect x="656" y="288" width="106" height="22" rx="4" class="cell"/>
+<text x="709" y="303" class="mono" text-anchor="middle">3</text>
+<text x="150" y="330" class="mono" text-anchor="end">len(data)</text>
+<rect x="168" y="314" width="106" height="22" rx="4" class="cell"/>
+<text x="221" y="329" class="mono" text-anchor="middle">0</text>
+<rect x="290" y="314" width="106" height="22" rx="4" class="cell"/>
+<text x="343" y="329" class="mono" text-anchor="middle">0</text>
+<rect x="412" y="314" width="106" height="22" rx="4" class="acc1"/>
+<text x="465" y="329" class="mono" text-anchor="middle">1</text>
+<rect x="534" y="314" width="106" height="22" rx="4" class="acc1"/>
+<text x="587" y="329" class="mono" text-anchor="middle">2</text>
+<rect x="656" y="314" width="106" height="22" rx="4" class="cell"/>
+<text x="709" y="329" class="mono" text-anchor="middle">2</text>
+<text x="150" y="356" class="mono" text-anchor="end">pendings</text>
+<rect x="168" y="340" width="106" height="22" rx="4" class="cell"/>
+<text x="221" y="355" class="mono" text-anchor="middle">4</text>
+<rect x="290" y="340" width="106" height="22" rx="4" class="cell"/>
+<text x="343" y="355" class="mono" text-anchor="middle">3</text>
+<rect x="412" y="340" width="106" height="22" rx="4" class="cell"/>
+<text x="465" y="355" class="mono" text-anchor="middle">2</text>
+<rect x="534" y="340" width="106" height="22" rx="4" class="cell"/>
+<text x="587" y="355" class="mono" text-anchor="middle">1</text>
+<rect x="656" y="340" width="106" height="22" rx="4" class="cell"/>
+<text x="709" y="355" class="mono" text-anchor="middle">0</text>
+<text x="221" y="388" class="sm" text-anchor="middle">提交一整波</text>
+<text x="221" y="402" class="sm" text-anchor="middle">4 组 → pendings</text>
+<text x="343" y="388" class="sm" text-anchor="middle">zero-std 拒绝</text>
+<text x="343" y="402" class="sm" text-anchor="middle">remaining −1</text>
+<text x="465" y="388" class="sm" text-anchor="middle">入选</text>
+<text x="465" y="402" class="sm" text-anchor="middle">len(data) +1</text>
+<text x="587" y="388" class="sm" text-anchor="middle">入选</text>
+<text x="587" y="402" class="sm" text-anchor="middle">len(data) +1</text>
+<text x="709" y="388" class="sm" text-anchor="middle">目标满 → abort</text>
+<text x="709" y="402" class="sm" text-anchor="middle">等 1 个 pending</text>
+<rect x="800" y="116" width="340" height="196" rx="8" class="ghost"/>
+<text x="812" y="136" class="pt" text-anchor="start">两个计数器的分工</text>
+<text x="812" y="156" class="tx" text-anchor="start">remaining_batch_size：已提交且未被拒的候选组数；</text>
+<text x="812" y="173" class="tx" text-anchor="start">低于 target 2 时再补一整波 4 组，不是只补缺口。</text>
+<text x="812" y="193" class="tx" text-anchor="start">len(data)：已入选组数；达到 2 即退出并 abort。</text>
+<text x="812" y="213" class="tx" text-anchor="start">B 被拒：remaining 4 → 3，仍 ≥ 2，不补采。</text>
+<text x="812" y="233" class="tx" text-anchor="start">入选 A、C，按 group[0].index 排序后交训练。</text>
+<text x="812" y="253" class="tx" text-anchor="start">D 在途：仅 partial_rollout 开时整组回 buffer，</text>
+<text x="812" y="270" class="tx" text-anchor="start">否则丢弃；有 response 的 Sample 记 start_rollout_id。</text>
+<text x="812" y="294" class="cap" text-anchor="start">信号量 1024 按请求数限流，不按 token 或 KV 预算。</text>
+<rect x="800" y="324" width="340" height="78" rx="8" class="acc2"/>
+<text x="812" y="344" class="tx" text-anchor="start">abort 不是精确取消：对默认 router 全部 worker</text>
+<text x="812" y="361" class="tx" text-anchor="start">发 abort_all，再查 /v1/loads 直到 0；</text>
+<text x="812" y="378" class="tx" text-anchor="start">load 查询异常只告警并返回，不证明已排空。</text>
+<text x="812" y="395" class="tx" text-anchor="start">超出目标的已完成组不训练也不回收（源码 NOTE）。</text>
+<rect x="24" y="490" width="640" height="396" rx="10" class="panel"/>
+<text x="40" y="514" class="pt" text-anchor="start">同一循环的两条变体（8 个候选组，A B C 均为零方差）</text>
+<text x="40" y="540" class="tx" text-anchor="start">① check_reward_nonzero_std：连续拒绝 → remaining 低于 2 → 再提交一整波</text>
+<rect x="40" y="548" width="70" height="46" rx="4" class="cell"/>
+<text x="75" y="564" class="sm" text-anchor="middle">+4</text>
+<text x="75" y="580" class="mono" text-anchor="middle">r=4 d=0</text>
+<rect x="114" y="548" width="70" height="46" rx="4" class="acc2"/>
+<text x="149" y="564" class="sm" text-anchor="middle">B 拒</text>
+<text x="149" y="580" class="mono" text-anchor="middle">r=3 d=0</text>
+<rect x="188" y="548" width="70" height="46" rx="4" class="acc2"/>
+<text x="223" y="564" class="sm" text-anchor="middle">A 拒</text>
+<text x="223" y="580" class="mono" text-anchor="middle">r=2 d=0</text>
+<rect x="262" y="548" width="70" height="46" rx="4" class="acc2"/>
+<text x="297" y="564" class="sm" text-anchor="middle">C 拒</text>
+<text x="297" y="580" class="mono" text-anchor="middle">r=1 d=0</text>
+<rect x="336" y="548" width="70" height="46" rx="4" class="cell"/>
+<text x="371" y="564" class="sm" text-anchor="middle">+4</text>
+<text x="371" y="580" class="mono" text-anchor="middle">r=5 d=0</text>
+<rect x="410" y="548" width="70" height="46" rx="4" class="acc1"/>
+<text x="445" y="564" class="sm" text-anchor="middle">D 入</text>
+<text x="445" y="580" class="mono" text-anchor="middle">r=5 d=1</text>
+<rect x="484" y="548" width="70" height="46" rx="4" class="acc1"/>
+<text x="519" y="564" class="sm" text-anchor="middle">E 入</text>
+<text x="519" y="580" class="mono" text-anchor="middle">r=5 d=2</text>
+<rect x="558" y="548" width="70" height="46" rx="4" class="ghost"/>
+<text x="593" y="564" class="sm" text-anchor="middle">abort</text>
+<text x="593" y="580" class="mono" text-anchor="middle">r=5 d=2</text>
+<text x="40" y="612" class="cap" text-anchor="start">B、A、C 依次被拒，remaining 3 → 2 → 1；t3 再提交 E F G H（+4）</text>
+<text x="40" y="628" class="cap" text-anchor="start">随后 D、E 入选；abort 时 3 组在途，代价是多付一整波生成与 RM。</text>
+<text x="40" y="658" class="tx" text-anchor="start">② check_reward_nonzero_std_with_fallback：remaining ≤ target 时保留零方差组</text>
+<rect x="40" y="666" width="70" height="46" rx="4" class="cell"/>
+<text x="75" y="682" class="sm" text-anchor="middle">+4</text>
+<text x="75" y="698" class="mono" text-anchor="middle">r=4 d=0</text>
+<rect x="114" y="666" width="70" height="46" rx="4" class="acc2"/>
+<text x="149" y="682" class="sm" text-anchor="middle">B 拒</text>
+<text x="149" y="698" class="mono" text-anchor="middle">r=3 d=0</text>
+<rect x="188" y="666" width="70" height="46" rx="4" class="acc2"/>
+<text x="223" y="682" class="sm" text-anchor="middle">A 拒</text>
+<text x="223" y="698" class="mono" text-anchor="middle">r=2 d=0</text>
+<rect x="262" y="666" width="70" height="46" rx="4" class="acc1"/>
+<text x="297" y="682" class="sm" text-anchor="middle">C 兜底入</text>
+<text x="297" y="698" class="mono" text-anchor="middle">r=2 d=1</text>
+<rect x="336" y="666" width="70" height="46" rx="4" class="acc1"/>
+<text x="371" y="682" class="sm" text-anchor="middle">D 入</text>
+<text x="371" y="698" class="mono" text-anchor="middle">r=2 d=2</text>
+<rect x="410" y="666" width="70" height="46" rx="4" class="ghost"/>
+<text x="445" y="682" class="sm" text-anchor="middle">abort</text>
+<text x="445" y="698" class="mono" text-anchor="middle">r=2 d=2</text>
+<text x="40" y="730" class="cap" text-anchor="start">B、A 被拒后 remaining=2 ≤ 2，C 虽零方差仍入选（keep_when_insufficient）</text>
+<text x="40" y="746" class="cap" text-anchor="start">C、D 凑满，不再补采，abort 时 0 组在途；代价是送进一个无梯度信号的组。</text>
+<text x="40" y="782" class="cap" text-anchor="start">abort 后按 index 排序 → rollout_sample_filter_path 原地改 remove_sample</text>
+<text x="40" y="800" class="cap" text-anchor="start">→ rollout_all_samples_process_path 看到全部已完成组（含被拒者，不含在途回收者）。</text>
+<text x="40" y="824" class="cap" text-anchor="start">未接 dynamic_sampling_filter_path 时 call_dynamic_filter 恒返回 keep=True，</text>
+<text x="40" y="842" class="cap" text-anchor="start">循环退化为"取够 rollout_batch_size 个先完成的组"。</text>
+<text x="40" y="866" class="cap" text-anchor="start">蓝：入选与决定性判定；橙：拒绝、abort 与回收。灰条为在途时间；柱内 r/d 为事件后的 remaining_batch_size / len(data)。</text>
+<rect x="678" y="490" width="478" height="396" rx="10" class="panel"/>
+<text x="694" y="514" class="pt" text-anchor="start">fully-async 生产者：池容量 2，qsize 闸门 2，drain 限额 2</text>
+<text x="714" y="540" class="sm" text-anchor="middle">tick</text>
+<text x="780" y="540" class="sm" text-anchor="middle">callback 入队</text>
+<text x="856" y="540" class="sm" text-anchor="middle">补位</text>
+<text x="923" y="540" class="sm" text-anchor="middle">active</text>
+<text x="1008" y="540" class="sm" text-anchor="middle">queue</text>
+<text x="1086" y="540" class="sm" text-anchor="middle">闸门</text>
+<rect x="694" y="550" width="36" height="32" rx="4" class="cell"/>
+<text x="712" y="570" class="mono" text-anchor="middle">t0</text>
+<rect x="734" y="550" width="88" height="32" rx="4" class="cell"/>
+<text x="778" y="570" class="mono" text-anchor="middle">—</text>
+<rect x="826" y="550" width="56" height="32" rx="4" class="cell"/>
+<text x="854" y="570" class="mono" text-anchor="middle">A B</text>
+<rect x="886" y="550" width="70" height="32" rx="4" class="cell"/>
+<text x="921" y="570" class="mono" text-anchor="middle">A B</text>
+<rect x="960" y="550" width="92" height="32" rx="4" class="cell"/>
+<text x="1006" y="570" class="mono" text-anchor="middle">[]</text>
+<rect x="1056" y="550" width="56" height="32" rx="4" class="cell"/>
+<text x="1084" y="570" class="mono" text-anchor="middle">开</text>
+<rect x="694" y="590" width="36" height="32" rx="4" class="cell"/>
+<text x="712" y="610" class="mono" text-anchor="middle">t1</text>
+<rect x="734" y="590" width="88" height="32" rx="4" class="cell"/>
+<text x="778" y="610" class="mono" text-anchor="middle">A</text>
+<rect x="826" y="590" width="56" height="32" rx="4" class="cell"/>
+<text x="854" y="610" class="mono" text-anchor="middle">C</text>
+<rect x="886" y="590" width="70" height="32" rx="4" class="cell"/>
+<text x="921" y="610" class="mono" text-anchor="middle">B C</text>
+<rect x="960" y="590" width="92" height="32" rx="4" class="cell"/>
+<text x="1006" y="610" class="mono" text-anchor="middle">[A]</text>
+<rect x="1056" y="590" width="56" height="32" rx="4" class="cell"/>
+<text x="1084" y="610" class="mono" text-anchor="middle">开</text>
+<rect x="694" y="630" width="36" height="32" rx="4" class="cell"/>
+<text x="712" y="650" class="mono" text-anchor="middle">t2</text>
+<rect x="734" y="630" width="88" height="32" rx="4" class="cell"/>
+<text x="778" y="650" class="mono" text-anchor="middle">B</text>
+<rect x="826" y="630" width="56" height="32" rx="4" class="cell"/>
+<text x="854" y="650" class="mono" text-anchor="middle">—</text>
+<rect x="886" y="630" width="70" height="32" rx="4" class="cell"/>
+<text x="921" y="650" class="mono" text-anchor="middle">C</text>
+<rect x="960" y="630" width="92" height="32" rx="4" class="cell"/>
+<text x="1006" y="650" class="mono" text-anchor="middle">[A B]</text>
+<rect x="1056" y="630" width="56" height="32" rx="4" class="acc2"/>
+<text x="1084" y="650" class="mono" text-anchor="middle">关</text>
+<rect x="694" y="670" width="36" height="32" rx="4" class="cell"/>
+<text x="712" y="690" class="mono" text-anchor="middle">t3</text>
+<rect x="734" y="670" width="88" height="32" rx="4" class="cell"/>
+<text x="778" y="690" class="mono" text-anchor="middle">C</text>
+<rect x="826" y="670" width="56" height="32" rx="4" class="cell"/>
+<text x="854" y="690" class="mono" text-anchor="middle">—</text>
+<rect x="886" y="670" width="70" height="32" rx="4" class="cell"/>
+<text x="921" y="690" class="mono" text-anchor="middle">—</text>
+<rect x="960" y="670" width="92" height="32" rx="4" class="acc1"/>
+<text x="1006" y="690" class="mono" text-anchor="middle">[C]</text>
+<rect x="1056" y="670" width="56" height="32" rx="4" class="cell"/>
+<text x="1084" y="690" class="mono" text-anchor="middle">开</text>
+<rect x="694" y="722" width="446" height="64" rx="8" class="acc1"/>
+<text x="706" y="742" class="tx" text-anchor="start">t3 消费者线程 get_completed_groups(limit=2) → A B</text>
+<text x="706" y="760" class="tx" text-anchor="start">队列留下 [C] 给下一轮（"queue stays warm"）</text>
+<text x="706" y="778" class="tx" text-anchor="start">t2 闸门关：qsize 2 ≥ 2 停止补位，但在途 C 仍可完成入队</text>
+<text x="694" y="812" class="cap" text-anchor="start">队列无界：done-callback 在 loop 线程内 put，有界队列满时会冻住全部在途生成。</text>
+<text x="694" y="830" class="cap" text-anchor="start">含 ABORTED 成员的组回 data_buffer.add_samples，不进队列；异常 task 只记日志。</text>
+<text x="694" y="848" class="cap" text-anchor="start">默认动态过滤、轮末 sample filter 与 all-samples 钩子都在被替换的循环里，此处不运行。</text>
+<text x="24" y="890" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 generate_rollout_async / abort / should_drop_dynamic_filter_output / check_reward_nonzero_std(_with_fallback) / AsyncRolloutWorker._loop</text>
+</svg>

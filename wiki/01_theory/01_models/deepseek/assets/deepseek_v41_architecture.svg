@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="930" viewBox="0 0 1240 930" role="img" aria-labelledby="title desc"><title id="title">DeepSeek-V4.1-Flash 完整模型骨架与版本改动</title><desc id="desc">图文输入进入20层因果编码器与20层解码器。全局KV由编码器输出投影，单层保留独立query、SWA与MoE。Engram在第1和14层注入，DSpark为独立草稿分支。</desc><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#2A313B}.title{font-size:25px;font-weight:700}.section{font-size:19px;font-weight:700}.label{font-size:17px;font-weight:600}.small{font-size:15px}.cap{font-size:14px;fill:#596575}.neutral{fill:#fff;stroke:#C7CCD3;stroke-width:1.5}.ghost{fill:#F6F7F9;stroke:#DDE1E6;stroke-width:1.3}.acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}.acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}.arrow{fill:none;stroke:#667281;stroke-width:2}.main{stroke-width:2.5}.kv{stroke:#2563EB;stroke-width:2.5}.aux{stroke-dasharray:5 4;stroke-width:1.5}</style><defs><marker id="tip" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="#667281"/></marker><marker id="blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="#2563EB"/></marker></defs><rect width="1240" height="930" fill="white"/>
+<text x="28" y="38" class="title" text-anchor="start">DeepSeek-V4.1-Flash｜先看完整骨架，再看训推如何执行</text>
+<text x="28" y="65" class="cap" text-anchor="start">依据报告 Figure 3 重绘；层号从 0 起。A–F 对应正文的前代差异表。</text>
+<text x="28" y="106" class="section" text-anchor="start">输入与条件记忆</text>
+<text x="420" y="106" class="section" text-anchor="start">B  40 层因果主干 · hidden 5120</text>
+<text x="866" y="106" class="section" text-anchor="start">单个全局注意力层的内部</text>
+<rect x="28" y="127" width="300" height="52" rx="7" class="neutral"/>
+<text x="178" y="159.5" class="label" text-anchor="middle">文本 → Token Embedding</text>
+<rect x="28" y="209" width="300" height="87" rx="7" class="neutral"/>
+<text x="178" y="236" class="label" text-anchor="middle">A  图像 → DeepSeek-ViT</text>
+<text x="178" y="259" class="small" text-anchor="middle">32 层 · hidden 1024</text>
+<text x="178" y="282" class="small" text-anchor="middle">patch 14 · 2D-RoPE</text>
+<rect x="28" y="323" width="300" height="75" rx="7" class="neutral"/>
+<text x="178" y="355.5" class="label" text-anchor="middle">3×3 pixel-unshuffle → MLP</text>
+<text x="178" y="378.5" class="small" text-anchor="middle">视觉位置数 ÷9 → hidden 5120</text>
+<rect x="28" y="427" width="300" height="57" rx="7" class="neutral"/>
+<text x="178" y="450.5" class="label" text-anchor="middle">图文按位置合并</text>
+<text x="178" y="473.5" class="small" text-anchor="middle">联合输入 N×5120</text>
+<path d="M178 296 V323" class="arrow main" marker-end="url(#tip)"/>
+<path d="M178 398 V427" class="arrow main" marker-end="url(#tip)"/>
+<path d="M28 153 H15 V455 H28" class="arrow main" marker-end="url(#tip)"/>
+<rect x="28" y="559" width="300" height="101" rx="7" class="neutral"/>
+<text x="178" y="593" class="label" text-anchor="middle">D  Engram 条件记忆</text>
+<text x="178" y="616" class="small" text-anchor="middle">文本 n-gram → 哈希查表</text>
+<text x="178" y="639" class="small" text-anchor="middle">两模块共约 196B · FP8</text>
+<text x="340" y="483" class="cap" text-anchor="start">注入</text>
+<text x="340" y="505" class="cap" text-anchor="start">L1/L14</text>
+<rect x="402" y="127" width="385" height="288" rx="7" class="ghost"/>
+<text x="420" y="155" class="section" text-anchor="start">Causal Encoder · L0–19</text>
+<rect x="420" y="178" width="349" height="58" rx="7" class="neutral"/>
+<text x="594.5" y="213.5" class="label" text-anchor="middle">L0–1：SWA + MoE ×2</text>
+<rect x="420" y="260" width="349" height="106" rx="7" class="acc1"/>
+<text x="594.5" y="296.5" class="label" text-anchor="middle">L2–19：三组，每组 6 层</text>
+<text x="594.5" y="319.5" class="small" text-anchor="middle">Full + 5×Reuse；CSA2 比率 2</text>
+<text x="594.5" y="342.5" class="small" text-anchor="middle">Full 所在层：L2 / L8 / L14</text>
+<text x="420" y="392" class="small" text-anchor="start">所有层都保留局部 SWA，窗口 128</text>
+<path d="M595 236 V260" class="arrow main" marker-end="url(#tip)"/>
+<path d="M328 455 H384 V206 H420" class="arrow main" marker-end="url(#tip)"/>
+<rect x="420" y="442" width="349" height="59" rx="7" class="neutral"/>
+<text x="594.5" y="466.5" class="label" text-anchor="middle">最终 Encoder Hidden States</text>
+<text x="594.5" y="489.5" class="small" text-anchor="middle">蓝线：投影 decoder 全局 KV</text>
+<path d="M595 415 V442" class="arrow main" marker-end="url(#tip)"/>
+<rect x="402" y="529" width="385" height="266" rx="7" class="ghost"/>
+<text x="420" y="558" class="section" text-anchor="start">Decoder · L20–39</text>
+<rect x="420" y="580" width="349" height="62" rx="7" class="neutral"/>
+<text x="594.5" y="606" class="label" text-anchor="middle">L20–23：Full + 3×Reuse</text>
+<text x="594.5" y="629" class="small" text-anchor="middle">CSA2 比率 1；全局 KV 来源见蓝线</text>
+<rect x="420" y="670" width="349" height="91" rx="7" class="acc1"/>
+<text x="594.5" y="699" class="label" text-anchor="middle">L24–39：四组，每组 4 层</text>
+<text x="594.5" y="722" class="small" text-anchor="middle">Reindex + 3×Reuse；比率 1</text>
+<text x="594.5" y="745" class="small" text-anchor="middle">Reindex：L24 / L28 / L32 / L36</text>
+<path d="M595 501 V580" class="arrow main" marker-end="url(#tip)"/>
+<path d="M595 642 V670" class="arrow main" marker-end="url(#tip)"/>
+<path d="M769 472 H818 V612 H769" class="arrow kv" marker-end="url(#blue)"/>
+<rect x="420" y="822" width="349" height="58" rx="7" class="neutral"/>
+<text x="594.5" y="857.5" class="label" text-anchor="middle">归一化 / 输出头 → 文本 token</text>
+<path d="M595 795 V822" class="arrow main" marker-end="url(#tip)"/>
+<rect x="866" y="128" width="346" height="68" rx="7" class="neutral"/>
+<text x="1039" y="157" class="label" text-anchor="middle">本层 hidden / 4 路残差</text>
+<text x="1039" y="180" class="small" text-anchor="middle">C  Single-Pass mHC 输入混合</text>
+<rect x="866" y="226" width="346" height="63" rx="7" class="neutral"/>
+<text x="1039" y="252.5" class="label" text-anchor="middle">本层 Q + 本层 SWA KV</text>
+<text x="1039" y="275.5" class="small" text-anchor="middle">局部窗口 W=128</text>
+<rect x="866" y="319" width="346" height="77" rx="7" class="neutral"/>
+<text x="1039" y="341" class="label" text-anchor="middle">所选 global KV + 局部 KV</text>
+<text x="1039" y="364" class="small" text-anchor="middle">→ Attention → 残差更新</text>
+<text x="1039" y="387" class="small" text-anchor="middle">E  global FP4；SWA FP8</text>
+<rect x="866" y="426" width="346" height="83" rx="7" class="neutral"/>
+<text x="1039" y="451" class="label" text-anchor="middle">C  mHC 输入混合 → MoE</text>
+<text x="1039" y="474" class="small" text-anchor="middle">384 路由专家选 6 + 1 共享专家</text>
+<text x="1039" y="497" class="small" text-anchor="middle">专家中间维 2304</text>
+<rect x="866" y="539" width="346" height="55" rx="7" class="neutral"/>
+<text x="1039" y="573" class="label" text-anchor="middle">残差更新 → 下一层</text>
+<path d="M1039 196 V226" class="arrow main" marker-end="url(#tip)"/>
+<path d="M1039 289 V319" class="arrow main" marker-end="url(#tip)"/>
+<path d="M1039 396 V426" class="arrow main" marker-end="url(#tip)"/>
+<path d="M1039 509 V539" class="arrow main" marker-end="url(#tip)"/>
+<rect x="866" y="627" width="346" height="99" rx="7" class="neutral"/>
+<text x="1039" y="660" class="label" text-anchor="middle">B  decoder 检索分工</text>
+<text x="1039" y="683" class="small" text-anchor="middle">首个 Full：建 KV + 索引 + 候选池</text>
+<text x="1039" y="706" class="small" text-anchor="middle">Reindex：池内重选；Reuse：沿用</text>
+<path d="M1039 627 V611 H846 V355 H866" class="arrow aux" marker-end="url(#tip)"/>
+<rect x="866" y="767" width="346" height="107" rx="7" class="neutral"/>
+<text x="1039" y="792.5" class="label" text-anchor="middle">F  DSpark 草稿分支</text>
+<text x="1039" y="815.5" class="small" text-anchor="middle">3 层 → 5 个草稿位置 → 目标验证</text>
+<text x="1039" y="838.5" class="small" text-anchor="middle">前代正式权重已含 DSpark</text>
+<text x="1039" y="861.5" class="small" text-anchor="middle">本次明确训练与调度协同</text>
+<path d="M787 737 H824 V820 H866" class="arrow aux" marker-end="url(#tip)"/>
+<path d="M328 609 H366 V325 H420" class="arrow aux" marker-end="url(#tip)"/>
+<path d="M366 325 V220 H420" class="arrow aux" marker-end="url(#tip)"/>
+<text x="28" y="711" class="section" text-anchor="start">读图提示</text>
+<text x="28" y="743" class="small" text-anchor="start">主干箭头展示完整因果计算关系。</text>
+<text x="28" y="772" class="small" text-anchor="start">长 prompt 的 prefill 可跳过大部分</text>
+<text x="28" y="797" class="small" text-anchor="start">decoder 计算，但须重建尾部 SWA。</text>
+<text x="28" y="826" class="small" text-anchor="start">生成新 token 时仍经过全部 40 层。</text>
+<text x="28" y="907" class="cap" text-anchor="start">来源：HF deepseek-ai/DeepSeek-V4.1-Flash @ fb2764a5cf32 · Report §2 / Fig.3 / §4.2.1 + config.json；不是生产调度实测图。</text>
+</svg>

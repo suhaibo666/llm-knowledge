@@ -1,0 +1,610 @@
+<svg id="marlin-warp-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 886" role="img" aria-labelledby="mw-title mw-desc"><title id="mw-title">Marlin repack 之后一个 16×64 tile 的 warp/lane 归属与 nibble 落位</title><desc id="mw-desc">两根轴联合决定逐格归属：横轴是 tile 内的输出通道 n，纵轴是 tile 内的归约维 k。每格只标持有该 4 bit 权重的 lane 号；网格下方以 warp 0 的 lane 5 为例展开它的八个 (k, n)、输出 uint32 的八个 nibble 槽位与输出下标。前提为 num_bits=4、is_a_8bit=false、has_perm=false。</desc><style>#marlin-warp-svg text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#0f172a}#marlin-warp-svg .title{font-size:20px;font-weight:600}#marlin-warp-svg .body{font-size:15px}#marlin-warp-svg .small{font-size:13px;fill:#475569}#marlin-warp-svg .tiny{font-size:10px;fill:#334155}#marlin-warp-svg .neutral{fill:#fff;stroke:#64748b}#marlin-warp-svg .ghost{fill:#f8fafc;stroke:#94a3b8}#marlin-warp-svg .acc1{fill:#dbeafe;stroke:#2563eb}#marlin-warp-svg .acc2{fill:#ffedd5;stroke:#ea580c}</style><rect width="1080" height="886" fill="white"/>
+<text x="24" y="32" class="title">一个 16×64 repack tile：每格 (k, n) 归哪条 lane，落到哪个 nibble</text>
+<text x="24" y="56" class="small">前提：num_bits=4、pack_factor=8、is_a_8bit=false、has_perm=false（无 act-order）；tile 内 1024 个 4 bit 权重压成 128 个 uint32。</text>
+<text x="24" y="90" class="body">warp 0 的 16 列（n = 0..15）：格内数字是持有该权重的 lane 号</text>
+<text x="286" y="116" class="small" text-anchor="middle">n（tile 内输出通道）</text>
+<text x="528" y="116" class="small">其余三个 warp</text>
+<text x="83.5" y="136" class="tiny" text-anchor="middle">0</text>
+<text x="110.5" y="136" class="tiny" text-anchor="middle">1</text>
+<text x="137.5" y="136" class="tiny" text-anchor="middle">2</text>
+<text x="164.5" y="136" class="tiny" text-anchor="middle">3</text>
+<text x="191.5" y="136" class="tiny" text-anchor="middle">4</text>
+<text x="218.5" y="136" class="tiny" text-anchor="middle">5</text>
+<text x="245.5" y="136" class="tiny" text-anchor="middle">6</text>
+<text x="272.5" y="136" class="tiny" text-anchor="middle">7</text>
+<text x="299.5" y="136" class="tiny" text-anchor="middle">8</text>
+<text x="326.5" y="136" class="tiny" text-anchor="middle">9</text>
+<text x="353.5" y="136" class="tiny" text-anchor="middle">10</text>
+<text x="380.5" y="136" class="tiny" text-anchor="middle">11</text>
+<text x="407.5" y="136" class="tiny" text-anchor="middle">12</text>
+<text x="434.5" y="136" class="tiny" text-anchor="middle">13</text>
+<text x="461.5" y="136" class="tiny" text-anchor="middle">14</text>
+<text x="488.5" y="136" class="tiny" text-anchor="middle">15</text>
+<text x="62" y="158" class="tiny" text-anchor="end">k=0</text>
+<rect x="70" y="142" width="27" height="22" class="acc1"/>
+<text x="83.5" y="158" class="tiny" text-anchor="middle">0</text>
+<rect x="97" y="142" width="27" height="22" class="acc1"/>
+<text x="110.5" y="158" class="tiny" text-anchor="middle">4</text>
+<rect x="124" y="142" width="27" height="22" class="acc1"/>
+<text x="137.5" y="158" class="tiny" text-anchor="middle">8</text>
+<rect x="151" y="142" width="27" height="22" class="acc1"/>
+<text x="164.5" y="158" class="tiny" text-anchor="middle">12</text>
+<rect x="178" y="142" width="27" height="22" class="acc1"/>
+<text x="191.5" y="158" class="tiny" text-anchor="middle">16</text>
+<rect x="205" y="142" width="27" height="22" class="acc1"/>
+<text x="218.5" y="158" class="tiny" text-anchor="middle">20</text>
+<rect x="232" y="142" width="27" height="22" class="acc1"/>
+<text x="245.5" y="158" class="tiny" text-anchor="middle">24</text>
+<rect x="259" y="142" width="27" height="22" class="acc1"/>
+<text x="272.5" y="158" class="tiny" text-anchor="middle">28</text>
+<rect x="286" y="142" width="27" height="22" class="acc1"/>
+<text x="299.5" y="158" class="tiny" text-anchor="middle">0</text>
+<rect x="313" y="142" width="27" height="22" class="acc1"/>
+<text x="326.5" y="158" class="tiny" text-anchor="middle">4</text>
+<rect x="340" y="142" width="27" height="22" class="acc1"/>
+<text x="353.5" y="158" class="tiny" text-anchor="middle">8</text>
+<rect x="367" y="142" width="27" height="22" class="acc1"/>
+<text x="380.5" y="158" class="tiny" text-anchor="middle">12</text>
+<rect x="394" y="142" width="27" height="22" class="acc1"/>
+<text x="407.5" y="158" class="tiny" text-anchor="middle">16</text>
+<rect x="421" y="142" width="27" height="22" class="acc1"/>
+<text x="434.5" y="158" class="tiny" text-anchor="middle">20</text>
+<rect x="448" y="142" width="27" height="22" class="acc1"/>
+<text x="461.5" y="158" class="tiny" text-anchor="middle">24</text>
+<rect x="475" y="142" width="27" height="22" class="acc1"/>
+<text x="488.5" y="158" class="tiny" text-anchor="middle">28</text>
+<text x="62" y="180" class="tiny" text-anchor="end">k=1</text>
+<rect x="70" y="164" width="27" height="22" class="acc1"/>
+<text x="83.5" y="180" class="tiny" text-anchor="middle">0</text>
+<rect x="97" y="164" width="27" height="22" class="acc1"/>
+<text x="110.5" y="180" class="tiny" text-anchor="middle">4</text>
+<rect x="124" y="164" width="27" height="22" class="acc1"/>
+<text x="137.5" y="180" class="tiny" text-anchor="middle">8</text>
+<rect x="151" y="164" width="27" height="22" class="acc1"/>
+<text x="164.5" y="180" class="tiny" text-anchor="middle">12</text>
+<rect x="178" y="164" width="27" height="22" class="acc1"/>
+<text x="191.5" y="180" class="tiny" text-anchor="middle">16</text>
+<rect x="205" y="164" width="27" height="22" class="acc1"/>
+<text x="218.5" y="180" class="tiny" text-anchor="middle">20</text>
+<rect x="232" y="164" width="27" height="22" class="acc1"/>
+<text x="245.5" y="180" class="tiny" text-anchor="middle">24</text>
+<rect x="259" y="164" width="27" height="22" class="acc1"/>
+<text x="272.5" y="180" class="tiny" text-anchor="middle">28</text>
+<rect x="286" y="164" width="27" height="22" class="acc1"/>
+<text x="299.5" y="180" class="tiny" text-anchor="middle">0</text>
+<rect x="313" y="164" width="27" height="22" class="acc1"/>
+<text x="326.5" y="180" class="tiny" text-anchor="middle">4</text>
+<rect x="340" y="164" width="27" height="22" class="acc1"/>
+<text x="353.5" y="180" class="tiny" text-anchor="middle">8</text>
+<rect x="367" y="164" width="27" height="22" class="acc1"/>
+<text x="380.5" y="180" class="tiny" text-anchor="middle">12</text>
+<rect x="394" y="164" width="27" height="22" class="acc1"/>
+<text x="407.5" y="180" class="tiny" text-anchor="middle">16</text>
+<rect x="421" y="164" width="27" height="22" class="acc1"/>
+<text x="434.5" y="180" class="tiny" text-anchor="middle">20</text>
+<rect x="448" y="164" width="27" height="22" class="acc1"/>
+<text x="461.5" y="180" class="tiny" text-anchor="middle">24</text>
+<rect x="475" y="164" width="27" height="22" class="acc1"/>
+<text x="488.5" y="180" class="tiny" text-anchor="middle">28</text>
+<text x="62" y="202" class="tiny" text-anchor="end">k=2</text>
+<rect x="70" y="186" width="27" height="22" class="neutral"/>
+<text x="83.5" y="202" class="tiny" text-anchor="middle">1</text>
+<rect x="97" y="186" width="27" height="22" class="acc2"/>
+<text x="110.5" y="202" class="tiny" text-anchor="middle">5</text>
+<rect x="124" y="186" width="27" height="22" class="neutral"/>
+<text x="137.5" y="202" class="tiny" text-anchor="middle">9</text>
+<rect x="151" y="186" width="27" height="22" class="neutral"/>
+<text x="164.5" y="202" class="tiny" text-anchor="middle">13</text>
+<rect x="178" y="186" width="27" height="22" class="neutral"/>
+<text x="191.5" y="202" class="tiny" text-anchor="middle">17</text>
+<rect x="205" y="186" width="27" height="22" class="neutral"/>
+<text x="218.5" y="202" class="tiny" text-anchor="middle">21</text>
+<rect x="232" y="186" width="27" height="22" class="neutral"/>
+<text x="245.5" y="202" class="tiny" text-anchor="middle">25</text>
+<rect x="259" y="186" width="27" height="22" class="neutral"/>
+<text x="272.5" y="202" class="tiny" text-anchor="middle">29</text>
+<rect x="286" y="186" width="27" height="22" class="neutral"/>
+<text x="299.5" y="202" class="tiny" text-anchor="middle">1</text>
+<rect x="313" y="186" width="27" height="22" class="acc2"/>
+<text x="326.5" y="202" class="tiny" text-anchor="middle">5</text>
+<rect x="340" y="186" width="27" height="22" class="neutral"/>
+<text x="353.5" y="202" class="tiny" text-anchor="middle">9</text>
+<rect x="367" y="186" width="27" height="22" class="neutral"/>
+<text x="380.5" y="202" class="tiny" text-anchor="middle">13</text>
+<rect x="394" y="186" width="27" height="22" class="neutral"/>
+<text x="407.5" y="202" class="tiny" text-anchor="middle">17</text>
+<rect x="421" y="186" width="27" height="22" class="neutral"/>
+<text x="434.5" y="202" class="tiny" text-anchor="middle">21</text>
+<rect x="448" y="186" width="27" height="22" class="neutral"/>
+<text x="461.5" y="202" class="tiny" text-anchor="middle">25</text>
+<rect x="475" y="186" width="27" height="22" class="neutral"/>
+<text x="488.5" y="202" class="tiny" text-anchor="middle">29</text>
+<text x="62" y="224" class="tiny" text-anchor="end">k=3</text>
+<rect x="70" y="208" width="27" height="22" class="neutral"/>
+<text x="83.5" y="224" class="tiny" text-anchor="middle">1</text>
+<rect x="97" y="208" width="27" height="22" class="acc2"/>
+<text x="110.5" y="224" class="tiny" text-anchor="middle">5</text>
+<rect x="124" y="208" width="27" height="22" class="neutral"/>
+<text x="137.5" y="224" class="tiny" text-anchor="middle">9</text>
+<rect x="151" y="208" width="27" height="22" class="neutral"/>
+<text x="164.5" y="224" class="tiny" text-anchor="middle">13</text>
+<rect x="178" y="208" width="27" height="22" class="neutral"/>
+<text x="191.5" y="224" class="tiny" text-anchor="middle">17</text>
+<rect x="205" y="208" width="27" height="22" class="neutral"/>
+<text x="218.5" y="224" class="tiny" text-anchor="middle">21</text>
+<rect x="232" y="208" width="27" height="22" class="neutral"/>
+<text x="245.5" y="224" class="tiny" text-anchor="middle">25</text>
+<rect x="259" y="208" width="27" height="22" class="neutral"/>
+<text x="272.5" y="224" class="tiny" text-anchor="middle">29</text>
+<rect x="286" y="208" width="27" height="22" class="neutral"/>
+<text x="299.5" y="224" class="tiny" text-anchor="middle">1</text>
+<rect x="313" y="208" width="27" height="22" class="acc2"/>
+<text x="326.5" y="224" class="tiny" text-anchor="middle">5</text>
+<rect x="340" y="208" width="27" height="22" class="neutral"/>
+<text x="353.5" y="224" class="tiny" text-anchor="middle">9</text>
+<rect x="367" y="208" width="27" height="22" class="neutral"/>
+<text x="380.5" y="224" class="tiny" text-anchor="middle">13</text>
+<rect x="394" y="208" width="27" height="22" class="neutral"/>
+<text x="407.5" y="224" class="tiny" text-anchor="middle">17</text>
+<rect x="421" y="208" width="27" height="22" class="neutral"/>
+<text x="434.5" y="224" class="tiny" text-anchor="middle">21</text>
+<rect x="448" y="208" width="27" height="22" class="neutral"/>
+<text x="461.5" y="224" class="tiny" text-anchor="middle">25</text>
+<rect x="475" y="208" width="27" height="22" class="neutral"/>
+<text x="488.5" y="224" class="tiny" text-anchor="middle">29</text>
+<text x="62" y="246" class="tiny" text-anchor="end">k=4</text>
+<rect x="70" y="230" width="27" height="22" class="neutral"/>
+<text x="83.5" y="246" class="tiny" text-anchor="middle">2</text>
+<rect x="97" y="230" width="27" height="22" class="neutral"/>
+<text x="110.5" y="246" class="tiny" text-anchor="middle">6</text>
+<rect x="124" y="230" width="27" height="22" class="neutral"/>
+<text x="137.5" y="246" class="tiny" text-anchor="middle">10</text>
+<rect x="151" y="230" width="27" height="22" class="neutral"/>
+<text x="164.5" y="246" class="tiny" text-anchor="middle">14</text>
+<rect x="178" y="230" width="27" height="22" class="neutral"/>
+<text x="191.5" y="246" class="tiny" text-anchor="middle">18</text>
+<rect x="205" y="230" width="27" height="22" class="neutral"/>
+<text x="218.5" y="246" class="tiny" text-anchor="middle">22</text>
+<rect x="232" y="230" width="27" height="22" class="neutral"/>
+<text x="245.5" y="246" class="tiny" text-anchor="middle">26</text>
+<rect x="259" y="230" width="27" height="22" class="neutral"/>
+<text x="272.5" y="246" class="tiny" text-anchor="middle">30</text>
+<rect x="286" y="230" width="27" height="22" class="neutral"/>
+<text x="299.5" y="246" class="tiny" text-anchor="middle">2</text>
+<rect x="313" y="230" width="27" height="22" class="neutral"/>
+<text x="326.5" y="246" class="tiny" text-anchor="middle">6</text>
+<rect x="340" y="230" width="27" height="22" class="neutral"/>
+<text x="353.5" y="246" class="tiny" text-anchor="middle">10</text>
+<rect x="367" y="230" width="27" height="22" class="neutral"/>
+<text x="380.5" y="246" class="tiny" text-anchor="middle">14</text>
+<rect x="394" y="230" width="27" height="22" class="neutral"/>
+<text x="407.5" y="246" class="tiny" text-anchor="middle">18</text>
+<rect x="421" y="230" width="27" height="22" class="neutral"/>
+<text x="434.5" y="246" class="tiny" text-anchor="middle">22</text>
+<rect x="448" y="230" width="27" height="22" class="neutral"/>
+<text x="461.5" y="246" class="tiny" text-anchor="middle">26</text>
+<rect x="475" y="230" width="27" height="22" class="neutral"/>
+<text x="488.5" y="246" class="tiny" text-anchor="middle">30</text>
+<text x="62" y="268" class="tiny" text-anchor="end">k=5</text>
+<rect x="70" y="252" width="27" height="22" class="neutral"/>
+<text x="83.5" y="268" class="tiny" text-anchor="middle">2</text>
+<rect x="97" y="252" width="27" height="22" class="neutral"/>
+<text x="110.5" y="268" class="tiny" text-anchor="middle">6</text>
+<rect x="124" y="252" width="27" height="22" class="neutral"/>
+<text x="137.5" y="268" class="tiny" text-anchor="middle">10</text>
+<rect x="151" y="252" width="27" height="22" class="neutral"/>
+<text x="164.5" y="268" class="tiny" text-anchor="middle">14</text>
+<rect x="178" y="252" width="27" height="22" class="neutral"/>
+<text x="191.5" y="268" class="tiny" text-anchor="middle">18</text>
+<rect x="205" y="252" width="27" height="22" class="neutral"/>
+<text x="218.5" y="268" class="tiny" text-anchor="middle">22</text>
+<rect x="232" y="252" width="27" height="22" class="neutral"/>
+<text x="245.5" y="268" class="tiny" text-anchor="middle">26</text>
+<rect x="259" y="252" width="27" height="22" class="neutral"/>
+<text x="272.5" y="268" class="tiny" text-anchor="middle">30</text>
+<rect x="286" y="252" width="27" height="22" class="neutral"/>
+<text x="299.5" y="268" class="tiny" text-anchor="middle">2</text>
+<rect x="313" y="252" width="27" height="22" class="neutral"/>
+<text x="326.5" y="268" class="tiny" text-anchor="middle">6</text>
+<rect x="340" y="252" width="27" height="22" class="neutral"/>
+<text x="353.5" y="268" class="tiny" text-anchor="middle">10</text>
+<rect x="367" y="252" width="27" height="22" class="neutral"/>
+<text x="380.5" y="268" class="tiny" text-anchor="middle">14</text>
+<rect x="394" y="252" width="27" height="22" class="neutral"/>
+<text x="407.5" y="268" class="tiny" text-anchor="middle">18</text>
+<rect x="421" y="252" width="27" height="22" class="neutral"/>
+<text x="434.5" y="268" class="tiny" text-anchor="middle">22</text>
+<rect x="448" y="252" width="27" height="22" class="neutral"/>
+<text x="461.5" y="268" class="tiny" text-anchor="middle">26</text>
+<rect x="475" y="252" width="27" height="22" class="neutral"/>
+<text x="488.5" y="268" class="tiny" text-anchor="middle">30</text>
+<text x="62" y="290" class="tiny" text-anchor="end">k=6</text>
+<rect x="70" y="274" width="27" height="22" class="neutral"/>
+<text x="83.5" y="290" class="tiny" text-anchor="middle">3</text>
+<rect x="97" y="274" width="27" height="22" class="neutral"/>
+<text x="110.5" y="290" class="tiny" text-anchor="middle">7</text>
+<rect x="124" y="274" width="27" height="22" class="neutral"/>
+<text x="137.5" y="290" class="tiny" text-anchor="middle">11</text>
+<rect x="151" y="274" width="27" height="22" class="neutral"/>
+<text x="164.5" y="290" class="tiny" text-anchor="middle">15</text>
+<rect x="178" y="274" width="27" height="22" class="neutral"/>
+<text x="191.5" y="290" class="tiny" text-anchor="middle">19</text>
+<rect x="205" y="274" width="27" height="22" class="neutral"/>
+<text x="218.5" y="290" class="tiny" text-anchor="middle">23</text>
+<rect x="232" y="274" width="27" height="22" class="neutral"/>
+<text x="245.5" y="290" class="tiny" text-anchor="middle">27</text>
+<rect x="259" y="274" width="27" height="22" class="neutral"/>
+<text x="272.5" y="290" class="tiny" text-anchor="middle">31</text>
+<rect x="286" y="274" width="27" height="22" class="neutral"/>
+<text x="299.5" y="290" class="tiny" text-anchor="middle">3</text>
+<rect x="313" y="274" width="27" height="22" class="neutral"/>
+<text x="326.5" y="290" class="tiny" text-anchor="middle">7</text>
+<rect x="340" y="274" width="27" height="22" class="neutral"/>
+<text x="353.5" y="290" class="tiny" text-anchor="middle">11</text>
+<rect x="367" y="274" width="27" height="22" class="neutral"/>
+<text x="380.5" y="290" class="tiny" text-anchor="middle">15</text>
+<rect x="394" y="274" width="27" height="22" class="neutral"/>
+<text x="407.5" y="290" class="tiny" text-anchor="middle">19</text>
+<rect x="421" y="274" width="27" height="22" class="neutral"/>
+<text x="434.5" y="290" class="tiny" text-anchor="middle">23</text>
+<rect x="448" y="274" width="27" height="22" class="neutral"/>
+<text x="461.5" y="290" class="tiny" text-anchor="middle">27</text>
+<rect x="475" y="274" width="27" height="22" class="neutral"/>
+<text x="488.5" y="290" class="tiny" text-anchor="middle">31</text>
+<text x="62" y="312" class="tiny" text-anchor="end">k=7</text>
+<rect x="70" y="296" width="27" height="22" class="neutral"/>
+<text x="83.5" y="312" class="tiny" text-anchor="middle">3</text>
+<rect x="97" y="296" width="27" height="22" class="neutral"/>
+<text x="110.5" y="312" class="tiny" text-anchor="middle">7</text>
+<rect x="124" y="296" width="27" height="22" class="neutral"/>
+<text x="137.5" y="312" class="tiny" text-anchor="middle">11</text>
+<rect x="151" y="296" width="27" height="22" class="neutral"/>
+<text x="164.5" y="312" class="tiny" text-anchor="middle">15</text>
+<rect x="178" y="296" width="27" height="22" class="neutral"/>
+<text x="191.5" y="312" class="tiny" text-anchor="middle">19</text>
+<rect x="205" y="296" width="27" height="22" class="neutral"/>
+<text x="218.5" y="312" class="tiny" text-anchor="middle">23</text>
+<rect x="232" y="296" width="27" height="22" class="neutral"/>
+<text x="245.5" y="312" class="tiny" text-anchor="middle">27</text>
+<rect x="259" y="296" width="27" height="22" class="neutral"/>
+<text x="272.5" y="312" class="tiny" text-anchor="middle">31</text>
+<rect x="286" y="296" width="27" height="22" class="neutral"/>
+<text x="299.5" y="312" class="tiny" text-anchor="middle">3</text>
+<rect x="313" y="296" width="27" height="22" class="neutral"/>
+<text x="326.5" y="312" class="tiny" text-anchor="middle">7</text>
+<rect x="340" y="296" width="27" height="22" class="neutral"/>
+<text x="353.5" y="312" class="tiny" text-anchor="middle">11</text>
+<rect x="367" y="296" width="27" height="22" class="neutral"/>
+<text x="380.5" y="312" class="tiny" text-anchor="middle">15</text>
+<rect x="394" y="296" width="27" height="22" class="neutral"/>
+<text x="407.5" y="312" class="tiny" text-anchor="middle">19</text>
+<rect x="421" y="296" width="27" height="22" class="neutral"/>
+<text x="434.5" y="312" class="tiny" text-anchor="middle">23</text>
+<rect x="448" y="296" width="27" height="22" class="neutral"/>
+<text x="461.5" y="312" class="tiny" text-anchor="middle">27</text>
+<rect x="475" y="296" width="27" height="22" class="neutral"/>
+<text x="488.5" y="312" class="tiny" text-anchor="middle">31</text>
+<text x="62" y="334" class="tiny" text-anchor="end">k=8</text>
+<rect x="70" y="318" width="27" height="22" class="acc1"/>
+<text x="83.5" y="334" class="tiny" text-anchor="middle">0</text>
+<rect x="97" y="318" width="27" height="22" class="acc1"/>
+<text x="110.5" y="334" class="tiny" text-anchor="middle">4</text>
+<rect x="124" y="318" width="27" height="22" class="acc1"/>
+<text x="137.5" y="334" class="tiny" text-anchor="middle">8</text>
+<rect x="151" y="318" width="27" height="22" class="acc1"/>
+<text x="164.5" y="334" class="tiny" text-anchor="middle">12</text>
+<rect x="178" y="318" width="27" height="22" class="acc1"/>
+<text x="191.5" y="334" class="tiny" text-anchor="middle">16</text>
+<rect x="205" y="318" width="27" height="22" class="acc1"/>
+<text x="218.5" y="334" class="tiny" text-anchor="middle">20</text>
+<rect x="232" y="318" width="27" height="22" class="acc1"/>
+<text x="245.5" y="334" class="tiny" text-anchor="middle">24</text>
+<rect x="259" y="318" width="27" height="22" class="acc1"/>
+<text x="272.5" y="334" class="tiny" text-anchor="middle">28</text>
+<rect x="286" y="318" width="27" height="22" class="acc1"/>
+<text x="299.5" y="334" class="tiny" text-anchor="middle">0</text>
+<rect x="313" y="318" width="27" height="22" class="acc1"/>
+<text x="326.5" y="334" class="tiny" text-anchor="middle">4</text>
+<rect x="340" y="318" width="27" height="22" class="acc1"/>
+<text x="353.5" y="334" class="tiny" text-anchor="middle">8</text>
+<rect x="367" y="318" width="27" height="22" class="acc1"/>
+<text x="380.5" y="334" class="tiny" text-anchor="middle">12</text>
+<rect x="394" y="318" width="27" height="22" class="acc1"/>
+<text x="407.5" y="334" class="tiny" text-anchor="middle">16</text>
+<rect x="421" y="318" width="27" height="22" class="acc1"/>
+<text x="434.5" y="334" class="tiny" text-anchor="middle">20</text>
+<rect x="448" y="318" width="27" height="22" class="acc1"/>
+<text x="461.5" y="334" class="tiny" text-anchor="middle">24</text>
+<rect x="475" y="318" width="27" height="22" class="acc1"/>
+<text x="488.5" y="334" class="tiny" text-anchor="middle">28</text>
+<text x="62" y="356" class="tiny" text-anchor="end">k=9</text>
+<rect x="70" y="340" width="27" height="22" class="acc1"/>
+<text x="83.5" y="356" class="tiny" text-anchor="middle">0</text>
+<rect x="97" y="340" width="27" height="22" class="acc1"/>
+<text x="110.5" y="356" class="tiny" text-anchor="middle">4</text>
+<rect x="124" y="340" width="27" height="22" class="acc1"/>
+<text x="137.5" y="356" class="tiny" text-anchor="middle">8</text>
+<rect x="151" y="340" width="27" height="22" class="acc1"/>
+<text x="164.5" y="356" class="tiny" text-anchor="middle">12</text>
+<rect x="178" y="340" width="27" height="22" class="acc1"/>
+<text x="191.5" y="356" class="tiny" text-anchor="middle">16</text>
+<rect x="205" y="340" width="27" height="22" class="acc1"/>
+<text x="218.5" y="356" class="tiny" text-anchor="middle">20</text>
+<rect x="232" y="340" width="27" height="22" class="acc1"/>
+<text x="245.5" y="356" class="tiny" text-anchor="middle">24</text>
+<rect x="259" y="340" width="27" height="22" class="acc1"/>
+<text x="272.5" y="356" class="tiny" text-anchor="middle">28</text>
+<rect x="286" y="340" width="27" height="22" class="acc1"/>
+<text x="299.5" y="356" class="tiny" text-anchor="middle">0</text>
+<rect x="313" y="340" width="27" height="22" class="acc1"/>
+<text x="326.5" y="356" class="tiny" text-anchor="middle">4</text>
+<rect x="340" y="340" width="27" height="22" class="acc1"/>
+<text x="353.5" y="356" class="tiny" text-anchor="middle">8</text>
+<rect x="367" y="340" width="27" height="22" class="acc1"/>
+<text x="380.5" y="356" class="tiny" text-anchor="middle">12</text>
+<rect x="394" y="340" width="27" height="22" class="acc1"/>
+<text x="407.5" y="356" class="tiny" text-anchor="middle">16</text>
+<rect x="421" y="340" width="27" height="22" class="acc1"/>
+<text x="434.5" y="356" class="tiny" text-anchor="middle">20</text>
+<rect x="448" y="340" width="27" height="22" class="acc1"/>
+<text x="461.5" y="356" class="tiny" text-anchor="middle">24</text>
+<rect x="475" y="340" width="27" height="22" class="acc1"/>
+<text x="488.5" y="356" class="tiny" text-anchor="middle">28</text>
+<text x="62" y="378" class="tiny" text-anchor="end">k=10</text>
+<rect x="70" y="362" width="27" height="22" class="neutral"/>
+<text x="83.5" y="378" class="tiny" text-anchor="middle">1</text>
+<rect x="97" y="362" width="27" height="22" class="acc2"/>
+<text x="110.5" y="378" class="tiny" text-anchor="middle">5</text>
+<rect x="124" y="362" width="27" height="22" class="neutral"/>
+<text x="137.5" y="378" class="tiny" text-anchor="middle">9</text>
+<rect x="151" y="362" width="27" height="22" class="neutral"/>
+<text x="164.5" y="378" class="tiny" text-anchor="middle">13</text>
+<rect x="178" y="362" width="27" height="22" class="neutral"/>
+<text x="191.5" y="378" class="tiny" text-anchor="middle">17</text>
+<rect x="205" y="362" width="27" height="22" class="neutral"/>
+<text x="218.5" y="378" class="tiny" text-anchor="middle">21</text>
+<rect x="232" y="362" width="27" height="22" class="neutral"/>
+<text x="245.5" y="378" class="tiny" text-anchor="middle">25</text>
+<rect x="259" y="362" width="27" height="22" class="neutral"/>
+<text x="272.5" y="378" class="tiny" text-anchor="middle">29</text>
+<rect x="286" y="362" width="27" height="22" class="neutral"/>
+<text x="299.5" y="378" class="tiny" text-anchor="middle">1</text>
+<rect x="313" y="362" width="27" height="22" class="acc2"/>
+<text x="326.5" y="378" class="tiny" text-anchor="middle">5</text>
+<rect x="340" y="362" width="27" height="22" class="neutral"/>
+<text x="353.5" y="378" class="tiny" text-anchor="middle">9</text>
+<rect x="367" y="362" width="27" height="22" class="neutral"/>
+<text x="380.5" y="378" class="tiny" text-anchor="middle">13</text>
+<rect x="394" y="362" width="27" height="22" class="neutral"/>
+<text x="407.5" y="378" class="tiny" text-anchor="middle">17</text>
+<rect x="421" y="362" width="27" height="22" class="neutral"/>
+<text x="434.5" y="378" class="tiny" text-anchor="middle">21</text>
+<rect x="448" y="362" width="27" height="22" class="neutral"/>
+<text x="461.5" y="378" class="tiny" text-anchor="middle">25</text>
+<rect x="475" y="362" width="27" height="22" class="neutral"/>
+<text x="488.5" y="378" class="tiny" text-anchor="middle">29</text>
+<text x="62" y="400" class="tiny" text-anchor="end">k=11</text>
+<rect x="70" y="384" width="27" height="22" class="neutral"/>
+<text x="83.5" y="400" class="tiny" text-anchor="middle">1</text>
+<rect x="97" y="384" width="27" height="22" class="acc2"/>
+<text x="110.5" y="400" class="tiny" text-anchor="middle">5</text>
+<rect x="124" y="384" width="27" height="22" class="neutral"/>
+<text x="137.5" y="400" class="tiny" text-anchor="middle">9</text>
+<rect x="151" y="384" width="27" height="22" class="neutral"/>
+<text x="164.5" y="400" class="tiny" text-anchor="middle">13</text>
+<rect x="178" y="384" width="27" height="22" class="neutral"/>
+<text x="191.5" y="400" class="tiny" text-anchor="middle">17</text>
+<rect x="205" y="384" width="27" height="22" class="neutral"/>
+<text x="218.5" y="400" class="tiny" text-anchor="middle">21</text>
+<rect x="232" y="384" width="27" height="22" class="neutral"/>
+<text x="245.5" y="400" class="tiny" text-anchor="middle">25</text>
+<rect x="259" y="384" width="27" height="22" class="neutral"/>
+<text x="272.5" y="400" class="tiny" text-anchor="middle">29</text>
+<rect x="286" y="384" width="27" height="22" class="neutral"/>
+<text x="299.5" y="400" class="tiny" text-anchor="middle">1</text>
+<rect x="313" y="384" width="27" height="22" class="acc2"/>
+<text x="326.5" y="400" class="tiny" text-anchor="middle">5</text>
+<rect x="340" y="384" width="27" height="22" class="neutral"/>
+<text x="353.5" y="400" class="tiny" text-anchor="middle">9</text>
+<rect x="367" y="384" width="27" height="22" class="neutral"/>
+<text x="380.5" y="400" class="tiny" text-anchor="middle">13</text>
+<rect x="394" y="384" width="27" height="22" class="neutral"/>
+<text x="407.5" y="400" class="tiny" text-anchor="middle">17</text>
+<rect x="421" y="384" width="27" height="22" class="neutral"/>
+<text x="434.5" y="400" class="tiny" text-anchor="middle">21</text>
+<rect x="448" y="384" width="27" height="22" class="neutral"/>
+<text x="461.5" y="400" class="tiny" text-anchor="middle">25</text>
+<rect x="475" y="384" width="27" height="22" class="neutral"/>
+<text x="488.5" y="400" class="tiny" text-anchor="middle">29</text>
+<text x="62" y="422" class="tiny" text-anchor="end">k=12</text>
+<rect x="70" y="406" width="27" height="22" class="neutral"/>
+<text x="83.5" y="422" class="tiny" text-anchor="middle">2</text>
+<rect x="97" y="406" width="27" height="22" class="neutral"/>
+<text x="110.5" y="422" class="tiny" text-anchor="middle">6</text>
+<rect x="124" y="406" width="27" height="22" class="neutral"/>
+<text x="137.5" y="422" class="tiny" text-anchor="middle">10</text>
+<rect x="151" y="406" width="27" height="22" class="neutral"/>
+<text x="164.5" y="422" class="tiny" text-anchor="middle">14</text>
+<rect x="178" y="406" width="27" height="22" class="neutral"/>
+<text x="191.5" y="422" class="tiny" text-anchor="middle">18</text>
+<rect x="205" y="406" width="27" height="22" class="neutral"/>
+<text x="218.5" y="422" class="tiny" text-anchor="middle">22</text>
+<rect x="232" y="406" width="27" height="22" class="neutral"/>
+<text x="245.5" y="422" class="tiny" text-anchor="middle">26</text>
+<rect x="259" y="406" width="27" height="22" class="neutral"/>
+<text x="272.5" y="422" class="tiny" text-anchor="middle">30</text>
+<rect x="286" y="406" width="27" height="22" class="neutral"/>
+<text x="299.5" y="422" class="tiny" text-anchor="middle">2</text>
+<rect x="313" y="406" width="27" height="22" class="neutral"/>
+<text x="326.5" y="422" class="tiny" text-anchor="middle">6</text>
+<rect x="340" y="406" width="27" height="22" class="neutral"/>
+<text x="353.5" y="422" class="tiny" text-anchor="middle">10</text>
+<rect x="367" y="406" width="27" height="22" class="neutral"/>
+<text x="380.5" y="422" class="tiny" text-anchor="middle">14</text>
+<rect x="394" y="406" width="27" height="22" class="neutral"/>
+<text x="407.5" y="422" class="tiny" text-anchor="middle">18</text>
+<rect x="421" y="406" width="27" height="22" class="neutral"/>
+<text x="434.5" y="422" class="tiny" text-anchor="middle">22</text>
+<rect x="448" y="406" width="27" height="22" class="neutral"/>
+<text x="461.5" y="422" class="tiny" text-anchor="middle">26</text>
+<rect x="475" y="406" width="27" height="22" class="neutral"/>
+<text x="488.5" y="422" class="tiny" text-anchor="middle">30</text>
+<text x="62" y="444" class="tiny" text-anchor="end">k=13</text>
+<rect x="70" y="428" width="27" height="22" class="neutral"/>
+<text x="83.5" y="444" class="tiny" text-anchor="middle">2</text>
+<rect x="97" y="428" width="27" height="22" class="neutral"/>
+<text x="110.5" y="444" class="tiny" text-anchor="middle">6</text>
+<rect x="124" y="428" width="27" height="22" class="neutral"/>
+<text x="137.5" y="444" class="tiny" text-anchor="middle">10</text>
+<rect x="151" y="428" width="27" height="22" class="neutral"/>
+<text x="164.5" y="444" class="tiny" text-anchor="middle">14</text>
+<rect x="178" y="428" width="27" height="22" class="neutral"/>
+<text x="191.5" y="444" class="tiny" text-anchor="middle">18</text>
+<rect x="205" y="428" width="27" height="22" class="neutral"/>
+<text x="218.5" y="444" class="tiny" text-anchor="middle">22</text>
+<rect x="232" y="428" width="27" height="22" class="neutral"/>
+<text x="245.5" y="444" class="tiny" text-anchor="middle">26</text>
+<rect x="259" y="428" width="27" height="22" class="neutral"/>
+<text x="272.5" y="444" class="tiny" text-anchor="middle">30</text>
+<rect x="286" y="428" width="27" height="22" class="neutral"/>
+<text x="299.5" y="444" class="tiny" text-anchor="middle">2</text>
+<rect x="313" y="428" width="27" height="22" class="neutral"/>
+<text x="326.5" y="444" class="tiny" text-anchor="middle">6</text>
+<rect x="340" y="428" width="27" height="22" class="neutral"/>
+<text x="353.5" y="444" class="tiny" text-anchor="middle">10</text>
+<rect x="367" y="428" width="27" height="22" class="neutral"/>
+<text x="380.5" y="444" class="tiny" text-anchor="middle">14</text>
+<rect x="394" y="428" width="27" height="22" class="neutral"/>
+<text x="407.5" y="444" class="tiny" text-anchor="middle">18</text>
+<rect x="421" y="428" width="27" height="22" class="neutral"/>
+<text x="434.5" y="444" class="tiny" text-anchor="middle">22</text>
+<rect x="448" y="428" width="27" height="22" class="neutral"/>
+<text x="461.5" y="444" class="tiny" text-anchor="middle">26</text>
+<rect x="475" y="428" width="27" height="22" class="neutral"/>
+<text x="488.5" y="444" class="tiny" text-anchor="middle">30</text>
+<text x="62" y="466" class="tiny" text-anchor="end">k=14</text>
+<rect x="70" y="450" width="27" height="22" class="neutral"/>
+<text x="83.5" y="466" class="tiny" text-anchor="middle">3</text>
+<rect x="97" y="450" width="27" height="22" class="neutral"/>
+<text x="110.5" y="466" class="tiny" text-anchor="middle">7</text>
+<rect x="124" y="450" width="27" height="22" class="neutral"/>
+<text x="137.5" y="466" class="tiny" text-anchor="middle">11</text>
+<rect x="151" y="450" width="27" height="22" class="neutral"/>
+<text x="164.5" y="466" class="tiny" text-anchor="middle">15</text>
+<rect x="178" y="450" width="27" height="22" class="neutral"/>
+<text x="191.5" y="466" class="tiny" text-anchor="middle">19</text>
+<rect x="205" y="450" width="27" height="22" class="neutral"/>
+<text x="218.5" y="466" class="tiny" text-anchor="middle">23</text>
+<rect x="232" y="450" width="27" height="22" class="neutral"/>
+<text x="245.5" y="466" class="tiny" text-anchor="middle">27</text>
+<rect x="259" y="450" width="27" height="22" class="neutral"/>
+<text x="272.5" y="466" class="tiny" text-anchor="middle">31</text>
+<rect x="286" y="450" width="27" height="22" class="neutral"/>
+<text x="299.5" y="466" class="tiny" text-anchor="middle">3</text>
+<rect x="313" y="450" width="27" height="22" class="neutral"/>
+<text x="326.5" y="466" class="tiny" text-anchor="middle">7</text>
+<rect x="340" y="450" width="27" height="22" class="neutral"/>
+<text x="353.5" y="466" class="tiny" text-anchor="middle">11</text>
+<rect x="367" y="450" width="27" height="22" class="neutral"/>
+<text x="380.5" y="466" class="tiny" text-anchor="middle">15</text>
+<rect x="394" y="450" width="27" height="22" class="neutral"/>
+<text x="407.5" y="466" class="tiny" text-anchor="middle">19</text>
+<rect x="421" y="450" width="27" height="22" class="neutral"/>
+<text x="434.5" y="466" class="tiny" text-anchor="middle">23</text>
+<rect x="448" y="450" width="27" height="22" class="neutral"/>
+<text x="461.5" y="466" class="tiny" text-anchor="middle">27</text>
+<rect x="475" y="450" width="27" height="22" class="neutral"/>
+<text x="488.5" y="466" class="tiny" text-anchor="middle">31</text>
+<text x="62" y="488" class="tiny" text-anchor="end">k=15</text>
+<rect x="70" y="472" width="27" height="22" class="neutral"/>
+<text x="83.5" y="488" class="tiny" text-anchor="middle">3</text>
+<rect x="97" y="472" width="27" height="22" class="neutral"/>
+<text x="110.5" y="488" class="tiny" text-anchor="middle">7</text>
+<rect x="124" y="472" width="27" height="22" class="neutral"/>
+<text x="137.5" y="488" class="tiny" text-anchor="middle">11</text>
+<rect x="151" y="472" width="27" height="22" class="neutral"/>
+<text x="164.5" y="488" class="tiny" text-anchor="middle">15</text>
+<rect x="178" y="472" width="27" height="22" class="neutral"/>
+<text x="191.5" y="488" class="tiny" text-anchor="middle">19</text>
+<rect x="205" y="472" width="27" height="22" class="neutral"/>
+<text x="218.5" y="488" class="tiny" text-anchor="middle">23</text>
+<rect x="232" y="472" width="27" height="22" class="neutral"/>
+<text x="245.5" y="488" class="tiny" text-anchor="middle">27</text>
+<rect x="259" y="472" width="27" height="22" class="neutral"/>
+<text x="272.5" y="488" class="tiny" text-anchor="middle">31</text>
+<rect x="286" y="472" width="27" height="22" class="neutral"/>
+<text x="299.5" y="488" class="tiny" text-anchor="middle">3</text>
+<rect x="313" y="472" width="27" height="22" class="neutral"/>
+<text x="326.5" y="488" class="tiny" text-anchor="middle">7</text>
+<rect x="340" y="472" width="27" height="22" class="neutral"/>
+<text x="353.5" y="488" class="tiny" text-anchor="middle">11</text>
+<rect x="367" y="472" width="27" height="22" class="neutral"/>
+<text x="380.5" y="488" class="tiny" text-anchor="middle">15</text>
+<rect x="394" y="472" width="27" height="22" class="neutral"/>
+<text x="407.5" y="488" class="tiny" text-anchor="middle">19</text>
+<rect x="421" y="472" width="27" height="22" class="neutral"/>
+<text x="434.5" y="488" class="tiny" text-anchor="middle">23</text>
+<rect x="448" y="472" width="27" height="22" class="neutral"/>
+<text x="461.5" y="488" class="tiny" text-anchor="middle">27</text>
+<rect x="475" y="472" width="27" height="22" class="neutral"/>
+<text x="488.5" y="488" class="tiny" text-anchor="middle">31</text>
+<rect x="528" y="142" width="196" height="109.33" class="ghost"/>
+<text x="538" y="166" class="body">warp 1</text>
+<text x="538" y="188" class="small">n = 16..31</text>
+<text x="538" y="208" class="small">cur_n = 1×16 + tc_col</text>
+<text x="538" y="228" class="small">lane 映射与左图相同</text>
+<rect x="528" y="259.33" width="196" height="109.33" class="ghost"/>
+<text x="538" y="283.33" class="body">warp 2</text>
+<text x="538" y="305.33" class="small">n = 32..47</text>
+<text x="538" y="325.33" class="small">cur_n = 2×16 + tc_col</text>
+<text x="538" y="345.33" class="small">lane 映射与左图相同</text>
+<rect x="528" y="376.67" width="196" height="109.33" class="ghost"/>
+<text x="538" y="400.67" class="body">warp 3</text>
+<text x="538" y="422.67" class="small">n = 48..63</text>
+<text x="538" y="442.67" class="small">cur_n = 3×16 + tc_col</text>
+<text x="538" y="462.67" class="small">lane 映射与左图相同</text>
+<rect x="744" y="142" width="14" height="14" class="acc2"/>
+<text x="766" y="154" class="small">橙：lane 5，下方逐 nibble 复演</text>
+<rect x="744" y="168" width="14" height="14" class="acc1"/>
+<text x="766" y="180" class="small">ℓ%4 = 0 的 lane（tc_row = 0，</text>
+<text x="766" y="198" class="small">持有 k = 0,1,8,9），只为看清条纹</text>
+<rect x="744" y="212" width="14" height="14" class="neutral"/>
+<text x="766" y="224" class="small">其余 lane</text>
+<text x="24" y="518" class="small">lane ℓ 持有 k ∈ {tc_row+0, tc_row+1, tc_row+8, tc_row+9}（tc_row=(ℓ%4)×2）与 n ∈ {tc_col, tc_col+8}（tc_col=ℓ/4）：4×2 = 8 格。</text>
+<text x="24" y="538" class="small">32 条 lane × 8 格 = 256 格，恰好铺满一个 warp 的 16×16；4 个 warp 拼出 64 列。</text>
+<text x="24" y="578" class="body">复演一条 lane：warp 0、lane 5 → tc_col=1、tc_row=2、cur_n=1</text>
+<rect x="24" y="592" width="118" height="46" class="acc1"/>
+<text x="32" y="610" class="tiny">nibble 0</text>
+<text x="32" y="628" class="small">(k=2, n=1)</text>
+<rect x="148" y="592" width="118" height="46" class="acc1"/>
+<text x="156" y="610" class="tiny">nibble 1</text>
+<text x="156" y="628" class="small">(k=10, n=1)</text>
+<rect x="272" y="592" width="118" height="46" class="acc1"/>
+<text x="280" y="610" class="tiny">nibble 2</text>
+<text x="280" y="628" class="small">(k=2, n=9)</text>
+<rect x="396" y="592" width="118" height="46" class="acc1"/>
+<text x="404" y="610" class="tiny">nibble 3</text>
+<text x="404" y="628" class="small">(k=10, n=9)</text>
+<rect x="520" y="592" width="118" height="46" class="acc2"/>
+<text x="528" y="610" class="tiny">nibble 4</text>
+<text x="528" y="628" class="small">(k=3, n=1)</text>
+<rect x="644" y="592" width="118" height="46" class="acc2"/>
+<text x="652" y="610" class="tiny">nibble 5</text>
+<text x="652" y="628" class="small">(k=11, n=1)</text>
+<rect x="768" y="592" width="118" height="46" class="acc2"/>
+<text x="776" y="610" class="tiny">nibble 6</text>
+<text x="776" y="628" class="small">(k=3, n=9)</text>
+<rect x="892" y="592" width="118" height="46" class="acc2"/>
+<text x="900" y="610" class="tiny">nibble 7</text>
+<text x="900" y="628" class="small">(k=11, n=9)</text>
+<text x="24" y="660" class="small">这一行的颜色另有含义：蓝 = 低 4 个 nibble（k 偏移 +0 / +8），橙 = 高 4 个 nibble（k 偏移 +1 / +9）；与上方网格的配色无关。</text>
+<text x="24" y="680" class="small">nibble i 装 vals[pack_idx[i]]，pack_idx = [0, 2, 4, 6, 1, 3, 5, 7]（源码注释指向 FasterTransformer 的 interleaved numeric conversion）。</text>
+<text x="24" y="700" class="small">这 8 个 nibble 组成一个 uint32，写到 out_ptr[out_offset + th_id×4 + warp_id] = out_offset + 5×4 + 0 = out_offset + 20。</text>
+<text x="24" y="720" class="small">out_offset = (k_tile_id × n_tiles + n_tile_id) × 128：tile 之间按 K 外、N 内连续排列，tile 内按 lane 再 warp 排列。</text>
+<rect x="24" y="742" width="1032" height="80" class="ghost"/>
+<text x="36" y="764" class="small">scale 有两组置换，选择条件是 group_size &lt; size_k 且 group_size != -1 且非 8 bit activation：</text>
+<text x="36" y="784" class="small">分组：64 项 8×8 转置，前 10 项 = [0, 8, 16, 24, 32, 40, 48, 56, 1, 9, …]；列向：32 项，前 10 项 = [0, 1, 8, 9, 16, 17, 24, 25, 2, 3, …]。</text>
+<text x="36" y="804" class="small">kernel 侧注释给的理由：分组量化按 column-major 缩放一个 half2 tile，列向量化按 row-major，s_sh_rd 因此分支取不同公式。</text>
+<text x="24" y="848" class="small">本图是从 repack kernel 的索引算术重建的静态布局，不是 GPU 上观测到的寄存器分配。</text>
+<text x="24" y="868" class="small">GEMM kernel 自身的 thread_n_blocks 分块与本图的 4 warp / 64 列 repack tile 不是同一层。</text>
+</svg>

@@ -11,6 +11,16 @@ test('compact/swap carry record identity and prose matches the replay',()=>{
  assert.match(page,/尾部 B 从 row 2 移到 row 1/);assert.match(page,/交换 row 0、1/);
  assert.deepEqual(r.ordered.map(x=>[x.temp,x.lora,x.blocks]),[[0.6,7,[28]],[0,0,[12,13]]]);
 });
+test('swap_states arguments agree between the reorder replay, the SVG and the page',()=>{
+ const r=replay();
+ assert.deepEqual(r.swaps,[[1,0]]);
+ const [i1,i2]=r.swaps[0];
+ assert.ok(draw().includes(`swap_states(${i1}, ${i2})`),'SVG swap label drifted');
+ assert.ok(page.includes(`swap_states(${i1},${i2})`),'page §2.3 swap_states call drifted');
+ assert.ok(page.includes(`(${i1},${i2},SWAP)`),'page §2.4 BatchUpdate move drifted');
+ assert.ok(page.includes(`swap_states(${i1}, ${i2})`),'page figure-spec comment drifted');
+ assert.doesNotMatch(page,/swap_states\(0, ?1\)|SWAP\(0,1\)|swap\(0,1\)/);
+});
 test('prose transformation table is computed from the same rows as SVG',()=>{
  const r=replay();
  for(const [label,value] of [

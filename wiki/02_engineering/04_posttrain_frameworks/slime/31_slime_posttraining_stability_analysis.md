@@ -170,7 +170,7 @@ one-stage async 的 driver 时序由 [[10_slime_end_to_end_iteration_analysis]] 
 
 ### 7.2 clipping、TIS 与 rejection 只处理已定义的偏差
 
-核心 clipping/TIS/OPSM 的推导、vanilla TIS/ICEPOP 差别及 MIS 示例规则归 [[17_slime_train_inference_consistency_analysis]]；本页只保留用于诊断的参数和观察口径。`train/tis` 是截断前比率的统计量，`train/tis_clipfrac` 是权重受规则影响的比例，`train/tis_abs` 是偏离 1 的幅度，不能把这些键当成可互换的“稳定程度”。
+核心 clipping 与 OPSM 的推导归 [[15_slime_loss_parallelism_analysis]]，TIS 的作用对象、vanilla TIS/ICEPOP 差别及 MIS 示例规则归 [[17_slime_train_inference_consistency_analysis]]；本页只保留用于诊断的参数和观察口径。`train/tis` 是截断前比率的统计量，`train/tis_clipfrac` 是权重受规则影响的比例，`train/tis_abs` 是偏离 1 的幅度，不能把这些键当成可互换的“稳定程度”。
 
 > **分析判断**：clip fraction 上升是“执行器工作得更多”，不是稳定性成功指标。它可能表示预期的 policy update，也可能表示陈旧、训推不一致或错 metadata。rejection 还能同时降低有效 token 数；若 dashboard 只看过滤后的 loss，最坏样本会从梯度和观测中一起消失。因此必须保留 rejection 前的 mismatch 分布、有效 mask 数与来源构成。
 
@@ -189,7 +189,7 @@ one-stage async 的 driver 时序由 [[10_slime_end_to_end_iteration_analysis]] 
 
 ## 8. 基础设施与存活环：进程恢复不等于训练状态正确
 
-engine health 失败不会当场恢复；恢复发生在训练侧后续权重更新入口，完整规范链与 0/30/30 秒默认配置归 [[18_slime_fault_tolerance_observability_analysis#3. 推理引擎的局部恢复：检测、清理、重建、重新加载当前版本|局部恢复]]。本页只判断恢复证据与数值异常是否属于同一原因。
+engine health 失败不会当场恢复；恢复发生在训练侧后续权重更新入口，完整规范链与 0/30/30 秒默认配置归 [[18_slime_fault_tolerance_observability_analysis#2.2 从最小实例到整个容错与取证体系|局部恢复 §2.2.2]]。本页只判断恢复证据与数值异常是否属于同一原因。
 
 项目 fault-tolerance 文档也把内置范围限定为 rollout server health/restart；trainer、Ray head 或 node failure 仍由外部作业恢复与 checkpoint 负责。[`docs/zh/advanced/fault-tolerance.md:7-27`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/fault-tolerance.md#L7-L27) 因此基础设施环要分别验收：
 

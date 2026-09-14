@@ -2,8 +2,8 @@
 // 不运行 vLLM。用整条记录模拟伴随字段同行，并计算正文的 token-major 索引。
 import { pathToFileURL } from 'node:url';
 export function replay() {
-  const A = { id:'A', tokens:Array.from({length:20},(_,i)=>100+i), computed:18, temp:0, lora:0, blocks:[12,13], scheduled:2 };
-  const B = { id:'B', tokens:Array.from({length:6},(_,i)=>200+i), computed:5, temp:0.6, lora:7, blocks:[28], scheduled:1 };
+  const A = { id:'A', tokens:Array.from({length:20},(_,i)=>100+i), prompt:20, computed:18, temp:0, lora:0, blocks:[12,13], scheduled:2 };
+  const B = { id:'B', tokens:Array.from({length:6},(_,i)=>200+i), prompt:5, computed:5, temp:0.6, lora:7, blocks:[28], scheduled:1 };
   const holes=[A,null,B];
   const compact=holes.slice();
   while (compact.includes(null)) {
@@ -12,9 +12,26 @@ export function replay() {
     if (hole>=compact.length) break;
     compact[hole]=compact.pop();
   }
-  // 本例 A 为 long_extend，B 为 decode，阈值 1；对应一次 swap_states(0,1)。
-  const ordered=compact.slice();
-  [ordered[0],ordered[1]]=[ordered[1],ordered[0]];
+  // 重放 reorder_batch_to_split_decodes_and_prefills（阈值 1）：四区 decode→short→long→prefill，
+  // 误置 row 经 src_dest_map 转成 swap_states 调用链；本例 A 为 long_extend、B 为 decode，得到一次 swap_states(1,0)。
+  const threshold=1;
+  const region=r=>r.computed===0?3:r.scheduled>threshold?2:r.computed<r.prompt?1:0;
+  const ordered=compact.slice(), req=ordered.map(region);
+  const target=req.slice().sort((a,b)=>a-b);
+  const orig=req.flatMap((g,i)=>g!==target[i]?[i]:[]);
+  const src=orig.slice().sort((i,j)=>req[i]-req[j]);
+  const dest=new Map(src.map((s,k)=>[s,orig[k]]));
+  const swaps=[];
+  for (const s of src) {
+    let d=dest.get(s);
+    while (s!==d) {
+      swaps.push([s,d]);
+      [ordered[s],ordered[d]]=[ordered[d],ordered[s]];
+      const next=dest.get(d)??d;
+      dest.set(d,d);
+      d=next;
+    }
+  }
   const reqIndices=[], positions=[], tokenIndices=[], ids=[], qsl=[0];
   const stride=32;
   ordered.forEach((r,row)=>{
@@ -24,7 +41,7 @@ export function replay() {
     }
     qsl.push(ids.length);
   });
-  return {holes,compact,ordered,stride,reqIndices,positions,tokenIndices,ids,qsl,
+  return {holes,compact,ordered,swaps,stride,reqIndices,positions,tokenIndices,ids,qsl,
     seqLens:ordered.map(r=>r.computed+r.scheduled),
     loraTokens:ordered.flatMap(r=>Array(r.scheduled).fill(r.lora))};
 }
@@ -51,7 +68,7 @@ export function draw() {
   text(68,270,'condense：尾部 B 从 2 → 1；有效 token 前缀与伴随字段一起移');
   table(310,'② 压紧完成：[A, B]，row 2 不再活跃',r.compact,1);
   out.push('<path d="M45 479V506" class="arrow main" marker-end="url(#arrow)"/>');
-  text(68,500,'reorder：B 是 decode，A 是 long_extend；swap_states(0, 1)');
+  text(68,500,`reorder：B 是 decode，A 是 long_extend；${r.swaps.map(([i1,i2])=>`swap_states(${i1}, ${i2})`).join('、')}`);
   table(540,'③ 执行顺序：[B, A]，全部列继续对应同一个请求',r.ordered,0);
   text(30,740,'图中仅展开部分字段；generator、mask、prompt embeds、processor 状态也须按同一移动更新。','cap');
   text(30,771,'这里移动 block table 的行，不搬运这些块中的 KV 字节。','cap');

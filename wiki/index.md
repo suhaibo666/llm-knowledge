@@ -4,7 +4,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-09-08
+> 最后更新: 2026-09-14
 
 ---
 
@@ -20,8 +20,8 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 67 | 活跃 |
-| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 22 | 活跃 |
+| 模型 | [[01_theory/01_models/index|模型架构与模型家族]] | 68 | 活跃 |
+| └─ DeepSeek | [[01_theory/01_models/deepseek/index|DeepSeek 模型家族]] | 23 | 活跃 |
 | └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 15 | 活跃 |
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 12 | 活跃 |
 | └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 6 | 活跃 |
@@ -32,7 +32,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 再次重算推理框架与 vLLM**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM，2026-09-10 重算模型与 DeepSeek**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
 
 ### 02 工程实现
 

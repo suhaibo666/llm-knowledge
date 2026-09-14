@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="840" viewBox="0 0 1180 840" role="img" aria-labelledby="title desc">
+<title id="title">slime Ray 控制面：同一输入在 colocate 与 disaggregate 下的资源布局与绑定</title>
+<desc id="desc">上下两条泳道展示 placement group 的 GPU 总数与 rollout 偏移、按节点与 GPU 排序后的逻辑序号、trainer 与 engine 的绑定，以及 needs_offload 与端口分配。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="840" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一份输入的两种资源布局：总量与偏移不同，绑定规则相同</text>
+<text x="24" y="56" class="su" text-anchor="start">actor 1 节点 × 4 卡 · rollout 4 卡 · 每 engine 2 卡 · 每节点 4 卡 · sglang_dp_size=1</text>
+<rect x="24" y="80" width="860" height="330" rx="10" class="panel"/>
+<text x="40" y="104" class="pt" text-anchor="start">colocate</text>
+<rect x="40" y="120" width="150" height="78" rx="7" class="ghost"/>
+<text x="52" y="140" class="sm" text-anchor="start">输入 args</text>
+<text x="52" y="158" class="tx" text-anchor="start">actor GPUs = 4</text>
+<text x="52" y="176" class="tx" text-anchor="start">rollout GPUs = 4</text>
+<text x="52" y="192" class="tx" text-anchor="start">--colocate</text>
+<path d="M190 159 L222 159" class="main"/>
+<rect x="224" y="120" width="210" height="78" rx="7" class="acc1"/>
+<text x="236" y="140" class="sm" text-anchor="start">_get_placement_group_layout</text>
+<text x="236" y="160" class="tx" text-anchor="start">PG GPU 数 = max(4, 4) = 4</text>
+<text x="236" y="180" class="tx" text-anchor="start">rollout offset = 0</text>
+<path d="M434 159 L466 159" class="main"/>
+<rect x="468" y="120" width="400" height="78" rx="7" class="neutral"/>
+<text x="480" y="138" class="sm" text-anchor="start">_create_placement_group</text>
+<text x="480" y="156" class="tx" text-anchor="start">4 个 {GPU:1, CPU:1} bundle，PACK 策略</text>
+<text x="480" y="173" class="tx" text-anchor="start">InfoActor 逐 bundle 读 (node ip, gpu id)</text>
+<text x="480" y="190" class="tx" text-anchor="start">sorted(key=(ip 数值段, gpu id)) → 逻辑序号</text>
+<text x="40" y="212" class="sm" text-anchor="start">排序后的逻辑序号 → (节点, physical GPU) → Ray 原 bundle 序号</text>
+<rect x="40" y="220" width="96" height="58" rx="5" class="acc2"/>
+<text x="88" y="238" class="pt" text-anchor="middle">逻辑 0</text>
+<text x="88" y="255" class="sm" text-anchor="middle">节点 A · GPU 0</text>
+<text x="88" y="270" class="sm" text-anchor="middle">bundle 1</text>
+<rect x="142" y="220" width="96" height="58" rx="5" class="acc2"/>
+<text x="190" y="238" class="pt" text-anchor="middle">逻辑 1</text>
+<text x="190" y="255" class="sm" text-anchor="middle">节点 A · GPU 1</text>
+<text x="190" y="270" class="sm" text-anchor="middle">bundle 3</text>
+<rect x="244" y="220" width="96" height="58" rx="5" class="acc2"/>
+<text x="292" y="238" class="pt" text-anchor="middle">逻辑 2</text>
+<text x="292" y="255" class="sm" text-anchor="middle">节点 A · GPU 2</text>
+<text x="292" y="270" class="sm" text-anchor="middle">bundle 0</text>
+<rect x="346" y="220" width="96" height="58" rx="5" class="acc2"/>
+<text x="394" y="238" class="pt" text-anchor="middle">逻辑 3</text>
+<text x="394" y="255" class="sm" text-anchor="middle">节点 A · GPU 3</text>
+<text x="394" y="270" class="sm" text-anchor="middle">bundle 2</text>
+<text x="40" y="300" class="tx" text-anchor="start">trainer rank r → 逻辑 r，每个声明 0.4 GPU / 0.4 CPU；rank 0 提供 master addr/port</text>
+<rect x="46" y="308" width="84" height="22" rx="4" class="neutral"/>
+<text x="88" y="323" class="sm" text-anchor="middle">rank 0 · 0.4</text>
+<rect x="148" y="308" width="84" height="22" rx="4" class="neutral"/>
+<text x="190" y="323" class="sm" text-anchor="middle">rank 1 · 0.4</text>
+<rect x="250" y="308" width="84" height="22" rx="4" class="neutral"/>
+<text x="292" y="323" class="sm" text-anchor="middle">rank 2 · 0.4</text>
+<rect x="352" y="308" width="84" height="22" rx="4" class="neutral"/>
+<text x="394" y="323" class="sm" text-anchor="middle">rank 3 · 0.4</text>
+<text x="40" y="340" class="tx" text-anchor="start">engine i → 逻辑 offset + i × 2，声明 0.2 GPU；base_gpu_id 取该槽位的 physical GPU id</text>
+<rect x="46" y="348" width="186" height="22" rx="4" class="acc1"/>
+<text x="136" y="363" class="sm" text-anchor="middle">engine 0 · 0.2 · base_gpu_id=0</text>
+<rect x="250" y="348" width="186" height="22" rx="4" class="acc1"/>
+<text x="340" y="363" class="sm" text-anchor="middle">engine 1 · 0.2 · base_gpu_id=2</text>
+<text x="40" y="388" class="cap" text-anchor="start">重叠区间（橙）：rollout offset 0 &lt; Megatron GPU 数 4 且 offload_rollout=True → needs_offload=True，engine 必须支持显存让渡</text>
+<rect x="24" y="430" width="860" height="330" rx="10" class="panel"/>
+<text x="40" y="454" class="pt" text-anchor="start">disaggregate</text>
+<rect x="40" y="470" width="150" height="78" rx="7" class="ghost"/>
+<text x="52" y="490" class="sm" text-anchor="start">输入 args</text>
+<text x="52" y="508" class="tx" text-anchor="start">actor GPUs = 4</text>
+<text x="52" y="526" class="tx" text-anchor="start">rollout GPUs = 4</text>
+<text x="52" y="542" class="tx" text-anchor="start">默认（不共卡）</text>
+<path d="M190 509 L222 509" class="main"/>
+<rect x="224" y="470" width="210" height="78" rx="7" class="acc1"/>
+<text x="236" y="490" class="sm" text-anchor="start">_get_placement_group_layout</text>
+<text x="236" y="510" class="tx" text-anchor="start">PG GPU 数 = 4 + 4 = 8</text>
+<text x="236" y="530" class="tx" text-anchor="start">rollout offset = 4</text>
+<path d="M434 509 L466 509" class="main"/>
+<rect x="468" y="470" width="400" height="78" rx="7" class="neutral"/>
+<text x="480" y="488" class="sm" text-anchor="start">_create_placement_group</text>
+<text x="480" y="506" class="tx" text-anchor="start">8 个 {GPU:1, CPU:1} bundle，PACK 策略</text>
+<text x="480" y="523" class="tx" text-anchor="start">InfoActor 逐 bundle 读 (node ip, gpu id)</text>
+<text x="480" y="540" class="tx" text-anchor="start">sorted(key=(ip 数值段, gpu id)) → 逻辑序号</text>
+<text x="40" y="562" class="sm" text-anchor="start">排序后的逻辑序号 → (节点, physical GPU) → Ray 原 bundle 序号</text>
+<rect x="40" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="88" y="588" class="pt" text-anchor="middle">逻辑 0</text>
+<text x="88" y="605" class="sm" text-anchor="middle">节点 A · GPU 0</text>
+<text x="88" y="620" class="sm" text-anchor="middle">bundle 2</text>
+<rect x="142" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="190" y="588" class="pt" text-anchor="middle">逻辑 1</text>
+<text x="190" y="605" class="sm" text-anchor="middle">节点 A · GPU 1</text>
+<text x="190" y="620" class="sm" text-anchor="middle">bundle 4</text>
+<rect x="244" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="292" y="588" class="pt" text-anchor="middle">逻辑 2</text>
+<text x="292" y="605" class="sm" text-anchor="middle">节点 A · GPU 2</text>
+<text x="292" y="620" class="sm" text-anchor="middle">bundle 1</text>
+<rect x="346" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="394" y="588" class="pt" text-anchor="middle">逻辑 3</text>
+<text x="394" y="605" class="sm" text-anchor="middle">节点 A · GPU 3</text>
+<text x="394" y="620" class="sm" text-anchor="middle">bundle 6</text>
+<rect x="448" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="496" y="588" class="pt" text-anchor="middle">逻辑 4</text>
+<text x="496" y="605" class="sm" text-anchor="middle">节点 B · GPU 0</text>
+<text x="496" y="620" class="sm" text-anchor="middle">bundle 0</text>
+<rect x="550" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="598" y="588" class="pt" text-anchor="middle">逻辑 5</text>
+<text x="598" y="605" class="sm" text-anchor="middle">节点 B · GPU 1</text>
+<text x="598" y="620" class="sm" text-anchor="middle">bundle 5</text>
+<rect x="652" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="700" y="588" class="pt" text-anchor="middle">逻辑 6</text>
+<text x="700" y="605" class="sm" text-anchor="middle">节点 B · GPU 2</text>
+<text x="700" y="620" class="sm" text-anchor="middle">bundle 7</text>
+<rect x="754" y="570" width="96" height="58" rx="5" class="cell"/>
+<text x="802" y="588" class="pt" text-anchor="middle">逻辑 7</text>
+<text x="802" y="605" class="sm" text-anchor="middle">节点 B · GPU 3</text>
+<text x="802" y="620" class="sm" text-anchor="middle">bundle 3</text>
+<text x="40" y="650" class="tx" text-anchor="start">trainer rank r → 逻辑 r，每个声明 0.4 GPU / 0.4 CPU；rank 0 提供 master addr/port</text>
+<rect x="46" y="658" width="84" height="22" rx="4" class="neutral"/>
+<text x="88" y="673" class="sm" text-anchor="middle">rank 0 · 0.4</text>
+<rect x="148" y="658" width="84" height="22" rx="4" class="neutral"/>
+<text x="190" y="673" class="sm" text-anchor="middle">rank 1 · 0.4</text>
+<rect x="250" y="658" width="84" height="22" rx="4" class="neutral"/>
+<text x="292" y="673" class="sm" text-anchor="middle">rank 2 · 0.4</text>
+<rect x="352" y="658" width="84" height="22" rx="4" class="neutral"/>
+<text x="394" y="673" class="sm" text-anchor="middle">rank 3 · 0.4</text>
+<text x="40" y="690" class="tx" text-anchor="start">engine i → 逻辑 offset + i × 2，声明 0.2 GPU；base_gpu_id 取该槽位的 physical GPU id</text>
+<rect x="454" y="698" width="186" height="22" rx="4" class="acc1"/>
+<text x="544" y="713" class="sm" text-anchor="middle">engine 0 · 0.2 · base_gpu_id=0</text>
+<rect x="658" y="698" width="186" height="22" rx="4" class="acc1"/>
+<text x="748" y="713" class="sm" text-anchor="middle">engine 1 · 0.2 · base_gpu_id=2</text>
+<text x="40" y="738" class="cap" text-anchor="start">无重叠：group 起点 4 ≥ Megatron GPU 数 4 → needs_offload=False；若全局开了 offload_rollout，则 setdefault enable_memory_saver=False</text>
+<rect x="900" y="80" width="256" height="560" rx="10" class="panel"/>
+<text x="914" y="104" class="pt" text-anchor="start">端口分配（两条泳道相同）</text>
+<text x="914" y="124" class="sm" text-anchor="start">同一节点 2 个 engine 槽位，从 15000 起全部空闲</text>
+<text x="914" y="140" class="sm" text-anchor="start">先给所有 engine 分 server、nccl，</text>
+<text x="914" y="155" class="sm" text-anchor="start">再逐 engine 分 dist_init_addr，各预留 30 + dp = 31 个</text>
+<rect x="914" y="176" width="228" height="88" rx="7" class="neutral"/>
+<text x="926" y="196" class="pt" text-anchor="start">engine 0</text>
+<text x="926" y="216" class="tx" text-anchor="start">server 15000 · nccl 15001</text>
+<text x="926" y="234" class="tx" text-anchor="start">dist_init_addr 端口 15004</text>
+<text x="926" y="252" class="sm" text-anchor="start">预留 15004–15034</text>
+<rect x="914" y="276" width="228" height="88" rx="7" class="neutral"/>
+<text x="926" y="296" class="pt" text-anchor="start">engine 1</text>
+<text x="926" y="316" class="tx" text-anchor="start">server 15002 · nccl 15003</text>
+<text x="926" y="334" class="tx" text-anchor="start">dist_init_addr 端口 15035</text>
+<text x="926" y="352" class="sm" text-anchor="start">预留 15035–15065</text>
+<rect x="914" y="376" width="228" height="48" rx="7" class="acc2"/>
+<text x="926" y="396" class="tx" text-anchor="start">节点 cursor 终值 15066</text>
+<text x="926" y="414" class="sm" text-anchor="start">被占用的端口让 get_free_port 向后搜索</text>
+<text x="914" y="440" class="sm" text-anchor="start">router 单独取 3000–4000 间空闲端口，</text>
+<text x="914" y="456" class="sm" text-anchor="start">不在此区间；每个模型一个 router。</text>
+<text x="914" y="480" class="sm" text-anchor="start">trainer rendezvous：rank 0 在</text>
+<text x="914" y="496" class="sm" text-anchor="start">20000–21000 间取空闲端口作 MASTER_PORT。</text>
+<text x="914" y="524" class="sm" text-anchor="start">橙：共卡重叠区间，代价是显存让渡；</text>
+<text x="914" y="540" class="sm" text-anchor="start">蓝：决定性映射与 engine 的 base 槽位。</text>
+<text x="24" y="786" class="cap" text-anchor="start">阅读顺序：输入 → 布局函数（总量 + 偏移）→ 排序后的逻辑序号 → 绑定（rank 按序号，engine 按偏移 + 步长）→ 让渡判定与端口。</text>
+<text x="24" y="804" class="cap" text-anchor="start">两条泳道的绑定规则一字不差，差别只在 PG 总量、rollout 偏移和是否重叠；这正是 slime 把"布局"与"对象"分开的收益。</text>
+<text x="24" y="828" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 _get_placement_group_layout / sort_key / start_engines / _allocate_rollout_engine_addr_and_ports_normal</text>
+</svg>

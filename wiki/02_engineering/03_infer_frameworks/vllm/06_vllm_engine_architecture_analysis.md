@@ -217,7 +217,7 @@ flowchart TB
 
 S2 的用户 token 可以因为 R 已结束而不再使用，但处理 S2 这个完成事件仍有内存生命周期意义。fence 是按非空 scheduled/processed step 维护的，不能用“当前剩余请求数为0”替代。源码对 deferred list 只排空头部已满足项；在可能提前一拍的 CoW retention fence 前，后面已安全的项可能多等一会儿，这影响回收时机而不授权提前复用。
 
-还要区分另一种延迟：KV/EC connector 的 `request_finished` 可以要求 `delay_free_blocks`，让 terminal Request 留在 map，等待传输完成后再执行真正 free。它与“GPU在途写入的step fence”是两层条件，可能同时存在。KV allocator、offload/partial tail 与connector具体释放算法见 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]，跨实例协作见 [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]。
+还要区分另一种延迟：KV/EC connector 的 `request_finished` 可以要求 `delay_free_blocks`，让 terminal Request 留在 map，等待传输完成后再执行真正 free。它与“GPU在途写入的step fence”是两层条件，可能同时存在。KV allocator、offload/partial tail 与connector具体释放算法见 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]，跨实例协作见 [[22_vllm_disaggregated_kv_serving_analysis|跨实例 KV 服务]]（`delay_free_blocks`、partial tail 与被拒请求清理的协议侧在其 §5.4）。
 
 ### 6.3 ZMQ 发送结束保护的是另一批内存
 
@@ -278,4 +278,4 @@ DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模�
 - [[08_vllm_kv_cache_management_analysis|KV Cache管理]]：解释block关联、allocator、缓存提交与延迟回收条件。
 - [[12_vllm_model_runner_v2_analysis|Model Runner V2]]：接续设备侧持久状态、当步输入和异步物化，补齐Core队列之外的执行机制。
 - [[13_vllm_serving_control_plane_analysis|Serving控制面]]：展开launcher、ready、路由、背压和进程故障拓扑。
-- [[18_vllm_distributed_inference_analysis|分布式推理]]：深入Executor后面的rank/group、并行轴与collective顺序；进程级启动、广播RPC、响应FIFO与收尾见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor专题]]。
+- [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor专题]]：深入Executor后面的进程级启动、广播RPC、响应FIFO与收尾。

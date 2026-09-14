@@ -1,0 +1,393 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1280" viewBox="0 0 1180 1280" role="img" aria-labelledby="title desc">
+<title id="title">slime loss 归约账本：同一批样本在 token、sample、rollout 三种口径下的值，以及 DP×CP×micro-batch 切分后如何还原 rollout 均值</title>
+<desc id="desc">面板 1 用五条样本算出 token 均值、sample 均值与 rollout 均值三个不同的数；面板 2 展示 reward 分组归一化在样本数不等于 n × rollout_batch_size 时回落成一个大组；面板 3 按 DP rank、CP rank、micro-batch 列出每个局部分子与整 rollout 分母，串起 loss 预缩放、Megatron 除 micro-batch 数与 DDP 平均，最终还原 Σ_g L_g / G，并对照局部分母的错误值与 per-token 报告分母；面板 4 展示 rejection 只改分子 mask 而分母不变；面板 5 回放 s0 的 GSPO 序列 ratio 如何先经 CP all-reduce 重建再展开回本地 token，并列出 PPO 在 gather 之前把 reward 加到 cp0 本地末位时各样本的落点。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11px;fill:#38414D}
+  .mono2{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:9.5px;fill:#38414D}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .h1{fill:#DCE7FB;stroke:#AEB6C2;stroke-width:1.1}
+  .x{fill:#EEF1F5;stroke:#D9DEE7;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="1280" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一批样本、三种估计量、一条不随切分改写的归约链</text>
+<text x="24" y="56" class="su" text-anchor="start">与训练后端页同一实例：4 个逻辑 rollout、5 条样本（r2 = s2a + s2b 扇出，s0 下标 3 为工具 token）· dp=2 cp=2 · 每 rank M=2 个 micro-batch · G=4</text>
+<rect x="24" y="74" width="700" height="264" rx="10" class="panel"/>
+<text x="40" y="98" class="pt" text-anchor="start">1  三种均值是三个估计量：token、sample、rollout</text>
+<text x="72" y="126" class="sm" text-anchor="middle">样本</text>
+<text x="229" y="126" class="sm" text-anchor="middle">逐 token ℓ（灰=mask 0）</text>
+<text x="384" y="126" class="sm" text-anchor="middle">N_i</text>
+<text x="444" y="126" class="sm" text-anchor="middle">D_i</text>
+<text x="504" y="126" class="sm" text-anchor="middle">D_g</text>
+<text x="574" y="126" class="sm" text-anchor="middle">N_i / D_g</text>
+<rect x="40" y="134" width="60" height="20" rx="3" class="cell"/>
+<text x="70" y="148" class="mono" text-anchor="middle">s0</text>
+<rect x="104" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="116" y="148" class="mono2" text-anchor="middle">1</text>
+<rect x="130" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="142" y="148" class="mono2" text-anchor="middle">2</text>
+<rect x="156" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="168" y="148" class="mono2" text-anchor="middle">1</text>
+<rect x="182" y="134" width="24" height="20" rx="3" class="x"/>
+<text x="194" y="148" class="mono2" text-anchor="middle">9</text>
+<rect x="208" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="220" y="148" class="mono2" text-anchor="middle">2</text>
+<rect x="234" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="246" y="148" class="mono2" text-anchor="middle">1</text>
+<rect x="260" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="272" y="148" class="mono2" text-anchor="middle">3</text>
+<rect x="286" y="134" width="24" height="20" rx="3" class="h1"/>
+<text x="298" y="148" class="mono2" text-anchor="middle">4</text>
+<rect x="354" y="134" width="56" height="20" rx="3" class="cell"/>
+<text x="382" y="148" class="mono" text-anchor="middle">14</text>
+<rect x="414" y="134" width="56" height="20" rx="3" class="cell"/>
+<text x="442" y="148" class="mono" text-anchor="middle">7</text>
+<rect x="474" y="134" width="56" height="20" rx="3" class="acc1"/>
+<text x="502" y="148" class="mono" text-anchor="middle">7</text>
+<rect x="534" y="134" width="76" height="20" rx="3" class="cell"/>
+<text x="572" y="148" class="mono" text-anchor="middle">2</text>
+<rect x="40" y="158" width="60" height="20" rx="3" class="cell"/>
+<text x="70" y="172" class="mono" text-anchor="middle">s1</text>
+<rect x="104" y="158" width="24" height="20" rx="3" class="h1"/>
+<text x="116" y="172" class="mono2" text-anchor="middle">3</text>
+<rect x="130" y="158" width="24" height="20" rx="3" class="h1"/>
+<text x="142" y="172" class="mono2" text-anchor="middle">5</text>
+<rect x="354" y="158" width="56" height="20" rx="3" class="cell"/>
+<text x="382" y="172" class="mono" text-anchor="middle">8</text>
+<rect x="414" y="158" width="56" height="20" rx="3" class="cell"/>
+<text x="442" y="172" class="mono" text-anchor="middle">2</text>
+<rect x="474" y="158" width="56" height="20" rx="3" class="acc1"/>
+<text x="502" y="172" class="mono" text-anchor="middle">2</text>
+<rect x="534" y="158" width="76" height="20" rx="3" class="cell"/>
+<text x="572" y="172" class="mono" text-anchor="middle">4</text>
+<rect x="40" y="182" width="60" height="20" rx="3" class="cell"/>
+<text x="70" y="196" class="mono" text-anchor="middle">s2a</text>
+<rect x="104" y="182" width="24" height="20" rx="3" class="h1"/>
+<text x="116" y="196" class="mono2" text-anchor="middle">1</text>
+<rect x="130" y="182" width="24" height="20" rx="3" class="h1"/>
+<text x="142" y="196" class="mono2" text-anchor="middle">1</text>
+<rect x="156" y="182" width="24" height="20" rx="3" class="h1"/>
+<text x="168" y="196" class="mono2" text-anchor="middle">2</text>
+<rect x="182" y="182" width="24" height="20" rx="3" class="h1"/>
+<text x="194" y="196" class="mono2" text-anchor="middle">2</text>
+<rect x="354" y="182" width="56" height="20" rx="3" class="cell"/>
+<text x="382" y="196" class="mono" text-anchor="middle">6</text>
+<rect x="414" y="182" width="56" height="20" rx="3" class="cell"/>
+<text x="442" y="196" class="mono" text-anchor="middle">4</text>
+<rect x="474" y="182" width="56" height="20" rx="3" class="acc1"/>
+<text x="502" y="196" class="mono" text-anchor="middle">10</text>
+<rect x="534" y="182" width="76" height="20" rx="3" class="cell"/>
+<text x="572" y="196" class="mono" text-anchor="middle">0.6</text>
+<rect x="40" y="206" width="60" height="20" rx="3" class="cell"/>
+<text x="70" y="220" class="mono" text-anchor="middle">s2b</text>
+<rect x="104" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="116" y="220" class="mono2" text-anchor="middle">2</text>
+<rect x="130" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="142" y="220" class="mono2" text-anchor="middle">2</text>
+<rect x="156" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="168" y="220" class="mono2" text-anchor="middle">2</text>
+<rect x="182" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="194" y="220" class="mono2" text-anchor="middle">2</text>
+<rect x="208" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="220" y="220" class="mono2" text-anchor="middle">3</text>
+<rect x="234" y="206" width="24" height="20" rx="3" class="h1"/>
+<text x="246" y="220" class="mono2" text-anchor="middle">3</text>
+<rect x="354" y="206" width="56" height="20" rx="3" class="cell"/>
+<text x="382" y="220" class="mono" text-anchor="middle">14</text>
+<rect x="414" y="206" width="56" height="20" rx="3" class="cell"/>
+<text x="442" y="220" class="mono" text-anchor="middle">6</text>
+<rect x="474" y="206" width="56" height="20" rx="3" class="acc1"/>
+<text x="502" y="220" class="mono" text-anchor="middle">10</text>
+<rect x="534" y="206" width="76" height="20" rx="3" class="cell"/>
+<text x="572" y="220" class="mono" text-anchor="middle">1.4</text>
+<rect x="40" y="230" width="60" height="20" rx="3" class="cell"/>
+<text x="70" y="244" class="mono" text-anchor="middle">s3</text>
+<rect x="104" y="230" width="24" height="20" rx="3" class="h1"/>
+<text x="116" y="244" class="mono2" text-anchor="middle">6</text>
+<rect x="130" y="230" width="24" height="20" rx="3" class="h1"/>
+<text x="142" y="244" class="mono2" text-anchor="middle">2</text>
+<rect x="354" y="230" width="56" height="20" rx="3" class="cell"/>
+<text x="382" y="244" class="mono" text-anchor="middle">8</text>
+<rect x="414" y="230" width="56" height="20" rx="3" class="cell"/>
+<text x="442" y="244" class="mono" text-anchor="middle">2</text>
+<rect x="474" y="230" width="56" height="20" rx="3" class="acc1"/>
+<text x="502" y="244" class="mono" text-anchor="middle">2</text>
+<rect x="534" y="230" width="76" height="20" rx="3" class="cell"/>
+<text x="572" y="244" class="mono" text-anchor="middle">4</text>
+<rect x="40" y="266" width="670" height="60" rx="8" class="ghost"/>
+<text x="52" y="284" class="mono" text-anchor="start">L_token = ΣN / Σmax(D_i,1) = 50 / 21 = 2.381     L_sample = (1/I) Σ N_i/max(D_i,1) = 2.767</text>
+<text x="52" y="302" class="mono" text-anchor="start">L_rollout = (1/G) Σ_g ΣN_i / max(D_g,1) = (2 + 4 + 2 + 4) / 4 = 3  ← live 默认</text>
+<text x="52" y="318" class="cap" text-anchor="start">sample 均值给 r2 两票；token 均值让长 response 权重大；rollout 均值先在 r2 内按 token 加权再等权。</text>
+<rect x="736" y="74" width="420" height="264" rx="10" class="panel"/>
+<text x="752" y="98" class="pt" text-anchor="start">2  prompt 分组只定义 reward 基线</text>
+<text x="752" y="120" class="mono" text-anchor="start">raw_reward = [1, 0, 1, 1, 0]（5 条）</text>
+<text x="752" y="138" class="tx" text-anchor="start">5 ≠ n × rollout_batch_size = 2 × 2 → view(-1, 5)：一个大组</text>
+<rect x="752" y="148" width="388" height="44" rx="6" class="acc2"/>
+<text x="762" y="166" class="mono2" text-anchor="start">减组均值、除无偏 std+1e-6 → [0.73, -1.1, 0.73, 0.73, -1.1]</text>
+<text x="762" y="184" class="sm" text-anchor="start">扇出让 P1 的两个 rollout 和 P0 混成一组，基线不再是同一 prompt</text>
+<text x="752" y="212" class="tx" text-anchor="start">对照：4 条无扇出 [1,0,1,0] → 按 n=2 分两组 → [0.71, -0.71, 0.71, -0.71]</text>
+<text x="752" y="232" class="tx" text-anchor="start">grpo/gspo/cispo：returns = ones_like(kl) × reward，逐 token 广播；</text>
+<text x="752" y="250" class="tx" text-anchor="start">kl_coef=0 时 kl 全零。ppo 在 cp0 本地末位加 reward 再做 GAE，</text>
+<text x="752" y="268" class="tx" text-anchor="start">末 token 不在 cp0 本地时会抛错或错位（面板 5）。</text>
+<text x="752" y="292" class="cap" text-anchor="start">不规则扇出要保持按 prompt 分组，须用自定义 reward 后处理</text>
+<text x="752" y="308" class="cap" text-anchor="start">或自定义 converter 显式恢复；reducer 不会事后修正基线。</text>
+<rect x="24" y="350" width="1132" height="490" rx="10" class="panel"/>
+<text x="40" y="374" class="pt" text-anchor="start">3  DP × CP × micro-batch 账本：每格只算本地分子 ÷ 整 rollout 分母，缩放链还原 Σ_g L_g / G = 3</text>
+<text x="130" y="406" class="sm" text-anchor="middle">rank (dp, cp)</text>
+<text x="385" y="406" class="sm" text-anchor="middle">micro-batch 0：样本、本 rank 负责的 response 下标、分子 / D_g</text>
+<text x="715" y="406" class="sm" text-anchor="middle">micro-batch 1：样本、本 rank 负责的 response 下标、分子 / D_g</text>
+<text x="940" y="406" class="sm" text-anchor="middle">rank 小计</text>
+<rect x="40" y="414" width="172" height="52" rx="5" class="cell"/>
+<text x="126" y="436" class="mono" text-anchor="middle">dp0 · cp0</text>
+<text x="126" y="454" class="mono2" text-anchor="middle">mbs [s0 s1] [s3]</text>
+<rect x="220" y="414" width="322" height="52" rx="5" class="neutral"/>
+<text x="230" y="432" class="mono2" text-anchor="start">s0{6,7}: 7 / 7 = 1</text>
+<text x="230" y="447" class="mono2" text-anchor="start">s1{}: 0 / 2 = 0</text>
+<text x="534" y="458" class="mono" text-anchor="end">Σ = 1</text>
+<rect x="550" y="414" width="322" height="52" rx="5" class="acc2"/>
+<text x="560" y="432" class="mono2" text-anchor="start">s3{}: 0 / 2 = 0</text>
+<text x="864" y="458" class="mono" text-anchor="end">Σ = 0</text>
+<text x="560" y="458" class="sm" text-anchor="start">空 rank：分子 0，仍走 collective</text>
+<rect x="880" y="414" width="120" height="52" rx="5" class="acc1"/>
+<text x="940" y="444" class="mono" text-anchor="middle">1</text>
+<rect x="40" y="472" width="172" height="52" rx="5" class="cell"/>
+<text x="126" y="494" class="mono" text-anchor="middle">dp0 · cp1</text>
+<text x="126" y="512" class="mono2" text-anchor="middle">mbs [s0 s1] [s3]</text>
+<rect x="220" y="472" width="322" height="52" rx="5" class="neutral"/>
+<text x="230" y="490" class="mono2" text-anchor="start">s0{0,1,2,3,4,5}: 7 / 7 = 1</text>
+<text x="230" y="505" class="mono2" text-anchor="start">s1{0,1}: 8 / 2 = 4</text>
+<text x="534" y="516" class="mono" text-anchor="end">Σ = 5</text>
+<rect x="550" y="472" width="322" height="52" rx="5" class="neutral"/>
+<text x="560" y="490" class="mono2" text-anchor="start">s3{0,1}: 8 / 2 = 4</text>
+<text x="864" y="516" class="mono" text-anchor="end">Σ = 4</text>
+<rect x="880" y="472" width="120" height="52" rx="5" class="acc1"/>
+<text x="940" y="502" class="mono" text-anchor="middle">9</text>
+<rect x="40" y="530" width="172" height="52" rx="5" class="cell"/>
+<text x="126" y="552" class="mono" text-anchor="middle">dp1 · cp0</text>
+<text x="126" y="570" class="mono2" text-anchor="middle">mbs [s2b] [s2a]</text>
+<rect x="220" y="530" width="322" height="52" rx="5" class="acc2"/>
+<text x="230" y="548" class="mono2" text-anchor="start">s2b{}: 0 / 10 = 0</text>
+<text x="534" y="574" class="mono" text-anchor="end">Σ = 0</text>
+<text x="230" y="574" class="sm" text-anchor="start">空 rank：分子 0，仍走 collective</text>
+<rect x="550" y="530" width="322" height="52" rx="5" class="neutral"/>
+<text x="560" y="548" class="mono2" text-anchor="start">s2a{3}: 2 / 10 = 0.2</text>
+<text x="864" y="574" class="mono" text-anchor="end">Σ = 0.2</text>
+<rect x="880" y="530" width="120" height="52" rx="5" class="acc1"/>
+<text x="940" y="560" class="mono" text-anchor="middle">0.2</text>
+<rect x="40" y="588" width="172" height="52" rx="5" class="cell"/>
+<text x="126" y="610" class="mono" text-anchor="middle">dp1 · cp1</text>
+<text x="126" y="628" class="mono2" text-anchor="middle">mbs [s2b] [s2a]</text>
+<rect x="220" y="588" width="322" height="52" rx="5" class="neutral"/>
+<text x="230" y="606" class="mono2" text-anchor="start">s2b{0,1,2,3,4,5}: 14 / 10 = 1.4</text>
+<text x="534" y="632" class="mono" text-anchor="end">Σ = 1.4</text>
+<rect x="550" y="588" width="322" height="52" rx="5" class="neutral"/>
+<text x="560" y="606" class="mono2" text-anchor="start">s2a{0,1,2}: 4 / 10 = 0.4</text>
+<text x="864" y="632" class="mono" text-anchor="end">Σ = 0.4</text>
+<rect x="880" y="588" width="120" height="52" rx="5" class="acc1"/>
+<text x="940" y="618" class="mono" text-anchor="middle">1.8</text>
+<rect x="40" y="654" width="268" height="50" rx="6" class="neutral"/>
+<text x="174" y="674" class="mono" text-anchor="middle">每 mb loss × M/G × world</text>
+<text x="174" y="692" class="sm" text-anchor="middle">= × 2/4 × 4 = × 2</text>
+<path d="M308 679 L320 679" class="main"/>
+<rect x="320" y="654" width="268" height="50" rx="6" class="neutral"/>
+<text x="454" y="674" class="mono" text-anchor="middle">Megatron ÷ M</text>
+<text x="454" y="692" class="sm" text-anchor="middle">每 mb 净系数 1 = world / G</text>
+<path d="M588 679 L600 679" class="main"/>
+<rect x="600" y="654" width="268" height="50" rx="6" class="neutral"/>
+<text x="734" y="674" class="mono" text-anchor="middle">反向累加，DDP ÷ world</text>
+<text x="734" y="692" class="sm" text-anchor="middle">Σ_rank 12 × 1 / 4</text>
+<path d="M868 679 L880 679" class="main"/>
+<rect x="880" y="654" width="268" height="50" rx="6" class="acc1"/>
+<text x="1014" y="674" class="mono" text-anchor="middle">= 3 = L_rollout</text>
+<text x="1014" y="692" class="sm" text-anchor="middle">cp 不出现；dp·cp 任意分解结果相同</text>
+<rect x="40" y="716" width="548" height="82" rx="6" class="acc2"/>
+<text x="52" y="736" class="tx" text-anchor="start">错误口径：分母改成本 mb 自己的 mask 和 → 总和 13.833，最终 3.458 ≠ 3</text>
+<text x="52" y="754" class="sm" text-anchor="start">s2a、s2b 各用 4 与 6 作分母：同一次执行被投两票；程序不报错，目标函数已变。</text>
+<text x="52" y="770" class="sm" text-anchor="start">tests/test_cp_utils.py::test_split_with_per_mb_denom_would_be_wrong 锁定此差异。</text>
+<rect x="600" y="716" width="552" height="82" rx="6" class="ghost"/>
+<text x="612" y="736" class="tx" text-anchor="start">报告：reduce_train_step_metrics 把 Σ_mb 在 dp·cp 上 all-reduce = 12，/ G = 3（cp_factor 1）</text>
+<text x="612" y="754" class="sm" text-anchor="start">per-token 模式：values[0] = Σ_rank num_tokens = 42（每个 CP rank 用完整 mask 各算一遍），</text>
+<text x="612" y="770" class="sm" text-anchor="start">分子 Σ = 50，× cp_size 2 / 42 = 2.381 = L_token（报告）。</text>
+<text x="612" y="788" class="sm" text-anchor="start">per-token 梯度（Megatron 契约）：不逐 mb 除、DDP 不缩放，finalize 除 Σnum_tokens → 2 × 50 / 42 = 2.381</text>
+<text x="40" y="818" class="cap" text-anchor="start">CP 分子可加：两 rank 分子之和等于 cp=1 的分子。空 rank 的本地 logprob 为空，policy_loss_function 加 0·logits.sum() 保持反向连通，它照常参加 DDP 与白化的集合通信。</text>
+<rect x="24" y="852" width="1132" height="170" rx="10" class="panel"/>
+<text x="40" y="876" class="pt" text-anchor="start">4  rejection 改分子的 mask，分母仍是原始 rollout_mask_sums；mismatch 指标用改前的 reducer</text>
+<rect x="40" y="892" width="360" height="50" rx="6" class="neutral"/>
+<text x="220" y="912" class="mono2" text-anchor="middle">原始：s3 ℓ=[6,2] mask=[1,1]</text>
+<text x="220" y="930" class="mono" text-anchor="middle">8 / 2 = 4</text>
+<path d="M400 917 L412 917" class="main"/>
+<rect x="412" y="892" width="360" height="50" rx="6" class="acc1"/>
+<text x="592" y="912" class="mono2" text-anchor="middle">自定义 TIS hook 返回 mask=[1,0]（IS 权重取 1）</text>
+<text x="592" y="930" class="mono" text-anchor="middle">分子 6 / 原分母 2 = 3  ← 源码</text>
+<path d="M772 917 L784 917" class="aux"/>
+<rect x="784" y="892" width="360" height="50" rx="6" class="acc2"/>
+<text x="964" y="912" class="mono2" text-anchor="middle">若按 survivor 重算分母（1 个）</text>
+<text x="964" y="930" class="mono" text-anchor="middle">6 / 1 = 6：拒得越多权重越大</text>
+<text x="40" y="966" class="tx" text-anchor="start">policy_loss_function 用 modified masks + batch["rollout_mask_sums"] 重建 reducer：pg_loss、pg_clipfrac、ppo_kl、entropy、kl_loss 都用它；</text>
+<text x="40" y="984" class="tx" text-anchor="start">ois 与 tis_* 指标用改前的 reducer，否则被拒 token 从分母消失、truncate 类指标被推向 0。per-token 的 num_tokens 也在调用 hook 前按原始 mask 算好。</text>
+<text x="40" y="1004" class="cap" text-anchor="start">custom_pg_loss_reducer 只收到 lengths、masks 与 per-token 开关，看不到 rollout_ids / rollout_mask_sums，因此无法自行重建 rollout 均值。</text>
+<rect x="24" y="1034" width="1132" height="212" rx="10" class="panel"/>
+<text x="40" y="1058" class="pt" text-anchor="start">5  序列统计量先在 CP 上重建再展开；PPO 的 reward 在重建之前加到 cp0 本地末位</text>
+<text x="208" y="1078" class="sm" text-anchor="middle">0</text>
+<text x="248" y="1078" class="sm" text-anchor="middle">1</text>
+<text x="288" y="1078" class="sm" text-anchor="middle">2</text>
+<text x="328" y="1078" class="sm" text-anchor="middle">3</text>
+<text x="368" y="1078" class="sm" text-anchor="middle">4</text>
+<text x="408" y="1078" class="sm" text-anchor="middle">5</text>
+<text x="448" y="1078" class="sm" text-anchor="middle">6</text>
+<text x="488" y="1078" class="sm" text-anchor="middle">7</text>
+<text x="182" y="1078" class="sm" text-anchor="end">response 下标</text>
+<text x="182" y="1100" class="mono2" text-anchor="end">s0 old−new</text>
+<rect x="190" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="208" y="1100" class="mono2" text-anchor="middle">0.1</text>
+<rect x="230" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="248" y="1100" class="mono2" text-anchor="middle">0.2</text>
+<rect x="270" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="288" y="1100" class="mono2" text-anchor="middle">0.1</text>
+<rect x="310" y="1086" width="36" height="20" rx="3" class="x"/>
+<text x="328" y="1100" class="mono2" text-anchor="middle">0.9</text>
+<rect x="350" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="368" y="1100" class="mono2" text-anchor="middle">0.2</text>
+<rect x="390" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="408" y="1100" class="mono2" text-anchor="middle">0.1</text>
+<rect x="430" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="448" y="1100" class="mono2" text-anchor="middle">0.3</text>
+<rect x="470" y="1086" width="36" height="20" rx="3" class="cell"/>
+<text x="488" y="1100" class="mono2" text-anchor="middle">0.4</text>
+<text x="182" y="1126" class="mono2" text-anchor="end">cp0 本地 {6,7} 补零</text>
+<rect x="190" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="208" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="230" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="248" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="270" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="288" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="310" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="328" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="350" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="368" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="390" y="1112" width="36" height="20" rx="3" class="x"/>
+<text x="408" y="1126" class="mono2" text-anchor="middle">0</text>
+<rect x="430" y="1112" width="36" height="20" rx="3" class="h1"/>
+<text x="448" y="1126" class="mono2" text-anchor="middle">0.3</text>
+<rect x="470" y="1112" width="36" height="20" rx="3" class="h1"/>
+<text x="488" y="1126" class="mono2" text-anchor="middle">0.4</text>
+<text x="516" y="1126" class="mono2" text-anchor="start">本地均值 0.35</text>
+<text x="182" y="1152" class="mono2" text-anchor="end">cp1 本地 {0..5} 补零</text>
+<rect x="190" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="208" y="1152" class="mono2" text-anchor="middle">0.1</text>
+<rect x="230" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="248" y="1152" class="mono2" text-anchor="middle">0.2</text>
+<rect x="270" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="288" y="1152" class="mono2" text-anchor="middle">0.1</text>
+<rect x="310" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="328" y="1152" class="mono2" text-anchor="middle">0.9</text>
+<rect x="350" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="368" y="1152" class="mono2" text-anchor="middle">0.2</text>
+<rect x="390" y="1138" width="36" height="20" rx="3" class="h1"/>
+<text x="408" y="1152" class="mono2" text-anchor="middle">0.1</text>
+<rect x="430" y="1138" width="36" height="20" rx="3" class="x"/>
+<text x="448" y="1152" class="mono2" text-anchor="middle">0</text>
+<rect x="470" y="1138" width="36" height="20" rx="3" class="x"/>
+<text x="488" y="1152" class="mono2" text-anchor="middle">0</text>
+<text x="516" y="1152" class="mono2" text-anchor="start">本地均值 0.14</text>
+<text x="182" y="1178" class="mono2" text-anchor="end">all-reduce 求和</text>
+<rect x="190" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="208" y="1178" class="mono2" text-anchor="middle">0.1</text>
+<rect x="230" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="248" y="1178" class="mono2" text-anchor="middle">0.2</text>
+<rect x="270" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="288" y="1178" class="mono2" text-anchor="middle">0.1</text>
+<rect x="310" y="1164" width="36" height="20" rx="3" class="x"/>
+<text x="328" y="1178" class="mono2" text-anchor="middle">0.9</text>
+<rect x="350" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="368" y="1178" class="mono2" text-anchor="middle">0.2</text>
+<rect x="390" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="408" y="1178" class="mono2" text-anchor="middle">0.1</text>
+<rect x="430" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="448" y="1178" class="mono2" text-anchor="middle">0.3</text>
+<rect x="470" y="1164" width="36" height="20" rx="3" class="acc1"/>
+<text x="488" y="1178" class="mono2" text-anchor="middle">0.4</text>
+<text x="516" y="1178" class="mono2" text-anchor="start">masked 均值 1.4 / 7 = 0.2</text>
+<text x="40" y="1210" class="cap" text-anchor="start">GSPO 用 0.2 展开回 cp0 的 2 个、cp1 的 6 个本地 token；各 rank 只看本地片会得到 0.35 与 0.14 两个不同的 log-ratio。</text>
+<text x="40" y="1228" class="cap" text-anchor="start">s2b 在 cp0 本地为空，仍以全零向量参加同一次 all-reduce；反向时可微 all-reduce 的梯度再在 CP 组上 all-reduce 一次。</text>
+<text x="748" y="1078" class="sm" text-anchor="middle">样本</text>
+<text x="804" y="1078" class="sm" text-anchor="middle">T/R</text>
+<text x="867" y="1078" class="sm" text-anchor="middle">chunk·pad</text>
+<text x="957" y="1078" class="sm" text-anchor="middle">cp0 本地下标</text>
+<text x="1072" y="1078" class="sm" text-anchor="middle">k[-1] 落点</text>
+<rect x="720" y="1086" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1100" class="mono2" text-anchor="middle">s0</text>
+<rect x="776" y="1086" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1100" class="mono2" text-anchor="middle">12/8</text>
+<rect x="832" y="1086" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1100" class="mono2" text-anchor="middle">c3 p0</text>
+<rect x="902" y="1086" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1100" class="mono2" text-anchor="middle">{6,7}</text>
+<rect x="1012" y="1086" width="116" height="20" rx="3" class="acc1"/>
+<text x="1070" y="1100" class="mono2" text-anchor="middle">ok → 7</text>
+<rect x="720" y="1108" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1122" class="mono2" text-anchor="middle">s1</text>
+<rect x="776" y="1108" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1122" class="mono2" text-anchor="middle">6/2</text>
+<rect x="832" y="1108" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1122" class="mono2" text-anchor="middle">c2 p2</text>
+<rect x="902" y="1108" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1122" class="mono2" text-anchor="middle">{}</text>
+<rect x="1012" y="1108" width="116" height="20" rx="3" class="acc2"/>
+<text x="1070" y="1122" class="mono2" text-anchor="middle">IndexError</text>
+<rect x="720" y="1130" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1144" class="mono2" text-anchor="middle">s2a</text>
+<rect x="776" y="1130" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1144" class="mono2" text-anchor="middle">8/4</text>
+<rect x="832" y="1130" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1144" class="mono2" text-anchor="middle">c2 p0</text>
+<rect x="902" y="1130" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1144" class="mono2" text-anchor="middle">{3}</text>
+<rect x="1012" y="1130" width="116" height="20" rx="3" class="acc1"/>
+<text x="1070" y="1144" class="mono2" text-anchor="middle">ok → 3</text>
+<rect x="720" y="1152" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1166" class="mono2" text-anchor="middle">s2b</text>
+<rect x="776" y="1152" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1166" class="mono2" text-anchor="middle">10/6</text>
+<rect x="832" y="1152" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1166" class="mono2" text-anchor="middle">c3 p2</text>
+<rect x="902" y="1152" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1166" class="mono2" text-anchor="middle">{}</text>
+<rect x="1012" y="1152" width="116" height="20" rx="3" class="acc2"/>
+<text x="1070" y="1166" class="mono2" text-anchor="middle">IndexError</text>
+<rect x="720" y="1174" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1188" class="mono2" text-anchor="middle">s3</text>
+<rect x="776" y="1174" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1188" class="mono2" text-anchor="middle">6/2</text>
+<rect x="832" y="1174" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1188" class="mono2" text-anchor="middle">c2 p2</text>
+<rect x="902" y="1174" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1188" class="mono2" text-anchor="middle">{}</text>
+<rect x="1012" y="1174" width="116" height="20" rx="3" class="acc2"/>
+<text x="1070" y="1188" class="mono2" text-anchor="middle">IndexError</text>
+<rect x="720" y="1196" width="52" height="20" rx="3" class="cell"/>
+<text x="746" y="1210" class="mono2" text-anchor="middle">T10/R8</text>
+<rect x="776" y="1196" width="52" height="20" rx="3" class="cell"/>
+<text x="802" y="1210" class="mono2" text-anchor="middle">10/8</text>
+<rect x="832" y="1196" width="66" height="20" rx="3" class="cell"/>
+<text x="865" y="1210" class="mono2" text-anchor="middle">c3 p2</text>
+<rect x="902" y="1196" width="106" height="20" rx="3" class="cell"/>
+<text x="955" y="1210" class="mono2" text-anchor="middle">{0,1}</text>
+<rect x="1012" y="1196" width="116" height="20" rx="3" class="acc2"/>
+<text x="1070" y="1210" class="mono2" text-anchor="middle">错位 → 1（应为 7）</text>
+<text x="720" y="1228" class="cap" text-anchor="start">尾段覆盖最后一个 response logit ⇔ chunk ≥ pad + 2（total ≥ 3）</text>
+<text x="24" y="1268" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 get_sum_of_sample_mean / loss_function 缩放 / reduce_train_step_metrics / _post_process_rewards / policy_loss_function 的 mask 重建</text>
+</svg>

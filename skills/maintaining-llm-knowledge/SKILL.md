@@ -72,7 +72,6 @@ When a new source is added to `raw/`, follow this sequence:
 - Mark outdated claims with `> [!deprecated] Updated by [[page_name]]`.
 - Mark contradictions with `> [!contradiction] See also [[page_name]]`.
 - Record the date of each significant update in the page header.
-- When a page grows too large (>500 lines), propose a split to the user.
 
 ### Quality Standards
 

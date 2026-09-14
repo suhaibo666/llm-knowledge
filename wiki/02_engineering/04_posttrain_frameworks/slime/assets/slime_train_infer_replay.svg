@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1052" viewBox="0 0 1180 1052" role="img" aria-labelledby="title desc">
+<title id="title">slime 训推一致性：一个 token 的 logprob 在支持集、路由与校正三处的重放</title>
+<desc id="desc">三个面板：top-p 支持集重放把全词表 softmax 的假差异消掉，TP 分片与工具 token 的空 nucleus 仍得到一致结果；路由重放的记录与两个 cursor 如何被 old-logprob 前向、训练前向与重算消费，以及 route 梯度按列顺序逐次 BF16 累加的差别；同一组 train-old/rollout 比值在 vanilla TIS、ICEPOP 与示例 MIS 下得到的权重与 mask。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .bar{fill:#AEB6C2}
+  .bar1{fill:#2563EB}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+</style><rect width="1180" height="1052" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一份权重下，一个 token 的 logprob 在支持集、路由与校正三处怎样分叉、又怎样被重放收拢</text>
+<text x="24" y="56" class="su" text-anchor="start">词表 4、logits [2, 1, 0, -1]、温度 1、rollout nucleus {0, 1}、采到 y=1 · 训练 TP=2 · 一个 router、2 个 micro-batch · 比值 ρ=[0.5, 4]</text>
+<rect x="24" y="72" width="1132" height="300" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① L2 采样支持集：训练侧用 rollout 的 nucleus 重算，否则权重相同也有假差异</text>
+<text x="40" y="120" class="sm" text-anchor="start">全词表 softmax（不重放）</text>
+<text x="330" y="120" class="sm" text-anchor="start">在 nucleus 上归一（keep mask 重放）</text>
+<rect x="50" y="165.41286101680413" width="36" height="96.58713898319586" rx="2" class="ghost"/>
+<rect x="340" y="152.3412132054993" width="36" height="109.65878679450071" rx="2" class="neutral"/>
+<text x="68" y="278" class="sm" text-anchor="middle">v=0</text>
+<text x="358" y="278" class="sm" text-anchor="middle">v=0</text>
+<text x="68" y="159.41286101680413" class="sm" text-anchor="middle">0.64</text>
+<text x="358" y="146.3412132054993" class="sm" text-anchor="middle">0.73</text>
+<rect x="110" y="226.46757728651346" width="36" height="35.532422713486525" rx="2" class="acc2"/>
+<rect x="400" y="221.65878679450074" width="36" height="40.34121320549926" rx="2" class="acc1"/>
+<text x="128" y="278" class="sm" text-anchor="middle">v=1</text>
+<text x="418" y="278" class="sm" text-anchor="middle">v=1</text>
+<text x="128" y="220.46757728651346" class="sm" text-anchor="middle">0.24</text>
+<text x="418" y="215.65878679450074" class="sm" text-anchor="middle">0.27</text>
+<rect x="170" y="248.9283521886951" width="36" height="13.071647811304885" rx="2" class="ghost"/>
+<rect x="460" y="262" width="36" height="0.01" rx="2" class="ghost"/>
+<text x="188" y="278" class="sm" text-anchor="middle">v=2</text>
+<text x="478" y="278" class="sm" text-anchor="middle">v=2</text>
+<text x="188" y="242.9283521886951" class="sm" text-anchor="middle">0.09</text>
+<text x="478" y="256" class="sm" text-anchor="middle">0.00</text>
+<rect x="230" y="257.19120950798725" width="36" height="4.808790492012748" rx="2" class="ghost"/>
+<rect x="520" y="262" width="36" height="0.01" rx="2" class="ghost"/>
+<text x="248" y="278" class="sm" text-anchor="middle">v=3</text>
+<text x="538" y="278" class="sm" text-anchor="middle">v=3</text>
+<text x="248" y="251.19120950798725" class="sm" text-anchor="middle">0.03</text>
+<text x="538" y="256" class="sm" text-anchor="middle">0.00</text>
+<text x="40" y="302" class="tx" text-anchor="start">log p(y=1) = -1.440</text>
+<text x="330" y="302" class="tx" text-anchor="start">log q(y=1) = -1.313</text>
+<rect x="40" y="312" width="250" height="24" rx="4" class="acc2"/>
+<text x="50" y="328" class="sm" text-anchor="start">假差异 δ = 0.127（与 rollout 比）</text>
+<rect x="330" y="312" width="250" height="24" rx="4" class="acc1"/>
+<text x="340" y="328" class="sm" text-anchor="start">δ = 0：与 rollout 的行为分布同域</text>
+<path d="M292 192 L326 192" class="main"/>
+<rect x="620" y="112" width="522" height="118" rx="8" class="neutral"/>
+<text x="632" y="132" class="tx" text-anchor="start">训练 TP=2：每个 rank 只持有一段词表，keep mask 按本地段切</text>
+<rect x="632" y="144" width="498" height="24" rx="4" class="cell"/>
+<text x="642" y="160" class="sm" text-anchor="start">rank 0 持有 {0, 1}：本地有保留项</text>
+<rect x="632" y="174" width="498" height="24" rx="4" class="ghost"/>
+<text x="642" y="190" class="sm" text-anchor="start">rank 1 持有 {2, 3}：本地整行被置 −inf（目标不在本段）</text>
+<text x="632" y="220" class="sm" text-anchor="start">max 与 sum 在 TP 组 all-reduce 后仍得 -1.313</text>
+<rect x="620" y="240" width="522" height="96" rx="8" class="neutral"/>
+<text x="632" y="260" class="tx" text-anchor="start">工具 token（loss_mask=0，nucleus 为空，目标 v=3）</text>
+<text x="632" y="280" class="sm" text-anchor="start">空 span 让整行 keep=False；kernel 在 masked_fill 之后把目标 logit 写回，</text>
+<text x="632" y="296" class="sm" text-anchor="start">所以支持集只剩目标本身：训练 logprob = 0.000，rollout 侧占位也是 0.0</text>
+<text x="632" y="312" class="sm" text-anchor="start">实际重放的支持集是 S ∪ {y}；entropy 仍用未屏蔽的 logits</text>
+<text x="632" y="328" class="sm" text-anchor="start">top-k 没有对应的 ids 字段，不在重放范围内</text>
+<rect x="24" y="386" width="1132" height="318" rx="10" class="panel"/>
+<text x="40" y="410" class="pt" text-anchor="start">② L3 路由：记录被 old-logprob 前向与训练前向各消费一遍，后向 cursor 靠重算推进（本页推断）</text>
+<text x="40" y="440" class="tx" text-anchor="start">R3（--use-rollout-routing-replay，开重算）</text>
+<rect x="40" y="448" width="140" height="38" rx="5" class="neutral"/>
+<text x="110" y="463" class="sm" text-anchor="middle">fill_routing_replay</text>
+<text x="110" y="479" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="190" y="448" width="140" height="38" rx="5" class="neutral"/>
+<text x="260" y="463" class="sm" text-anchor="middle">ref 前向 fallthrough</text>
+<text x="260" y="479" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="340" y="448" width="140" height="38" rx="5" class="neutral"/>
+<text x="410" y="463" class="sm" text-anchor="middle">old 前向 replay_forward</text>
+<text x="410" y="479" class="mono" text-anchor="middle">记录 2 · 前 2 · 后 0</text>
+<rect x="490" y="448" width="140" height="38" rx="5" class="neutral"/>
+<text x="560" y="463" class="sm" text-anchor="middle">clear_all_forward</text>
+<text x="560" y="479" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="640" y="448" width="140" height="38" rx="5" class="acc1"/>
+<text x="710" y="463" class="sm" text-anchor="middle">训练前向 + 重算</text>
+<text x="710" y="479" class="mono" text-anchor="middle">记录 2 · 前 2 · 后 2</text>
+<text x="40" y="510" class="tx" text-anchor="start">R3，不开重算</text>
+<rect x="40" y="518" width="140" height="38" rx="5" class="neutral"/>
+<text x="110" y="533" class="sm" text-anchor="middle">fill_routing_replay</text>
+<text x="110" y="549" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="190" y="518" width="140" height="38" rx="5" class="neutral"/>
+<text x="260" y="533" class="sm" text-anchor="middle">ref 前向 fallthrough</text>
+<text x="260" y="549" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="340" y="518" width="140" height="38" rx="5" class="neutral"/>
+<text x="410" y="533" class="sm" text-anchor="middle">old 前向 replay_forward</text>
+<text x="410" y="549" class="mono" text-anchor="middle">记录 2 · 前 2 · 后 0</text>
+<rect x="490" y="518" width="140" height="38" rx="5" class="neutral"/>
+<text x="560" y="533" class="sm" text-anchor="middle">clear_all_forward</text>
+<text x="560" y="549" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="640" y="518" width="140" height="38" rx="5" class="acc1"/>
+<text x="710" y="533" class="sm" text-anchor="middle">训练前向（无重算）</text>
+<text x="710" y="549" class="mono" text-anchor="middle">记录 2 · 前 2 · 后 0</text>
+<text x="40" y="580" class="tx" text-anchor="start">R2（只开 --use-routing-replay）</text>
+<rect x="40" y="588" width="140" height="38" rx="5" class="neutral"/>
+<text x="110" y="603" class="sm" text-anchor="middle">ref 前向 fallthrough</text>
+<text x="110" y="619" class="mono" text-anchor="middle">记录 0 · 前 0 · 后 0</text>
+<rect x="190" y="588" width="140" height="38" rx="5" class="neutral"/>
+<text x="260" y="603" class="sm" text-anchor="middle">old 前向 record</text>
+<text x="260" y="619" class="mono" text-anchor="middle">记录 2 · 前 0 · 后 0</text>
+<rect x="340" y="588" width="140" height="38" rx="5" class="acc1"/>
+<text x="410" y="603" class="sm" text-anchor="middle">训练前向 + 重算</text>
+<text x="410" y="619" class="mono" text-anchor="middle">记录 2 · 前 2 · 后 2</text>
+<text x="40" y="648" class="sm" text-anchor="start">结束：R3 开重算为 前 2/后 2/记录 2；不开重算时后 cursor 停在 0；</text>
+<text x="40" y="664" class="sm" text-anchor="start">assert_all_consumed 要求两者都等于记录数，但冻结基线没有调用它；训练后 clear_all 清空记录</text>
+<text x="40" y="680" class="sm" text-anchor="start">强制 id 仍从当前 scores gather 概率：离散路径固定，router 概率与梯度照常计算</text>
+<rect x="800" y="426" width="342" height="262" rx="8" class="neutral"/>
+<text x="812" y="446" class="tx" text-anchor="start">反向平面：训练侧确定性 kernel 逐 slot 累加</text>
+<text x="812" y="466" class="sm" text-anchor="start">FP32 累加器每加一个 slot 舍入到 BF16（对照树内参考）</text>
+<rect x="812" y="478" width="318" height="40" rx="5" class="acc1"/>
+<text x="822" y="494" class="sm" text-anchor="start">列顺序 [1, 2⁻⁸, 2⁻⁸]</text>
+<text x="822" y="510" class="sm" text-anchor="start">1 + 2⁻⁸ 恰为半个 ULP，舍回 1 → 结果 1</text>
+<rect x="812" y="526" width="318" height="40" rx="5" class="acc2"/>
+<text x="822" y="542" class="sm" text-anchor="start">反序 [2⁻⁸, 2⁻⁸, 1]</text>
+<text x="822" y="558" class="sm" text-anchor="start">2⁻⁸ + 2⁻⁸ = 2⁻⁷ 先成形 → 结果 1.0078125</text>
+<rect x="812" y="574" width="318" height="40" rx="5" class="acc2"/>
+<text x="822" y="590" class="sm" text-anchor="start">一次 FP32 求和再转 BF16</text>
+<text x="822" y="606" class="sm" text-anchor="start">结果 1.0078125：不能替代逐 slot 舍入</text>
+<text x="812" y="634" class="sm" text-anchor="start">前向另算：对齐桥让 Megatron 沿用 SGLang 无序</text>
+<text x="812" y="650" class="sm" text-anchor="start">top-k 的列顺序，owner 归约由 SGLang ep_gather</text>
+<text x="812" y="666" class="sm" text-anchor="start">按 slot 顺序在 FP32 完成（依赖侧，本机未复核）</text>
+<rect x="24" y="718" width="1132" height="282" rx="10" class="panel"/>
+<text x="40" y="742" class="pt" text-anchor="start">③ 校正：同一组 ρ=[0.5, 4] 走不同函数，改的是权重或 mask，不是差异本身</text>
+<text x="40" y="766" class="sm" text-anchor="start">函数</text>
+<text x="260" y="766" class="sm" text-anchor="start">规则</text>
+<text x="740" y="766" class="sm" text-anchor="start">权重</text>
+<text x="900" y="766" class="sm" text-anchor="start">mask</text>
+<rect x="36" y="774" width="1106" height="22" rx="3" class="cell"/>
+<text x="44" y="789" class="sm" text-anchor="start">vanilla TIS（默认 hook）</text>
+<text x="260" y="789" class="sm" text-anchor="start">clamp 到 [0, 2]</text>
+<text x="740" y="789" class="mono" text-anchor="start">[0.5, 2]</text>
+<text x="900" y="789" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="798" width="1106" height="22" rx="3" class="ghost"/>
+<text x="44" y="813" class="sm" text-anchor="start">ICEPOP（GLM-5 门禁）</text>
+<text x="260" y="813" class="sm" text-anchor="start">区间 [0.5, 2] 外置 0</text>
+<text x="740" y="813" class="mono" text-anchor="start">[0.5, 0]</text>
+<text x="900" y="813" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="822" width="1106" height="22" rx="3" class="cell"/>
+<text x="44" y="837" class="sm" text-anchor="start">MIS truncate</text>
+<text x="260" y="837" class="sm" text-anchor="start">只截上界 2</text>
+<text x="740" y="837" class="mono" text-anchor="start">[0.5, 2]</text>
+<text x="900" y="837" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="846" width="1106" height="22" rx="3" class="ghost"/>
+<text x="44" y="861" class="sm" text-anchor="start">MIS clip</text>
+<text x="260" y="861" class="sm" text-anchor="start">截到 [0.5, 2]</text>
+<text x="740" y="861" class="mono" text-anchor="start">[0.5, 2]</text>
+<text x="900" y="861" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="870" width="1106" height="22" rx="3" class="acc2"/>
+<text x="44" y="885" class="sm" text-anchor="start">MIS mask</text>
+<text x="260" y="885" class="sm" text-anchor="start">权重不变，区间外 mask 置 0</text>
+<text x="740" y="885" class="mono" text-anchor="start">[0.5, 4]</text>
+<text x="900" y="885" class="mono" text-anchor="start">[1, 0]</text>
+<rect x="36" y="894" width="1106" height="22" rx="3" class="ghost"/>
+<text x="44" y="909" class="sm" text-anchor="start">MIS sequence</text>
+<text x="260" y="909" class="sm" text-anchor="start">log 比之和 ln 2 → 整序列同权</text>
+<text x="740" y="909" class="mono" text-anchor="start">[2, 2]</text>
+<text x="900" y="909" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="918" width="1106" height="22" rx="3" class="cell"/>
+<text x="44" y="933" class="sm" text-anchor="start">MIS geometric</text>
+<text x="260" y="933" class="sm" text-anchor="start">log 比均值 → 整序列同权</text>
+<text x="740" y="933" class="mono" text-anchor="start">[1.4142, 1.4142]</text>
+<text x="900" y="933" class="mono" text-anchor="start">[1, 1]</text>
+<rect x="36" y="942" width="1106" height="22" rx="3" class="acc2"/>
+<text x="44" y="957" class="sm" text-anchor="start">mis.yaml 默认</text>
+<text x="260" y="957" class="sm" text-anchor="start">truncate → RS [0.5, 2] → veto 0.0001 → 归一（均值 1.25）</text>
+<text x="740" y="957" class="mono" text-anchor="start">[0.4, 1.6]</text>
+<text x="900" y="957" class="mono" text-anchor="start">[1, 0]</text>
+<text x="40" y="988" class="sm" text-anchor="start">被拒绝的 token 只从分子删除，分母仍是原始 rollout_mask_sums（归约口径见 15 页）；use_tis 关闭时 MIS 只算指标、不产生权重</text>
+<text x="24" y="1022" class="cap" text-anchor="start">阅读顺序：① 先对齐归一化域 → ② 再固定离散路由与累加顺序 → ③ 前面都定位清楚之后，才用校正函数改估计量。</text>
+<text x="24" y="1042" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 _build_topp_keep_mask / _VocabParallelLogProbEntropy / RoutingReplay / _scatter_routes_backward_kernel / TIS 与 MIS 函数</text>
+</svg>

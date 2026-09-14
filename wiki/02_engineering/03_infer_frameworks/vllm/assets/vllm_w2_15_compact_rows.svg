@@ -117,7 +117,7 @@
 <rect x="710" y="433" width="250" height="37" class="ghost"/>
 <text x="720" y="459" class="">—</text>
 <path d="M45 479V506" class="arrow main" marker-end="url(#arrow)"/>
-<text x="68" y="500" class="">reorder：B 是 decode，A 是 long_extend；swap_states(0, 1)</text>
+<text x="68" y="500" class="">reorder：B 是 decode，A 是 long_extend；swap_states(1, 0)</text>
 <text x="30" y="540" class="heading">③ 执行顺序：[B, A]，全部列继续对应同一个请求</text>
 <rect x="30" y="553" width="65" height="36" class="ghost"/>
 <text x="40" y="578" class="">row</text>

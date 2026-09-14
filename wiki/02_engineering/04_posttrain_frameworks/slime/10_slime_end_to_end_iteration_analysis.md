@@ -41,7 +41,7 @@ $$
 
 `Sample` 会把 SGLang 返回的 `weight_version` 追加到 `weight_versions`，而不是只保留最后一个版本；partial continuation 因而能够暴露跨版本轨迹。[`slime/utils/types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) `mask_offpolicy_in_partial_rollout` 默认关闭，开启后才会在续生成前把旧 response mask 清零。[`slime/utils/arguments.py:456-474`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L456-L474) [`slime/rollout/sglang_rollout.py:224-248`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L248)
 
-> **设计分析**：这说明 slime 中的“on-policy 边界”应理解为**可审计的策略版本边界**，而不是笼统地认为“rollout 永远来自当前 actor”。同步调度尽量缩短样本相对当前策略的滞后；异步执行、中断续生成和较大的更新间隔则有意用策略时效性换取吞吐，但仍要保证权重发布的完整性，并能解释 token 对应的策略版本。具体校正条件见 [[17_slime_train_inference_consistency_analysis]]。
+> **设计分析**：这说明 slime 中的“on-policy 边界”应理解为**可审计的策略版本边界**，而不是笼统地认为“rollout 永远来自当前 actor”。同步调度尽量缩短样本相对当前策略的滞后；异步执行、中断续生成和较大的更新间隔则有意用策略时效性换取吞吐，但仍要保证权重发布的完整性，并能解释 token 对应的策略版本。TIS 比值怎样同时吸收训推失配与这段版本差、源码并无单独的版本校正项，见 [[17_slime_train_inference_consistency_analysis#2.2 从最小实例到整个一致性体系|17 页 §2.2.9]]。
 
 ## 2. 为什么这么设计：为什么默认不采用全流程无屏障的并发循环
 
@@ -98,7 +98,7 @@ flowchart LR
 
 默认分布式 updater 的顺序是：版本号加一，rank 0 暂停所有 rollout engines 并 flush cache，所有训练 ranks barrier，按 non-expert/expert chunks 发送全部权重，必要时做量化后处理，然后恢复 generation，再做一次 barrier。[`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:102-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L146) 每个 chunk 的 metadata 携带相同 `weight_version`，tensor 广播完成后才返回 refs。[`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
 
-full+disk 是控制责任的例外：版本由 `RayTrainGroup` 自持，并由它直接驱动 engine reload；完整链与失败边界见 [[11_slime_ray_control_plane_analysis#6.1 full+disk 的版本属于 RayTrainGroup|磁盘版本归属]]。其余 transport 的布局映射和更新协议见 [[16_slime_weight_sync_analysis|权重同步]]。成功路径的暂停、缓存清理与恢复不能被理解为跨 engine 故障事务；源码没有全局回滚保证。
+full+disk 是控制责任的例外：版本由 `RayTrainGroup` 自持，并由它直接驱动 engine reload；完整链与失败边界见 [[11_slime_ray_control_plane_analysis#3.2 调用流程|磁盘版本归属 §3.2.3]]。其余 transport 的布局映射和更新协议见 [[16_slime_weight_sync_analysis|权重同步]]。成功路径的暂停、缓存清理与恢复不能被理解为跨 engine 故障事务；源码没有全局回滚保证。
 
 > **设计分析**：pause 防止新请求进入提交窗口，flush 防止新权重复用旧权重产生的 KV/prefix cache，version 把“传输结束”升级成“所有 engine 已提交同一逻辑版本”。只优化传输带宽而绕过这三步，会把性能问题变成静默正确性问题。
 
@@ -160,7 +160,7 @@ sequenceDiagram
 
 PPO 先发 critic 的 `async_train`，得到逐 rank `value_refs`；达到 `num_critic_only_steps` 后才把这些 refs 作为 actor 的 `external_data`，否则只等待 critic。启用 `offload_train` 的角色会在训练尾部自行 sleep；未启用时，同步 driver 的 `offload_train` 闭包调用本轮训练角色的 `clear_memory`。此动作不等于 kill actor。
 
-`release_train` 则是第三种生命周期：每轮生成后 `actor_model.create()` 重建训练 actors，从上轮同步保存的 checkpoint 恢复；训练后强制保存。`RayTrainGroup.save_model` 将 `args.load` 改为 `args.save`，清除 `ckpt_step`、置 `finetune=False`，恢复 optimizer/RNG 加载选项；随后 full+disk 更新先导出 serving 权重、释放 actors，再重载 serving。控制面保存的版本跨 actor 重建延续，细节见 [[11_slime_ray_control_plane_analysis#6.1 full+disk 的版本属于 RayTrainGroup|磁盘发布与重建]]。
+`release_train` 则是第三种生命周期：每轮生成后 `actor_model.create()` 重建训练 actors，从上轮同步保存的 checkpoint 恢复；训练后强制保存。`RayTrainGroup.save_model` 将 `args.load` 改为 `args.save`，清除 `ckpt_step`、置 `finetune=False`，恢复 optimizer/RNG 加载选项；随后 full+disk 更新先导出 serving 权重、释放 actors，再重载 serving。控制面保存的版本跨 actor 重建延续，细节见 [[11_slime_ray_control_plane_analysis#3.2 调用流程|磁盘发布与重建 §3.2.3]]。
 
 训练前评估与 `num_rollout=0` 纯评估只在同步入口实现。两入口的周期 eval 使用 `should_run_periodic_action`；异步中 eval 在已提交的下一次 `generate` 后排队，详细的参数、版本观察与输出边界见 [[27_slime_evaluation_path_analysis|评估路径]]。
 
@@ -252,5 +252,5 @@ sequenceDiagram
 - [[13_slime_sglang_rollout_engine_analysis]] — 展开 generation、reward、abort 与请求级状态机。
 - [[14_slime_megatron_training_analysis]] — 展开冻结 batch 进入 Megatron 后的 actor/critic 执行顺序。
 - [[16_slime_weight_sync_analysis]] — 展开 publish 阶段的 NCCL、CUDA IPC、full disk 与 delta disk 数据面。
-- [[17_slime_train_inference_consistency_analysis]] — 解释版本相同仍可能失配，以及 async/partial 的 policy-age 校正。
+- [[17_slime_train_inference_consistency_analysis]] — 解释版本相同仍可能失配，以及 async/partial 下 TIS 比值为何也包含策略版本差。
 - [[30_slime_rollout_optimization_analysis]] — 从容量账本与关键路径比较 sync、overlap、partial 和 fully-async 的吞吐收益。

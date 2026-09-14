@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="802" viewBox="0 0 1080 802" role="img" aria-label="vLLM 六个职责模块、侧接能力与外部依赖">
+<style>
+text{font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;fill:#0f172a}
+.title{font-size:23px;font-weight:700}.label{font-size:18px;font-weight:700}.detail{font-size:15px;fill:#475569}
+.neutral{fill:#fff;stroke:#64748b;stroke-width:1.3}.ghost{fill:#f8fafc;stroke:#94a3b8;stroke-width:1.1}
+.acc1{fill:#dbeafe;stroke:#2563eb;stroke-width:1.8}.arrow{fill:none;stroke:#64748b;stroke-width:1.5}
+.main{stroke:#2563eb;stroke-width:2}.aux{stroke-dasharray:5 4;stroke:#94a3b8}
+</style>
+<defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#64748b"/></marker></defs>
+<rect width="1080" height="802" fill="#fff"/>
+<text x="28" y="34" class="title">vLLM：六个职责模块与依赖边界</text>
+<text x="28" y="59" class="detail">实线表示主依赖；虚线表示侧接或外部 API。框的位置不表示进程数量。</text>
+<rect x="28" y="82" width="732" height="74" rx="7" class="neutral"/>
+<text x="46" y="110" class="label">接口与语义</text>
+<text x="46" y="135" class="detail">协议路由 / Renderer / InputProcessor / OutputProcessor</text>
+<rect x="28" y="186" width="732" height="74" rx="7" class="neutral"/>
+<text x="46" y="214" class="label">Engine 运行</text>
+<text x="46" y="239" class="detail">同步与异步 facade / CoreClient / EngineCore 循环与生命周期</text>
+<rect x="28" y="292" width="348" height="104" rx="7" class="acc1"/>
+<text x="46" y="320" class="label">资源调度</text>
+<text x="46" y="345" class="detail">Scheduler / KVCacheManager / 依赖管理</text>
+<text x="46" y="368" class="detail">拥有请求进度、预算与逻辑 block</text>
+<rect x="412" y="292" width="348" height="104" rx="7" class="neutral"/>
+<text x="430" y="320" class="label">执行组织</text>
+<text x="430" y="345" class="detail">Executor / Worker / rank 协作</text>
+<text x="430" y="368" class="detail">拥有派发、通信次序与结果汇集</text>
+<rect x="28" y="432" width="732" height="74" rx="7" class="acc1"/>
+<text x="46" y="460" class="label">设备运行</text>
+<text x="46" y="485" class="detail">Model Runner / 活跃请求状态 / 当步 tensor、metadata 与图执行</text>
+<rect x="28" y="538" width="732" height="74" rx="7" class="neutral"/>
+<text x="46" y="566" class="label">模型与算子</text>
+<text x="46" y="591" class="detail">Registry / Loader / Attention / 量化、LoRA、编译接合与 kernel</text>
+<rect x="28" y="660" width="1024" height="83" rx="7" class="ghost"/>
+<text x="46" y="688" class="label">外部底座：框架、运行时与硬件</text>
+<text x="46" y="713" class="detail">PyTorch tensor / stream / graph / 分布式 API；设备运行时、通信库、设备与互联</text>
+<path d="M 394 156 V 186" class="arrow main" marker-end="url(#tip)"/>
+<path d="M 394 260 V 276 H 202 V 292" class="arrow main" marker-end="url(#tip)"/>
+<path d="M 394 276 H 586 V 292" class="arrow main" marker-end="url(#tip)"/>
+<path d="M 586 396 V 432" class="arrow main" marker-end="url(#tip)"/>
+<path d="M 394 506 V 538" class="arrow main" marker-end="url(#tip)"/>
+<path d="M 394 612 V 660" class="arrow aux" marker-end="url(#tip)"/>
+<text x="410" y="643" class="detail">tensor / kernel / 后端 API</text>
+<rect x="804" y="82" width="248" height="314" rx="7" class="ghost"/>
+<text x="822" y="110" class="label">侧接能力与接合位置</text>
+<text x="822" y="135" class="detail">观测与故障传播</text>
+<text x="822" y="158" class="detail">  Engine / 前端 / Executor</text>
+<text x="822" y="181" class="detail">KV 与 encoder 传输</text>
+<text x="822" y="204" class="detail">  Scheduler / Runner</text>
+<text x="822" y="227" class="detail">在线权重与版本更新</text>
+<text x="822" y="250" class="detail">  Engine / Worker / 模型</text>
+<text x="822" y="273" class="detail">平台、I/O、endpoint 插件</text>
+<text x="822" y="296" class="detail">  各自的构造与生命周期</text>
+<path d="M 804 223 H 760" class="arrow aux" marker-end="url(#tip)"/>
+<path d="M 804 360 H 784 V 469 H 760" class="arrow aux" marker-end="url(#tip)"/>
+<rect x="804" y="432" width="248" height="180" rx="7" class="ghost"/>
+<text x="822" y="460" class="label">读图约定</text>
+<text x="822" y="485" class="detail">Scheduler 与 Executor</text>
+<text x="822" y="508" class="detail">是 Engine 的两个协作分支。</text>
+<text x="822" y="531" class="detail">计划与结果经 Engine 配对；</text>
+<text x="822" y="554" class="detail">外部底座也为 Executor</text>
+<text x="822" y="577" class="detail">提供通信，为 Runner</text>
+<text x="822" y="600" class="detail">提供设备 API。</text>
+<text x="28" y="780" class="detail">基线：vllm-project/vllm@199cb9b964822 · 具体合同和源码锚点见正文 §2–4</text>
+</svg>

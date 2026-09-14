@@ -1,0 +1,323 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1250" viewBox="0 0 1180 1250" role="img" aria-labelledby="title desc">
+<title id="title">slime 数据契约：中断续生成与 compact 扇出如何穿过 Sample、DataSource 与 converter</title>
+<desc id="desc">四条泳道分别展示运行①的 Sample 对齐追加、DataSource 游标与回收 buffer、两种 mask 模式下的 converter 结果，以及运行②的 rollout_id 兜底、rollout_mask_sums 分母与按 rollout 分步后的 micro-batch 归属。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11px;fill:#38414D}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="1250" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">两条运行、三次决定性转换：Sample 追加、DataSource 回收、converter 分母</text>
+<text x="24" y="56" class="su" text-anchor="start">rollout_batch_size=2 · over_sampling_batch_size=3 · n_samples_per_prompt=2 · rollout_max_response_len=4 · global_batch_size=4 rollouts · dp_size=1 · micro_batch_size=1 · reward 归一化关闭</text>
+<rect x="24" y="76" width="1132" height="250" rx="10" class="panel"/>
+<text x="40" y="100" class="pt" text-anchor="start">运行 ①（partial 开，默认 generate）· Sample 层：s1 的 append_response_tokens 时间线（唯一写入口，按新增区间追加）</text>
+<text x="160" y="137" class="sm" text-anchor="end">tokens</text>
+<rect x="170" y="120" width="54" height="26" rx="4" class="ghost"/>
+<text x="197" y="137" class="mono" text-anchor="middle">11</text>
+<rect x="228" y="120" width="54" height="26" rx="4" class="ghost"/>
+<text x="255" y="137" class="mono" text-anchor="middle">12</text>
+<rect x="286" y="120" width="54" height="26" rx="4" class="acc2"/>
+<text x="313" y="137" class="mono" text-anchor="middle">21</text>
+<rect x="344" y="120" width="54" height="26" rx="4" class="acc2"/>
+<text x="371" y="137" class="mono" text-anchor="middle">22</text>
+<rect x="402" y="120" width="54" height="26" rx="4" class="acc1"/>
+<text x="429" y="137" class="mono" text-anchor="middle">23</text>
+<rect x="460" y="120" width="54" height="26" rx="4" class="acc1"/>
+<text x="487" y="137" class="mono" text-anchor="middle">24</text>
+<text x="160" y="169" class="sm" text-anchor="end">rollout_log_probs</text>
+<rect x="170" y="152" width="54" height="26" rx="4" class="ghost"/>
+<text x="197" y="169" class="mono" text-anchor="middle">—</text>
+<rect x="228" y="152" width="54" height="26" rx="4" class="ghost"/>
+<text x="255" y="169" class="mono" text-anchor="middle">—</text>
+<rect x="286" y="152" width="54" height="26" rx="4" class="cell"/>
+<text x="313" y="169" class="mono" text-anchor="middle">-0.1</text>
+<rect x="344" y="152" width="54" height="26" rx="4" class="cell"/>
+<text x="371" y="169" class="mono" text-anchor="middle">-0.2</text>
+<rect x="402" y="152" width="54" height="26" rx="4" class="cell"/>
+<text x="429" y="169" class="mono" text-anchor="middle">-0.5</text>
+<rect x="460" y="152" width="54" height="26" rx="4" class="cell"/>
+<text x="487" y="169" class="mono" text-anchor="middle">-0.6</text>
+<text x="160" y="201" class="sm" text-anchor="end">loss_mask 默认</text>
+<rect x="170" y="184" width="54" height="26" rx="4" class="ghost"/>
+<text x="197" y="201" class="mono" text-anchor="middle">—</text>
+<rect x="228" y="184" width="54" height="26" rx="4" class="ghost"/>
+<text x="255" y="201" class="mono" text-anchor="middle">—</text>
+<rect x="286" y="184" width="54" height="26" rx="4" class="cell"/>
+<text x="313" y="201" class="mono" text-anchor="middle">1</text>
+<rect x="344" y="184" width="54" height="26" rx="4" class="cell"/>
+<text x="371" y="201" class="mono" text-anchor="middle">1</text>
+<rect x="402" y="184" width="54" height="26" rx="4" class="cell"/>
+<text x="429" y="201" class="mono" text-anchor="middle">1</text>
+<rect x="460" y="184" width="54" height="26" rx="4" class="cell"/>
+<text x="487" y="201" class="mono" text-anchor="middle">1</text>
+<text x="160" y="233" class="sm" text-anchor="end">mask-offpolicy 开</text>
+<rect x="170" y="216" width="54" height="26" rx="4" class="ghost"/>
+<text x="197" y="233" class="mono" text-anchor="middle">—</text>
+<rect x="228" y="216" width="54" height="26" rx="4" class="ghost"/>
+<text x="255" y="233" class="mono" text-anchor="middle">—</text>
+<rect x="286" y="216" width="54" height="26" rx="4" class="acc2"/>
+<text x="313" y="233" class="mono" text-anchor="middle">0</text>
+<rect x="344" y="216" width="54" height="26" rx="4" class="acc2"/>
+<text x="371" y="233" class="mono" text-anchor="middle">0</text>
+<rect x="402" y="216" width="54" height="26" rx="4" class="cell"/>
+<text x="429" y="233" class="mono" text-anchor="middle">1</text>
+<rect x="460" y="216" width="54" height="26" rx="4" class="cell"/>
+<text x="487" y="233" class="mono" text-anchor="middle">1</text>
+<text x="160" y="265" class="sm" text-anchor="end">来源</text>
+<rect x="170" y="248" width="54" height="26" rx="4" class="ghost"/>
+<text x="197" y="265" class="mono" text-anchor="middle">prompt</text>
+<rect x="228" y="248" width="54" height="26" rx="4" class="ghost"/>
+<text x="255" y="265" class="mono" text-anchor="middle">prompt</text>
+<rect x="286" y="248" width="54" height="26" rx="4" class="cell"/>
+<text x="313" y="265" class="mono" text-anchor="middle">round 3</text>
+<rect x="344" y="248" width="54" height="26" rx="4" class="cell"/>
+<text x="371" y="265" class="mono" text-anchor="middle">round 3</text>
+<rect x="402" y="248" width="54" height="26" rx="4" class="cell"/>
+<text x="429" y="265" class="mono" text-anchor="middle">round 4</text>
+<rect x="460" y="248" width="54" height="26" rx="4" class="cell"/>
+<text x="487" y="265" class="mono" text-anchor="middle">round 4</text>
+<rect x="560" y="120" width="580" height="190" rx="8" class="ghost"/>
+<text x="574" y="138" class="tx" text-anchor="start">round 3：SGLang 返回 2 个 token，finish_reason=abort → status=ABORTED，weight_versions=[v3]</text>
+<text x="574" y="157" class="tx" text-anchor="start">abort() 给有 response 的 Sample 写 metadata.start_rollout_id=3（s0、s1 都有），整组 P0 回收</text>
+<text x="574" y="176" class="tx" text-anchor="start">round 4：_prepare_prompt_ids 复用 sample.tokens；max_new_tokens = 4 − 2 = 2</text>
+<text x="574" y="195" class="tx" text-anchor="start">SGLang 只返回新 token；append 把 mask、logprob 与 token 等长追加</text>
+<text x="574" y="214" class="tx" text-anchor="start">status→COMPLETED，weight_versions=[v3,v4]；旧 token 与旧元数据都不被覆盖</text>
+<text x="574" y="233" class="tx" text-anchor="start">默认：旧区间 mask 保持 1，新旧 token 都训练（s1 mask 和 4）</text>
+<text x="574" y="252" class="tx" text-anchor="start">开 --mask-offpolicy-in-partial-rollout：generate_and_rm 入口把旧区间 mask 清 0（s1 mask 和 2）</text>
+<text x="574" y="276" class="cap" text-anchor="start">两种模式都保留旧 token 作上下文、保留旧 logprob；改写的只有旧区间的 loss 权重。</text>
+<text x="574" y="294" class="cap" text-anchor="start">工具/环境 token 走 trainable=False：mask 0，logprob 填 0 只为等长，不得自带 logprob。</text>
+<rect x="24" y="338" width="1132" height="190" rx="10" class="panel"/>
+<text x="40" y="362" class="pt" text-anchor="start">运行 ① · DataSource 层：游标顺序取 prompt group，中断组整组 FIFO 回收（RolloutDataSourceWithBuffer）</text>
+<text x="40" y="386" class="tx" text-anchor="start">round 3：get_samples(3) 全部来自 dataset，游标 0 → 3</text>
+<rect x="40" y="396" width="118" height="58" rx="6" class="acc2"/>
+<text x="99" y="416" class="pt" text-anchor="middle">P0</text>
+<text x="99" y="434" class="sm" text-anchor="middle">样本 0–1</text>
+<text x="99" y="448" class="sm" text-anchor="middle">group_index 0</text>
+<rect x="168" y="396" width="118" height="58" rx="6" class="cell"/>
+<text x="227" y="416" class="pt" text-anchor="middle">P1</text>
+<text x="227" y="434" class="sm" text-anchor="middle">样本 2–3</text>
+<text x="227" y="448" class="sm" text-anchor="middle">group_index 1</text>
+<rect x="296" y="396" width="118" height="58" rx="6" class="cell"/>
+<text x="355" y="416" class="pt" text-anchor="middle">P2</text>
+<text x="355" y="434" class="sm" text-anchor="middle">样本 4–5</text>
+<text x="355" y="448" class="sm" text-anchor="middle">group_index 2</text>
+<text x="40" y="476" class="tx" text-anchor="start">P1、P2 完成入选；P0 未完成 → abort → add_samples([P0])</text>
+<text x="40" y="494" class="tx" text-anchor="start">断言每组长度 = n_samples_per_prompt = 2 → buffer 长度 1</text>
+<text x="40" y="514" class="cap" text-anchor="start">不带 buffer 的 RolloutDataSource.add_samples 直接抛 RuntimeError</text>
+<path d="M158 425 L464 425" class="aux"/>
+<rect x="470" y="396" width="150" height="58" rx="6" class="acc2"/>
+<text x="545" y="418" class="pt" text-anchor="middle">buffer</text>
+<text x="545" y="438" class="sm" text-anchor="middle">[P0] · start_rollout_id=3</text>
+<text x="660" y="386" class="tx" text-anchor="start">round 4：get_samples(3)：buffer pop_first 1 组 + dataset 2 组，游标 3 → 5</text>
+<path d="M620 425 L654 425" class="main"/>
+<rect x="660" y="396" width="118" height="58" rx="6" class="acc2"/>
+<text x="719" y="416" class="pt" text-anchor="middle">P0</text>
+<text x="719" y="434" class="sm" text-anchor="middle">样本 0–1</text>
+<text x="719" y="448" class="sm" text-anchor="middle">group_index 0</text>
+<rect x="788" y="396" width="118" height="58" rx="6" class="acc1"/>
+<text x="847" y="416" class="pt" text-anchor="middle">P3</text>
+<text x="847" y="434" class="sm" text-anchor="middle">样本 6–7</text>
+<text x="847" y="448" class="sm" text-anchor="middle">group_index 3</text>
+<rect x="916" y="396" width="118" height="58" rx="6" class="cell"/>
+<text x="975" y="416" class="pt" text-anchor="middle">P4</text>
+<text x="975" y="434" class="sm" text-anchor="middle">样本 8–9</text>
+<text x="975" y="448" class="sm" text-anchor="middle">group_index 4</text>
+<text x="660" y="476" class="tx" text-anchor="start">P0 与 P3 入选（按 group[0].index 排序）；P4 未完成，被回收</text>
+<text x="660" y="494" class="tx" text-anchor="start">s0 已 COMPLETED 且有 reward → generate_and_rm 早退，只有 s1 续生成</text>
+<text x="660" y="514" class="cap" text-anchor="start">save/load 只存游标、epoch、两个计数器与 metadata；buffer 不进 checkpoint</text>
+<rect x="24" y="540" width="1132" height="200" rx="10" class="panel"/>
+<text x="40" y="564" class="pt" text-anchor="start">运行 ① · converter：round 4 接收 P0 + P3，4 条样本，无自定义 rollout_id → 兜底为 [0,1,2,3]</text>
+<text x="252" y="595" class="sm" text-anchor="end">样本</text>
+<rect x="260" y="580" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="594" class="mono" text-anchor="middle">s0</text>
+<rect x="352" y="580" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="594" class="mono" text-anchor="middle">s1</text>
+<rect x="444" y="580" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="594" class="mono" text-anchor="middle">s6</text>
+<rect x="536" y="580" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="594" class="mono" text-anchor="middle">s7</text>
+<text x="252" y="617" class="sm" text-anchor="end">loss_mask 和（默认）</text>
+<rect x="260" y="602" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="616" class="mono" text-anchor="middle">2</text>
+<rect x="352" y="602" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="616" class="mono" text-anchor="middle">4</text>
+<rect x="444" y="602" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="616" class="mono" text-anchor="middle">3</text>
+<rect x="536" y="602" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="616" class="mono" text-anchor="middle">3</text>
+<text x="252" y="639" class="sm" text-anchor="end">rollout_mask_sums（默认）</text>
+<rect x="260" y="624" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="638" class="mono" text-anchor="middle">2</text>
+<rect x="352" y="624" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="638" class="mono" text-anchor="middle">4</text>
+<rect x="444" y="624" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="638" class="mono" text-anchor="middle">3</text>
+<rect x="536" y="624" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="638" class="mono" text-anchor="middle">3</text>
+<text x="252" y="661" class="sm" text-anchor="end">loss_mask 和（offpolicy 开）</text>
+<rect x="260" y="646" width="88" height="19" rx="3" class="acc2"/>
+<text x="304" y="660" class="mono" text-anchor="middle">0</text>
+<rect x="352" y="646" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="660" class="mono" text-anchor="middle">2</text>
+<rect x="444" y="646" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="660" class="mono" text-anchor="middle">3</text>
+<rect x="536" y="646" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="660" class="mono" text-anchor="middle">3</text>
+<text x="252" y="683" class="pt" text-anchor="end">rollout_mask_sums（offpolicy 开）</text>
+<rect x="260" y="668" width="88" height="19" rx="3" class="acc2"/>
+<text x="304" y="682" class="mono" text-anchor="middle">0</text>
+<rect x="352" y="668" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="682" class="mono" text-anchor="middle">2</text>
+<rect x="444" y="668" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="682" class="mono" text-anchor="middle">3</text>
+<rect x="536" y="668" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="682" class="mono" text-anchor="middle">3</text>
+<rect x="644" y="580" width="512" height="107" rx="8" class="ghost"/>
+<text x="656" y="600" class="tx" text-anchor="start">mask-offpolicy 的清零发生在 generate_and_rm 入口、早退之前：</text>
+<text x="656" y="618" class="tx" text-anchor="start">回收组里已完成的 s0（response_length=2）也被清 0，mask 和 0，分母 0。</text>
+<text x="656" y="642" class="tx" text-anchor="start">训练侧 get_sum_of_sample_mean 用 clamp_min(denom, 1) → 分母取 1，</text>
+<text x="656" y="660" class="tx" text-anchor="start">s0 的分子全被 mask 掉，贡献为 0：不报错，但这条样本白白占了一份 rollout 名额。</text>
+<text x="656" y="682" class="cap" text-anchor="start">默认 generate 让每个 sample task 都返回 plain Sample，一轮内深度一致，展平与 abort 回收都成立。</text>
+<text x="40" y="712" class="cap" text-anchor="start">运行 ① 里 P3 的 s6、s7 是普通单元素 rollout；rollout_id 全为 None 时兜底 id 就是 0、1、2、3 的顺序编号。</text>
+<rect x="24" y="752" width="1132" height="400" rx="10" class="panel"/>
+<text x="40" y="776" class="pt" text-anchor="start">运行 ②（partial 关，自定义 generate 对每条样本返回 list[Sample]）· converter 与切分：提交 P0 P1 P2，入选 P0 + P1 展平为 5 条，s2 扇出为两个片段，共享 rollout_id=2</text>
+<text x="252" y="807" class="sm" text-anchor="end">样本</text>
+<rect x="260" y="792" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="806" class="mono" text-anchor="middle">s0</text>
+<rect x="352" y="792" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="806" class="mono" text-anchor="middle">s1</text>
+<rect x="444" y="792" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="806" class="mono" text-anchor="middle">s2a</text>
+<rect x="536" y="792" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="806" class="mono" text-anchor="middle">s2b</text>
+<rect x="628" y="792" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="806" class="mono" text-anchor="middle">s3</text>
+<text x="252" y="829" class="sm" text-anchor="end">sample_indices</text>
+<rect x="260" y="814" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="828" class="mono" text-anchor="middle">0</text>
+<rect x="352" y="814" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="828" class="mono" text-anchor="middle">1</text>
+<rect x="444" y="814" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="828" class="mono" text-anchor="middle">2</text>
+<rect x="536" y="814" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="828" class="mono" text-anchor="middle">2</text>
+<rect x="628" y="814" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="828" class="mono" text-anchor="middle">3</text>
+<text x="252" y="851" class="sm" text-anchor="end">Sample.rollout_id</text>
+<rect x="260" y="836" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="850" class="mono" text-anchor="middle">None</text>
+<rect x="352" y="836" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="850" class="mono" text-anchor="middle">None</text>
+<rect x="444" y="836" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="850" class="mono" text-anchor="middle">2</text>
+<rect x="536" y="836" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="850" class="mono" text-anchor="middle">2</text>
+<rect x="628" y="836" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="850" class="mono" text-anchor="middle">None</text>
+<text x="252" y="873" class="pt" text-anchor="end">rollout_ids 兜底后</text>
+<rect x="260" y="858" width="88" height="19" rx="3" class="acc1"/>
+<text x="304" y="872" class="mono" text-anchor="middle">0</text>
+<rect x="352" y="858" width="88" height="19" rx="3" class="acc1"/>
+<text x="396" y="872" class="mono" text-anchor="middle">1</text>
+<rect x="444" y="858" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="872" class="mono" text-anchor="middle">2</text>
+<rect x="536" y="858" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="872" class="mono" text-anchor="middle">2</text>
+<rect x="628" y="858" width="88" height="19" rx="3" class="acc1"/>
+<text x="672" y="872" class="mono" text-anchor="middle">3</text>
+<text x="252" y="895" class="sm" text-anchor="end">response_lengths</text>
+<rect x="260" y="880" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="894" class="mono" text-anchor="middle">2</text>
+<rect x="352" y="880" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="894" class="mono" text-anchor="middle">4</text>
+<rect x="444" y="880" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="894" class="mono" text-anchor="middle">1</text>
+<rect x="536" y="880" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="894" class="mono" text-anchor="middle">3</text>
+<rect x="628" y="880" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="894" class="mono" text-anchor="middle">3</text>
+<text x="252" y="917" class="sm" text-anchor="end">loss_mask 和</text>
+<rect x="260" y="902" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="916" class="mono" text-anchor="middle">2</text>
+<rect x="352" y="902" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="916" class="mono" text-anchor="middle">4</text>
+<rect x="444" y="902" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="916" class="mono" text-anchor="middle">1</text>
+<rect x="536" y="902" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="916" class="mono" text-anchor="middle">3</text>
+<rect x="628" y="902" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="916" class="mono" text-anchor="middle">3</text>
+<text x="252" y="939" class="pt" text-anchor="end">rollout_mask_sums</text>
+<rect x="260" y="924" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="938" class="mono" text-anchor="middle">2</text>
+<rect x="352" y="924" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="938" class="mono" text-anchor="middle">4</text>
+<rect x="444" y="924" width="88" height="19" rx="3" class="acc1"/>
+<text x="488" y="938" class="mono" text-anchor="middle">4</text>
+<rect x="536" y="924" width="88" height="19" rx="3" class="acc1"/>
+<text x="580" y="938" class="mono" text-anchor="middle">4</text>
+<rect x="628" y="924" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="938" class="mono" text-anchor="middle">3</text>
+<text x="252" y="961" class="sm" text-anchor="end">rewards（reward / K 拆分）</text>
+<rect x="260" y="946" width="88" height="19" rx="3" class="cell"/>
+<text x="304" y="960" class="mono" text-anchor="middle">1</text>
+<rect x="352" y="946" width="88" height="19" rx="3" class="cell"/>
+<text x="396" y="960" class="mono" text-anchor="middle">0</text>
+<rect x="444" y="946" width="88" height="19" rx="3" class="cell"/>
+<text x="488" y="960" class="mono" text-anchor="middle">0.5</text>
+<rect x="536" y="946" width="88" height="19" rx="3" class="cell"/>
+<text x="580" y="960" class="mono" text-anchor="middle">0.5</text>
+<rect x="628" y="946" width="88" height="19" rx="3" class="cell"/>
+<text x="672" y="960" class="mono" text-anchor="middle">1</text>
+<rect x="736" y="792" width="420" height="173" rx="8" class="ghost"/>
+<text x="748" y="812" class="tx" text-anchor="start">rollout_id 兜底：已存在 {2}，</text>
+<text x="748" y="830" class="tx" text-anchor="start">None 依次取不冲突的 0、1、3（跳过 2）。</text>
+<text x="748" y="854" class="tx" text-anchor="start">分母在切分前算：同一 rollout_id</text>
+<text x="748" y="872" class="tx" text-anchor="start">的 mask 和相加（1+3=4），再广播回每个片段。</text>
+<text x="748" y="896" class="tx" text-anchor="start">嵌套输出 prompt × rollout × 片段：</text>
+<text x="748" y="914" class="tx" text-anchor="start">深度 ≥ 2 且多于一条的叶子才校验 rollout_id；</text>
+<text x="748" y="932" class="tx" text-anchor="start">单元素列表跳过校验，展平两次得到平面列表。</text>
+<text x="748" y="954" class="cap" text-anchor="start">remove_sample=True 会把整条 mask 清 0 但不删样本。</text>
+<text x="40" y="1000" class="tx" text-anchor="start">build_dp_schedule：4 个逻辑 rollout = global_batch_size → 1 个训练 step；静态 micro_batch_size=1 → 5 个 micro-batch，dp_size=1 全归 rank 0</text>
+<rect x="40" y="1010" width="150" height="60" rx="6" class="cell"/>
+<text x="115" y="1030" class="pt" text-anchor="middle">micro-batch 0</text>
+<text x="115" y="1048" class="sm" text-anchor="middle">s0 · rollout 0</text>
+<text x="115" y="1063" class="sm" text-anchor="middle">分子 / 2</text>
+<rect x="200" y="1010" width="150" height="60" rx="6" class="cell"/>
+<text x="275" y="1030" class="pt" text-anchor="middle">micro-batch 1</text>
+<text x="275" y="1048" class="sm" text-anchor="middle">s1 · rollout 1</text>
+<text x="275" y="1063" class="sm" text-anchor="middle">分子 / 4</text>
+<rect x="360" y="1010" width="150" height="60" rx="6" class="acc1"/>
+<text x="435" y="1030" class="pt" text-anchor="middle">micro-batch 2</text>
+<text x="435" y="1048" class="sm" text-anchor="middle">s2a · rollout 2</text>
+<text x="435" y="1063" class="sm" text-anchor="middle">分子 / 4</text>
+<rect x="520" y="1010" width="150" height="60" rx="6" class="acc1"/>
+<text x="595" y="1030" class="pt" text-anchor="middle">micro-batch 3</text>
+<text x="595" y="1048" class="sm" text-anchor="middle">s2b · rollout 2</text>
+<text x="595" y="1063" class="sm" text-anchor="middle">分子 / 4</text>
+<rect x="680" y="1010" width="150" height="60" rx="6" class="cell"/>
+<text x="755" y="1030" class="pt" text-anchor="middle">micro-batch 4</text>
+<text x="755" y="1048" class="sm" text-anchor="middle">s3 · rollout 3</text>
+<text x="755" y="1063" class="sm" text-anchor="middle">分子 / 3</text>
+<rect x="850" y="1010" width="306" height="60" rx="6" class="acc2"/>
+<text x="862" y="1030" class="tx" text-anchor="start">s2a、s2b 落在 micro-batch 2 与 3，</text>
+<text x="862" y="1048" class="tx" text-anchor="start">分子 10、6：共用分母 → 10/4 + 6/4 = 4；</text>
+<text x="862" y="1064" class="tx" text-anchor="start">各用局部长度 → 10/1 + 6/3 = 12，等于多投一票</text>
+<text x="40" y="1094" class="cap" text-anchor="start">切分只产出 partition 与 micro_batch_indices；per-sample 字段按 partition 取子集并 tensorize 到 CPU，raw_reward 与 total_lengths 整批发给每个 rank。</text>
+<text x="40" y="1112" class="cap" text-anchor="start">两条运行分开的原因：开 partial 时 abort 对在途组每个成员取 .response，返回 list 的自定义 generate 会抛 AttributeError；此外回收组里已完成成员早退返回 plain Sample，</text>
+<text x="40" y="1130" class="cap" text-anchor="start">与 list 混用时展平停在第一层，第一次逐样本属性访问同样抛错。橙：中断、回收与被清零；蓝：决定性映射（兜底 id、分母广播、片段所在 mb）。</text>
+<text x="24" y="1236" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 append_response_tokens / generate_and_rm 入口 / abort 标记 / DataSourceWithBuffer / _convert_samples_to_train_data / build_dp_schedule</text>
+</svg>

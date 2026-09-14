@@ -167,7 +167,7 @@ sequenceDiagram
 | 拓扑 | `RolloutManager.get_updatable_engines_and_lock` 返回 GPU counts/offsets/parallel configs | updater 必须看到与服务一致的 rank 布局 |
 | 显存生命周期 | `ServerGroup.offload/onload` → `release_memory_occupation/resume_memory_occupation` | 无法支持则显式拒绝 colocate/offload |
 | 权重发布 | updater → `pause_generation/flush_cache/update_weights_from_tensor/update_weights_from_distributed/update_weights_from_disk/continue_generation`，按 transport 选择 | 完整顺序和 commit 边界归 [[16_slime_weight_sync_analysis]] |
-| 恢复 | `RolloutManager.recover_updatable_engines` → `RolloutServer.recover`；trainer → `connect_rollout_engines/update_weights` | 规范恢复链归 [[18_slime_fault_tolerance_observability_analysis#3. 推理引擎的局部恢复：检测、清理、重建、重新加载当前版本|引擎恢复]] |
+| 恢复 | `RolloutManager.recover_updatable_engines` → `RolloutServer.recover`；trainer → `connect_rollout_engines/update_weights` | 规范恢复链归 [[18_slime_fault_tolerance_observability_analysis#2.2 从最小实例到整个容错与取证体系|引擎恢复 §2.2.2]] |
 
 以上是固定调用点反推的内部义务，不是已发布的 backend Protocol。完整方法外观读 `slime/backends/sglang_utils/sglang_engine.py::SGLangEngine`，生命周期调用者读 `slime/ray/rollout.py::ServerGroup/RolloutServer/RolloutManager`。
 
