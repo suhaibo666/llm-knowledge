@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: requirements-docs.txt
 
       - name: Install renderer assets
-        run: npm ci --prefix tools/mkdocs-site --omit=dev
+        run: npm ci --prefix tools/mkdocs-site
 
       - name: Install documentation dependencies
         run: python -m pip install -r requirements-docs.txt
