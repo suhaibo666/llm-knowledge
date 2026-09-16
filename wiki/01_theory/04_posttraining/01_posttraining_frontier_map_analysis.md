@@ -86,6 +86,7 @@ LLM 生成动作天然以 token 展开，但 reasoning 和 agent task 的成败�
 - [StreamRL（arXiv:2504.15930v1）](https://arxiv.org/abs/2504.15930v1)研究 generation 与 training 的流式解耦；
 - [AsyncFlow（arXiv:2507.01663v1）](https://arxiv.org/abs/2507.01663v1)通过 producer–consumer 流水与 staleness threshold 组织异步执行；
 - [RollPacker（arXiv:2509.21009v1）](https://arxiv.org/abs/2509.21009v1)则保留同步 policy freshness，用 tail batching、弹性 rollout 和资源调度消除同步系统中的长尾 bubble。
+- [DORA（arXiv:2604.26256v2）](https://arxiv.org/abs/2604.26256v2)让多个策略版本在 rollout 集群里并存，每条轨迹只用一个版本生成，长尾在旧版本里跑完而不丢弃、不重 prefill；机制拆解见 [[23_dora_multi_version_rollout_analysis]]。
 - Kimi K3 则保留同步 phase 和 prompt 内 $K$ 样本组，在完成量达到 $\lambda NK$ 后暂停全局长尾、跨 iteration 恢复，并显式承认 trajectory 会进入 extreme off-policy（Kimi K3 Technical Report §4.1.2，p.13）。
 
 因此 D04 已沿四个维度分析，而不是只比较“同步/异步”两个标签：

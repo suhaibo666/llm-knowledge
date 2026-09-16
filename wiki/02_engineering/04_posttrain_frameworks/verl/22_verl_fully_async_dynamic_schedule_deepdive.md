@@ -207,3 +207,4 @@ Experimental fully async 同样以任务完成顺序入 MessageQueue，而且 dy
 - [[21_verl_weight_publication_analysis]] —— Standalone/Hybrid replicas 接收新参数的 publication 机制。
 - [[23_verl_training_checkpoint_recovery_analysis]] —— 本路径无法保存全部在途状态的跨模式对照。
 - [[10_determinism_and_numerical_reliability_analysis]] —— batch invariance 与全流程复现的可靠性背景。
+- [[23_dora_multi_version_rollout_analysis]] —— 美团 DORA 在 rollout 池内按策略版本重分区 DP group，与本页在 rollout 与 trainer 之间挪 GPU 正交。

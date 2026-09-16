@@ -20,6 +20,13 @@ All source ingestions and significant wiki updates are logged here.
 - [[13_vllm_serving_control_plane_analysis|13 Serving 控制面]] 与域索引的覆盖边界行改写 Ray actor core 的选择口径：`vllm/v1/engine/utils.py` 的 actor 构造点按 `dp_size > 1 and model_config.is_moe` 选 `DPMoEEngineCoreActor`，否则为 `EngineCoreActor`；旧稿把前者写成“每个 DP actor 的 core”。
 - 基线不变（`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`，2026-09-07 UTC）；T0 四项与 `mkdocs_site.cli build --changed` 通过。静态读码，未运行 vLLM、GPU 或跨机传输。
 
+## 2026-09-16：新增 DORA 多版本 rollout 分析页
+
+- 新建 [[23_dora_multi_version_rollout_analysis]]：美团 LongCat 的 DORA（arXiv:2604.26256v2，2026-07-20）论文机制分析，无公开实现，来源页新增于 `raw/02_engineering/04_posttrain_frameworks/DORA_Asynchronous_RL_System-2604.26256.md` 并登记到 `raw/README.md`。页面按因果序组织：长尾困境的 max-max 结构与气泡定义、被否掉的复制丢弃与 partial rollout、四个组件三条流（数据 / 版本 / 资源）、编排周期的三触发三动作与 Fig. 7 算例、同版本 KV cache 两阶段迁移、带条件的收益表、八条约束与失败边界，以及与 verl GPU lending、fully async dynamic schedule、RLBoost 的"资源怎么动"坐标对照。
+- 原理图 `assets/dora_multi_version_timeline.svg` 由 `tools/figs/svg/dora_multi_version_figures.mjs` 生成（示例输入，非论文数据），另有组件流、滑动窗口状态机、编排周期、KV 迁移四幅 Mermaid。
+- 域 index 新增段 2 条目与"本域覆盖的系统"一行；[[12_rl_infra_efficiency_analysis]]、[[22_verl_fully_async_dynamic_schedule_deepdive]] 的 Related Pages 与 [[01_posttraining_frontier_map_analysis]] §2.2 的系统清单加入反向链接。
+- 本条为论文静态阅读，未运行任何训练或推理；论文附录 C 的分层统计与 Fig. 7 算例按原文转述，verl 对照以 `verl-project/verl@77f35e61`（2026-09-15）核对。
+
 ## 2026-09-16：按第四轮验收收口 vLLM 01–26
 
 - 按 `2026-09-16-vllm-domain-review-round4.md` 修掉 2 条新 P1，都是同一类“基类 vs DP 子类”归属：25 §13 源码路线的 `_has_global_unfinished_reqs` 改归 `DPEngineCoreProc`（`vllm/v1/engine/core.py` 全库只有这一处定义，在 `DPEngineCoreProc` 内，`EngineCore` 上没有同名方法），index 覆盖边界表的 `03 §9` 改为 `03 §6`（03 只有 §1–§6，输入路径缺口登记在 §6）。后者是裸 `§` 引用，`check_links` 不覆盖这一类。

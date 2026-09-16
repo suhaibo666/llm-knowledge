@@ -338,4 +338,5 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 - [[29_kimi_k1_5_analysis]] — Kimi 长上下文 RL 训练
 - [[10_rl_ppo_loss_and_grpo_analysis]] — PPO/GRPO 源码级实现
 - [[20_batch_invariance_guide]] — 后训练框架数值稳定性
+- [[23_dora_multi_version_rollout_analysis]] — 美团 DORA：多版本流式 rollout 让长尾轨迹在旧版本里跑完，不丢轨迹也不重 prefill
 - [[02_engineering/04_posttrain_frameworks/index]] — 后训练框架入口

@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 392" width="980" height="392" role="img">
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .band2{fill:#E9ECF2;stroke:#C4CAD4;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .train{fill:#5B6470;stroke:#5B6470}
+  .tail{fill:#F5F7FA;stroke:#C3651F;stroke-width:1.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:1.4;stroke-dasharray:5 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .axis{fill:none;stroke:#AEB6C2;stroke-width:1}
+  .ti{font-size:17px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .tx{font-size:11.5px;fill:#38414D}
+  .txw{font-size:11.5px;fill:#fff;font-weight:600}
+  .sm{font-size:10.5px;fill:#68717D}
+  .rank{font-size:12px;font-weight:700;fill:#5B6470}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .cap{font-size:11px;fill:#747C88}
+</style>
+<text class="ti" x="24.0" y="30" text-anchor="start">DORA 多版本流式训练时间线</text>
+<text class="su" x="24.0" y="48" text-anchor="start">每个 DP group 只装一个版本；一条轨迹从头到尾只用一个版本；换版本只发生在 group 之间（示例输入，非论文数据）</text>
+<path class="refline" d="M 120.0 72 L 120.0 340"/>
+<text class="sm" x="120.0" y="356" text-anchor="middle">t0</text>
+<path class="refline" d="M 327.5 72 L 327.5 340"/>
+<text class="sm" x="327.5" y="356" text-anchor="middle">t1 训练步 1 结束</text>
+<path class="refline" d="M 535.0 72 L 535.0 340"/>
+<text class="sm" x="535.0" y="356" text-anchor="middle">t2 训练步 2 结束</text>
+<path class="refline" d="M 742.5 72 L 742.5 340"/>
+<text class="sm" x="742.5" y="356" text-anchor="middle">t3 训练步 3 结束</text>
+<path class="refline" d="M 950.0 72 L 950.0 340"/>
+<path class="axis" d="M 120 340 L 950 340"/>
+<text class="rank" x="24.0" y="100" text-anchor="start">Trainer</text>
+<rect class="ghost" x="120.0" y="80" width="120.3" height="30" rx="3"/>
+<text class="sm" x="180.2" y="99" text-anchor="middle">收 TBS 条 + 经验准备</text>
+<rect class="train" x="240.3" y="80" width="87.2" height="30" rx="3"/>
+<text class="txw" x="283.9" y="99" text-anchor="middle">train → W2</text>
+<text class="dim" x="331.5" y="124" text-anchor="start">P2P 权重 → 选中的 group</text>
+<rect class="ghost" x="327.5" y="80" width="120.4" height="30" rx="3"/>
+<text class="sm" x="387.7" y="99" text-anchor="middle">收 TBS 条 + 经验准备</text>
+<rect class="train" x="447.9" y="80" width="87.1" height="30" rx="3"/>
+<text class="txw" x="491.4" y="99" text-anchor="middle">train → W3</text>
+<text class="dim" x="539.0" y="124" text-anchor="start">P2P 权重 → 选中的 group</text>
+<rect class="ghost" x="535.0" y="80" width="120.4" height="30" rx="3"/>
+<text class="sm" x="595.2" y="99" text-anchor="middle">收 TBS 条 + 经验准备</text>
+<rect class="train" x="655.4" y="80" width="87.1" height="30" rx="3"/>
+<text class="txw" x="698.9" y="99" text-anchor="middle">train → W4</text>
+<text class="dim" x="746.5" y="124" text-anchor="start">P2P 权重 → 选中的 group</text>
+<rect class="ghost" x="742.5" y="80" width="207.5" height="30" rx="3"/>
+<text class="sm" x="846.3" y="99" text-anchor="middle">收 TBS 条，含请求 4</text>
+<text class="rank" x="24.0" y="154" text-anchor="start">DP0</text>
+<rect class="ghost" x="120.0" y="134" width="66.4" height="30" rx="3"/>
+<text class="tx" x="153.2" y="153" text-anchor="middle">1 · W1</text>
+<rect class="ghost" x="190.6" y="134" width="49.8" height="30" rx="3"/>
+<text class="tx" x="215.4" y="153" text-anchor="middle">2</text>
+<rect class="ghost" x="244.5" y="134" width="33.2" height="30" rx="3"/>
+<text class="tx" x="261.1" y="153" text-anchor="middle">3</text>
+<rect class="tail" x="281.9" y="134" width="381.8" height="30" rx="3"/>
+<text class="costtx" x="472.8" y="153" text-anchor="middle">4 · 长尾，始终在 W1 下生成，跨三个训练步</text>
+<rect class="acc1" x="752.9" y="134" width="197.1" height="30" rx="3"/>
+<text class="tx" x="851.4" y="153" text-anchor="middle">14 · W4</text>
+<text class="rank" x="24.0" y="200" text-anchor="start">DP1</text>
+<rect class="ghost" x="120.0" y="180" width="107.9" height="30" rx="3"/>
+<text class="tx" x="173.9" y="199" text-anchor="middle">5 · W1</text>
+<rect class="ghost" x="232.1" y="180" width="95.4" height="30" rx="3"/>
+<text class="tx" x="279.8" y="199" text-anchor="middle">6 · W1</text>
+<rect class="neutral" x="333.7" y="180" width="130.7" height="30" rx="3"/>
+<text class="tx" x="399.1" y="199" text-anchor="middle">9 · W2</text>
+<rect class="neutral" x="468.6" y="180" width="66.4" height="30" rx="3"/>
+<text class="tx" x="501.8" y="199" text-anchor="middle">10 · W2</text>
+<rect class="band2" x="541.2" y="180" width="408.8" height="30" rx="3"/>
+<text class="tx" x="745.6" y="199" text-anchor="middle">13 · W3</text>
+<text class="rank" x="24.0" y="246" text-anchor="start">DP2</text>
+<rect class="ghost" x="120.0" y="226" width="199.2" height="30" rx="3"/>
+<text class="tx" x="219.6" y="245" text-anchor="middle">7 · W1</text>
+<rect class="neutral" x="333.7" y="226" width="87.1" height="30" rx="3"/>
+<text class="tx" x="377.3" y="245" text-anchor="middle">11 · W2</text>
+<rect class="neutral" x="425.0" y="226" width="105.8" height="30" rx="3"/>
+<text class="tx" x="477.9" y="245" text-anchor="middle">12 · W2</text>
+<rect class="band2" x="541.2" y="226" width="197.1" height="30" rx="3"/>
+<text class="tx" x="639.8" y="245" text-anchor="middle">15 · W3</text>
+<rect class="acc1" x="748.7" y="226" width="201.3" height="30" rx="3"/>
+<text class="tx" x="849.4" y="245" text-anchor="middle">17 · W4</text>
+<text class="rank" x="24.0" y="292" text-anchor="start">DP3</text>
+<rect class="ghost" x="120.0" y="272" width="78.8" height="30" rx="3"/>
+<text class="tx" x="159.4" y="291" text-anchor="middle">8 · W1</text>
+<rect class="ghost" x="203.0" y="272" width="120.4" height="30" rx="3"/>
+<text class="tx" x="263.2" y="291" text-anchor="middle">8b · W1</text>
+<rect class="neutral" x="333.7" y="272" width="197.1" height="30" rx="3"/>
+<text class="tx" x="432.3" y="291" text-anchor="middle">19 · W2</text>
+<rect class="neutral" x="535.0" y="272" width="95.5" height="30" rx="3"/>
+<text class="tx" x="582.7" y="291" text-anchor="middle">10 迁入</text>
+<rect class="band2" x="638.8" y="272" width="99.6" height="30" rx="3"/>
+<text class="tx" x="688.5" y="291" text-anchor="middle">16 · W3</text>
+<rect class="acc1" x="748.7" y="272" width="201.3" height="30" rx="3"/>
+<text class="tx" x="849.4" y="291" text-anchor="middle">18 · W4</text>
+<path class="main" d="M 536.0 211 L 536.0 269"/>
+<text class="dim" x="555.0" y="326" text-anchor="start">DP1 收回换 W3；请求 10 带 KV cache 迁到 DP3 续跑，剩余长度不变</text>
+<rect class="cost" x="116.0" y="128" width="551.6" height="182" rx="4"/>
+<text class="costtx" x="122.0" y="326" text-anchor="start">同步训练下整批都在等请求 4 完成（对照）</text>
+<rect class="ghost" x="120.0" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="139.0" y="378" text-anchor="start">W1 最旧</text>
+<rect class="neutral" x="201.5" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="220.5" y="378" text-anchor="start">W2</text>
+<rect class="band2" x="254.8" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="273.8" y="378" text-anchor="start">W3</text>
+<rect class="acc1" x="308.1" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="327.1" y="378" text-anchor="start">W4 最新</text>
+<rect class="tail" x="389.6" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="408.6" y="378" text-anchor="start">长尾轨迹</text>
+<rect class="train" x="474.6" y="367" width="14.0" height="12" rx="2"/>
+<text class="cap" x="493.6" y="378" text-anchor="start">训练</text>
+</svg>

@@ -6,7 +6,7 @@ title: "后训练框架 — 目录索引"
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、TitanRL 异步 GRPO/DAPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-09-10（slime 完成基线核实整改，新增多模态、评估与 SFT 专题）
+> 最后更新: 2026-09-16（新增 DORA 多版本 rollout 论文分析页）
 
 ---
 
@@ -32,6 +32,7 @@ title: "后训练框架 — 目录索引"
 | **verl** | 字节 **HybridFlow** 开源版；当前默认 V1 以 TransferQueue 解耦控制/数据，共享 Agent/Reward、Worker/Engine、rollout、权重发布与训练恢复能力 | 16 篇 + index（**系统性源码覆盖**） | `volcengine/verl@254a23ed` |
 | **AReaL** | Fully Async 与 Agentic 架构的代表：微服务化、Hermes、policy lag 的显式管理 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **ROLL** | 多后端 Strategy 抽象 + AutoDeviceMapping；异构与 **Ascend** 侧的代表 | 1 篇（**架构专题，非全景**） | 见页头 |
+| **DORA**（美团 LongCat） | 多版本流式 rollout 与 rollout 池内动态编排的代表；论文专题，**无公开实现** | 1 篇（**论文机制分析，非源码**） | arXiv:2604.26256v2 |
 | **vime** | vLLM backend 的衍生实现；用于审计 slime 的 rollout backend 扩展点 | 1 篇（在 `slime/` 下） | `vllm-project/vime@8144096e` |
 | **TRL / NeMo-RL / Tinker / KDFlow / OpenRLHF** | 仅在 OPD 支持度对照表里做**选型定位**，本库**没有**源码级深挖 | 0 篇（仅出现在对照表） | — |
 | **Sandbox / RL Infra 效率 / OPD 系统侧** | **技术专题而非产品**：跨框架的公开资料综述（RollArt、ProRL Agent、Kimi K3、Claude 4 访谈等） | 5 篇 | 公开资料，见各页头 |
@@ -102,6 +103,7 @@ title: "后训练框架 — 目录索引"
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
 | 2 | [[21_areal_async_architecture_analysis]] | AReaL 框架架构专题 |
 | 2 | [[22_roll_strategy_and_ascend_analysis]] | ROLL 框架架构专题 |
+| 2 | [[23_dora_multi_version_rollout_analysis]] | 美团 DORA：多版本流式 rollout、DP group 按版本重分区、同版本 KV cache 直传；与 verl GPU 出借的坐标对照 |
 | 3 | [[30_rl_framework_comparison]] | 工业框架统一机制矩阵对比 |
 | 3 | [[31_cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照 |
 | 3 | [[32_opd_framework_support_comparison]] | 六框架 OPD 支持对照与选型(veRL/slime/TRL/NeMo-RL/Tinker/KDFlow) |
@@ -134,6 +136,7 @@ title: "后训练框架 — 目录索引"
 | [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
 | [[21_areal_async_architecture_analysis]] | AReaL Fully Async 与 Agentic 架构:微服务、Hermes、policy lag、agent trajectory |
 | [[22_roll_strategy_and_ascend_analysis]] | ROLL Strategy、异构与 Ascend:多后端 Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
+| [[23_dora_multi_version_rollout_analysis]] | 美团 DORA 论文（arXiv:2604.26256v2，无公开实现）:长尾困境的 max-max 结构、多版本流式训练与滑动窗口、编排器三触发三动作、零重 prefill KV 迁移、收益与失败边界、与 verl GPU lending / fully async dynamic schedule / RLBoost 的资源流动坐标 |
 | [[31_cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照:通信、推理、并行、权重同步、kernel 与诊断的能力与差距矩阵 |
 
 ### 在线策略蒸馏（OPD）的系统侧（2026-08 新建）
