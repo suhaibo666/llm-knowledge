@@ -5,8 +5,25 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 # vLLM 推理引擎：按问题与依赖组织的知识地图
 
 > **核验基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（2026-09-07 UTC）；各页适用范围与证据限制见页头和正文。
-> **核验状态**：26篇正文沿用冻结基线；21–26 已按各自主问题补齐原理、具体示例、代码协作、系统接缝与失败边界。最后更新：2026-09-14。
+> **核验状态**：26篇正文统一到冻结基线；默认执行轴、跨页 owner、关键事实与稳定源码锚点已按全域复审结论收口。最后更新：2026-09-15。
 > **目录范围**：26篇内容页 + 本索引，按原有相对顺序连续编号为01–26；旧版系统设计原则页已合并到架构与具体机制页。本页只维护本级入口及阅读依赖；使用、调优、排障、架构和具体机制分别从下表进入。
+
+## 已知覆盖边界
+
+下列主题在当前基线下**本域没有 owner 页面**。它们不是遗漏的链接，而是尚未分配归属的覆盖缺口，已提交 `planning-codebase-analysis` 裁决。右列给出**哪一页写下了这条缺口**，标 **无页面登记** 的表示本表是它在全域的唯一记录；在裁决之前，相关页面只作一行登记，不把读者指向不拥有该内容的页面。
+
+| 尚无 owner 的主题 | 哪些页面在登记它 |
+|---|---|
+| “调用 API / 使用特性”这一步的使用说明归属 | **无页面登记**（03 §6 登记的是输入路径缺口，不是这一条） |
+| P/D 实例之间的 proxy/router 路由（`examples/disaggregated/`） | 22 §2、§14.4 |
+| 配置解析总链 | **无页面登记**；各页只登记自己消费的字段 |
+| Ray / external launcher 的监督拓扑与 Ray DP actor 生命周期（`CoreEngineActorManager`、`EngineCoreActor`，DP+MoE 时为 `DPMoEEngineCoreActor`） | 23 §6.2、13 §4.2 |
+| tool / reasoning parser | **无页面登记**（03 只在行文中提到 parser，未登记缺口） |
+| pooling 执行（`PoolingRunner` 内部） | 12 §2.6、§1.6 |
+| 非 CUDA 平台 | 11 §2.10、02 §3.8（后者列出平台决定的下游选择点并声明本域只覆盖 CUDA） |
+| gRPC / Rust frontend | 02 §5.3 |
+| scale-out render → token-in 往返的部署编排 | 02 §5.5 |
+| `n>1` / beam search | **无页面登记**（14 只把 `n>1` 作为 trace-replay 的排除项提及） |
 
 ## 读者入口
 
@@ -29,12 +46,14 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 
 ## 模型与设备执行
 
+> 普通生成在兼容配置下默认先进入 MRV2（12）；11 是 MRV1 的对照与回落路径。编号保留历史顺序，不代表必须先读 11。
+
 | 页面 | 读者问题与内容边界 | 阅读依赖 |
 |---|---|---|
 | [[09_vllm_model_library_analysis|09 模型库与权重加载]] | checkpoint怎样经过模型选择、名称映射和rank分片成为可执行模型？ | 架构概览 → Attention、量化与在线更新 |
 | [[10_vllm_attention_backends_analysis|10 Attention Backend]] | 本步 Query 怎样定位到具体 K/V 元素，backend 从哪些候选与选择轴中选出，布局与块粒度怎样接合？ | 模型库与KV → Runner、量化与编译图 |
-| [[11_vllm_model_runner_v1_analysis|11 Model Runner V1]] | 请求行、token 行与 KV slot 怎样对应，压紧换行与设备结果怎样接续？ | Scheduler、KV与Attention → Runner V2、生成特性 |
-| [[12_vllm_model_runner_v2_analysis|12 Model Runner V2]] | 稳定请求行、差量写入、当步gather与ModelState怎样生成可重叠的设备执行？ | Runner V1及其前置 → 生成特性、编译图 |
+| [[11_vllm_model_runner_v1_analysis|11 Model Runner V1]] | 请求行、token 行与 KV slot 怎样对应，压紧换行与设备结果怎样接续？ | 对照/回落路径；先读 Scheduler、KV与Attention，默认代际先读12 |
+| [[12_vllm_model_runner_v2_analysis|12 Model Runner V2]] | 稳定请求行、差量写入、当步gather与ModelState怎样生成可重叠的设备执行？ | 默认入口；Scheduler、KV与Attention → 生成特性、编译图；11用于代际对照 |
 
 ## 生成与模型特性
 
@@ -49,15 +68,15 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 
 | 页面 | 读者问题与内容边界 | 阅读依赖 |
 |---|---|---|
-| [[18_vllm_distributed_inference_analysis|18 分布式推理]] | 六根并行轴怎样映射到rank与通信，PP反向采样、专家迁移、弹性扩缩容和微批怎样各自保持次序与完成点？ | Engine、模型库、Attention与Serving → 分离式KV、在线更新 |
+| [[26_vllm_multiproc_executor_rpc_deepdive|26 MultiprocExecutor专题]] | 模型并行workers为什么要锁步消费广播RPC，READY、有限共享内存、响应FIFO和shutdown怎样闭环？ | Engine → 分布式、Serving、Runner与可观测性 |
+| [[18_vllm_distributed_inference_analysis|18 分布式推理]] | 六根并行轴怎样映射到rank与通信，PP反向采样、专家迁移、弹性扩缩容和微批怎样各自保持次序与完成点？ | Engine、MultiprocExecutor、模型库与Attention → Serving、分离式KV、在线更新 |
 | [[19_vllm_compilation_cudagraph_analysis|19 编译与CUDA Graph]] | 动态shape怎样选择编译区域、捕获与重放，两代Runner的派发与encoder/speculator图各按什么键命中，不兼容时怎样回退？ | Attention与两代Runner → IR、融合算子 |
-| [[20_vllm_fused_ops_and_kernels_analysis|20 融合算子与Kernel]] | 融合具体减少哪些中间读写；provider与MoE backend怎样三层选择、何时被静默改写；rope、activation、Marlin与FP8权重在Kernel内怎样布局；专家与multi-LoRA怎样重排，何时不能使用？ | Attention、量化、编译与IR → 设备性能验证 |
 | [[21_vllm_ir_and_fusion_passes_analysis|21 IR与融合Pass]] | vLLM IR 与 torch.compile 如何衔接；Pass 怎样匹配和融合，用户如何接入规则、约束区间并验证结果？ | 量化与编译图 → 融合算子 |
+| [[20_vllm_fused_ops_and_kernels_analysis|20 融合算子与Kernel]] | 融合具体减少哪些中间读写；provider与MoE backend怎样三层选择、何时被静默改写；rope、activation、Marlin与FP8权重在Kernel内怎样布局；专家与multi-LoRA怎样重排，何时不能使用？ | Attention、量化、编译与IR → 设备性能验证 |
 | [[22_vllm_disaggregated_kv_serving_analysis|22 分离式KV Serving]] | 同一组 prompt blocks 在 pull、push、逐层读取与外部 store 中怎样交接、等待、重算和释放；16个注册 connector 各自支持到哪里？ | Scheduler、KV、Serving与分布式 → 可观测性 |
-| [[23_vllm_observability_reliability_analysis|23 可观测性与可靠性]] | 一条请求的事件怎样算成延迟并进入 metrics、trace 或 benchmark；故障怎样通知等待者，哪些状态允许受控恢复？ | 调试与排障 → Scheduler、KV、Serving与分布式 |
+| [[23_vllm_observability_reliability_analysis|23 可观测性与可靠性]] | 一条请求的事件怎样算成延迟并进入 metrics、trace 或 benchmark；故障怎样通知等待者，哪些状态允许受控恢复？ | Scheduler、KV、Serving、MultiprocExecutor与分布式 → 调试与排障 |
 | [[24_vllm_extension_plugin_system_analysis|24 扩展与插件]] | 同一套entry-point发现为什么要按进程、平台、请求、路由和运行时状态拆成不同生命周期？ | 请求语义、模型库与Serving → 在线更新、可观测性 |
 | [[25_vllm_weight_transfer_online_update_analysis|25 在线权重更新]] | 请求跨版本时，pause、四类传输后端、原位写入、finish、版本和缓存怎样建立可见性边界？ | Engine、KV、模型库、Runner与分布式 → MultiprocExecutor、可观测性 |
-| [[26_vllm_multiproc_executor_rpc_deepdive|26 MultiprocExecutor专题]] | 模型并行workers为什么要锁步消费广播RPC，READY、有限共享内存、响应FIFO和shutdown怎样闭环？ | Engine与分布式 → Serving、Runner与可观测性 |
 
 ## Related Pages
 

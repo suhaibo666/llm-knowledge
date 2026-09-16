@@ -7,7 +7,7 @@ title: "vLLM 调试与故障排查：从症状到恢复验证"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：用一次启动时 KV 容量不足的案例贯穿症状确认、环境采集、分层定位、处置和恢复验证，再给出日志、健康检查、指标、Profiler 与请求 Trace 的具体操作。最后按安装、模型输入、显存、编译和进程通信划分常见故障。
 > **适用范围**：普通文本生成、Python HTTP 服务与 GPU 排障；首次跑通见使用指南，评测调优见性能指南，指标产生与故障传播机制见可观测性专题。
-> **最近更新**：2026-09-08。按固定源码快照建立操作指南；案例与命令未在 GPU 服务环境实跑。
+> **最近更新**：2026-09-16。按固定源码快照建立操作指南；修正编译与故障恢复的机制页路由；案例与命令未在 GPU 服务环境实跑。
 
 ## 1. 先找到失败发生在哪一层
 
@@ -95,9 +95,14 @@ curl -sS --max-time 120 -D diag/response.headers \
 curl -sS --max-time 10 http://127.0.0.1:8000/metrics > diag/metrics-after.txt
 rg '^vllm:(request_success_total|generation_tokens_total|e2e_request_latency_seconds_count)' \
   diag/metrics-before.txt diag/metrics-after.txt
+# 没有 ripgrep 时：
+# grep -nE '^vllm:(request_success_total|generation_tokens_total|e2e_request_latency_seconds_count)' \
+#   diag/metrics-before.txt diag/metrics-after.txt
 ```
 
-检查 HTTP 状态、响应中的 `choices`、`usage` 和结束原因，确认请求确实完成，而非仅建立了连接。统计上检查同一 `model_name`/`engine` 的新计数；如果一次抓取尚未看到变化，等新的输出统计可见后再抓取，保留时间戳。不能把旧 gauge 的存在当作恢复证据，也不能把不同进程或不同重启周期的绝对 counter 值直接相减。
+本页多处用 `rg`（ripgrep）；它不是系统自带工具，未安装时把 `rg -n 'A|B'` 换成 `grep -nE 'A|B'` 即可，两者的扩展正则与 `-n` 行号语义在这些用法下等价。
+
+检查 HTTP 状态、响应中的 `choices`、`usage` 和结束原因，确认请求确实完成，而非仅建立了连接。**`vllm:request_success_total` 带 `finished_reason` 标签，abort 与 error 结束的请求同样计入其中**，所以它涨了不等于成功——看这个指标时要按 `finished_reason="stop"` / `"length"` 过滤，或至少同时看 `abort`/`error` 两支是否也在涨。统计上检查同一 `model_name`/`engine` 的新计数；如果一次抓取尚未看到变化，等新的输出统计可见后再抓取，保留时间戳。不能把旧 gauge 的存在当作恢复证据，也不能把不同进程或不同重启周期的绝对 counter 值直接相减。
 
 短请求完成之后，还需测试业务要求的最长输入加输出，以及实际并发下是否再次出错。缩短上下文的案例验收只证明新范围内恢复；未覆盖原来的 8192 范围，也未给出吞吐、延迟或答案质量保证。关闭 DEBUG 后重测，记录最终保留的参数和撤回的诊断开关。
 
@@ -192,11 +197,11 @@ span 经批量 exporter 发送；同基线测试会等待 `llm_request` 出现�
 | `failed to be inspected` 或 architecture 不支持 | 先读模型 inspection 之前的 import 异常，再核对 checkpoint 的 architecture 与当前注册表 | 当前 registry 区分已登记但 inspection 失败、已移除、迁往外部插件和未知架构；不要把这几种都当成模型根本不受支持 |
 | completion 可用但 chat 报模板错，或角色格式不符 | 保存原消息、tokenizer/revision 和实际模板；检查显式模板、processor、tokenizer 与内建 fallback 的选择，必要时通过 `--chat-template /path/to/model-template.jinja` 提供模型对应模板 | 当前 HF renderer 确实有 fallback 选择；不能仅凭 tokenizer 无模板就判定必报错。所有来源都未解析出模板时才抛模板解析错误；不要随意套别的模型模板来换取 HTTP 成功，请求语义见 `03` |
 | 加载、profile、KV 校验或运行中 OOM | 先按最早错误划分阶段；KV 校验按本页案例操作；其他阶段减少对应工作量后重测 | 模型权重、执行峰值和 KV 预算不同。`kv_cache_memory_bytes` 显式指定后不再服从利用率预算，必须核对是否启用了这一分支；后续由 `08`、性能指南及模型专题解释 |
-| 报错落在编译或 graph replay | 先单独加 `--enforce-eager` 重现；若恢复，再分别用 `--compilation-config '{"cudagraph_mode":"none"}'` 与 `'{"mode":"none","cudagraph_mode":"none"}'` 作对照 | 当前 `--enforce-eager` 同时关闭 torch.compile 与 CUDA Graph，成功只能定位到被关闭路径的组合。改变图模式会改变调度/执行表现，不能据此单独认定编译器 bug；下一 owner 是 `23` |
+| 报错落在编译或 graph replay | 先单独加 `--enforce-eager` 重现；若恢复，再分别用 `--compilation-config '{"cudagraph_mode":"none"}'` 与 `'{"mode":"none","cudagraph_mode":"none"}'` 作对照 | 当前 `--enforce-eager` 同时关闭 torch.compile 与 CUDA Graph，成功只能定位到被关闭路径的组合。改变图模式会改变调度/执行表现，不能据此单独认定编译器 bug；机制 owner 是 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
 | traceback 位于 `torch/_inductor`、Triton 或 PTX 工具链 | 按官方 troubleshooting 中的最小 `torch.compile` CUDA 脚本脱离 vLLM 测试，保留同一环境的失败 | 如果最小脚本也失败，先收敛 PyTorch/Triton/工具链环境；外部依赖的具体根因还需对应源码或实验，不从目录名推断 |
 | 初始化多进程报 bootstrap/spawn 错误 | 离线 Python 入口使用 `if __name__ == '__main__':` 保护创建引擎的代码，记录实际启动方法 | 当前 `_maybe_force_spawn` 在 CUDA 已初始化等条件下会切到 spawn；不要为了通过而盲目强制 fork |
 | 多卡/多机初始化或生成 hang | 给客户端设诊断超时，记录所有 rank 最后进展与首次异常；核对日志中的通信 IP 和网卡，按官方独立通信脚本做对照 | `VLLM_HOST_IP`、`NCCL_SOCKET_IFNAME`、`GLOO_SOCKET_IFNAME` 只在地址选择确有问题时试用；独立通信失败将范围收敛到依赖/环境，仍不自动证明硬件损坏；下一 owner 是分布式推理专题 |
-| 运行中批量报 EngineDeadError 或 health 503 | 保存最早 worker/EngineCore 异常、受影响请求与重启前日志，再由部署策略恢复实例并重放验收请求 | 不循环重试一个已 DEAD 的 Engine；可恢复 fault-tolerance 状态与不可恢复死亡有不同合同，按 `27` 的状态边界处置 |
+| 运行中批量报 EngineDeadError 或 health 503 | 先区分“可恢复”与“已死”：开启容错时服务暴露 `GET /fault_tolerance/status` 可直接读当前状态，`POST /fault_tolerance/apply` 才是下达恢复指令的入口。确认不可恢复后，保存最早 worker/EngineCore 异常、受影响请求与重启前日志，再由部署策略恢复实例并重放验收请求 | 不循环重试一个已 DEAD 的 Engine；可恢复 fault-tolerance 状态与不可恢复死亡有不同合同，按 [[23_vllm_observability_reliability_analysis#6.3 受控恢复：只恢复可恢复的执行环境|可观测性与可靠性 §6.3]] 的状态边界处置 |
 
 这些动作都是隔离变量的方法，不能把临时开关直接升级成生产默认值。发现执行退化但无明确功能故障后，转到性能指南保留原始负载、逐项实验和验收阈值；本页不重复调度、缓存、通信或编译算法。
 

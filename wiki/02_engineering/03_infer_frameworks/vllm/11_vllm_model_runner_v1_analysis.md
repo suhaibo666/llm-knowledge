@@ -4,10 +4,10 @@ title: "vLLM Model Runner V1：请求挪了行，哪些输入必须一起挪"
 
 # vLLM Model Runner V1：请求挪了行，哪些输入必须一起挪
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：Model Runner V1（MRV1）的紧凑持久 batch：在 EngineCore step 闭环中的位置与核心流程清单、请求镜像与 row 的分工、`_update_states()` 顺序与 runner 侧 CoW 复制、condense/reorder 整行搬移及 processor/LoRA 跟随、token-major 输入与槽映射、attention metadata 交接、异步跨 row 复用采样及其与 Scheduler placeholder 的对应、forward/sample 分段交付、启动期 profile/warmup/capture，以及入口、上下游交接契约、约束、成本与配置。核心代码在 `vllm/v1/worker/gpu_model_runner.py`、`gpu_input_batch.py`。
 > **适用范围**：Model Runner V1 的 worker 侧状态与执行；调度见 07，KV 分配与 CoW 引用见 08，attention 与字节地址见 10，runner 选择矩阵见 12，采样算法见 14，多模态 encoder 见 15，投机解码见 16，graph 策略见 19，KV connector 见 22。
-> **最近更新**：2026-09-11。按 07 的流程覆盖标准补 step 闭环图、核心流程清单、逐阶段主流程表、attention metadata 交接、字段契约、placeholder 对应与启动期调用位置，并把 batch queue 与调度侧字段语义交回 06、07。
+> **最近更新**：2026-09-16。按 06 的默认执行轴修正入口、闭环图与调用树，区分队列中的立即采样提交、同步等待分支及 MRV1 的实际返回边界。
 
 ## 1. 特性概览
 
@@ -43,9 +43,11 @@ MRV1 让**持久状态的 row 同时充当当步模型与采样输入的 row**�
 
 ### 1.4 在一次 step 闭环中的位置
 
-MRV1 不决定本步做什么，也不判断请求是否结束；它夹在 Scheduler 的计划与对账之间。普通 `EngineCore.step()` 先 `schedule()` 得到 `SchedulerOutput`，以 `non_block=True` 交给 executor 并**立即**拿到 future，随后调用 `Scheduler.get_grammar_bitmask()` 准备 `GrammarOutput`（由 `StructuredOutputManager` 生成，见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]），然后才在 `future.result()` 等 worker 回应。`execute_model()` 返回 `None` 时 Core 再调用 `sample_tokens(grammar_output)`；拿到 `ModelRunnerOutput` 后先处理执行期间到达的 abort，再调用 `update_from_output()` 生成按客户端分组的 `EngineCoreOutputs`。非 async 的投机解码还在 step 之后由 `post_step()` 取回 draft token 交给 Scheduler（三条发布路径见 16 §8.3）。Core 怎样把 future 与原计划配对归 [[06_vllm_engine_architecture_analysis|Engine 架构]]，结果对账归 [[07_vllm_scheduler_analysis|Scheduler]] §8。
+MRV1 不决定本步做什么，也不判断请求是否结束；它夹在 Scheduler 的计划与对账之间。**选中 MRV1 不表示关闭异步调度。** 普通生成、兼容配置时 `async_scheduling=None` 就解析为 True——**该解析不读 `scheduler_cls` 也不读 PP**，只看 pooling / spec 方法 / `disable_padded_drafter_batch` / executor 支持 / ROCm DeepEP HT+DBO；解析为 True 之后，未自定义 Scheduler 才用 `AsyncScheduler`，PP 则另外影响容量——MRV1 + async 只有 PP≤1 才是容量 2，PP>1 时容量是 PP 本身。解析条件、完整 MRV1/MRV2 与 PP 容量规则、`step_fn` 选择统一归 [[06_vllm_engine_architecture_analysis#4.1 队列里必须同时保留 future 和原计划|Engine 架构 §4.1]]；runner 代际选择仍归本页 §2.10 与 12，不在这里复制第二份配置矩阵。
 
-<!-- 图规格：四参与者顺序图，重放一次普通 step：Core 取得 SchedulerOutput 后非阻塞提交 execute_model，并在等待 future 前生成 GrammarOutput；runner 的 execute_model 返回 None 后 Core 再调用 sample_tokens；async 时 worker 侧输出线程在 get_output 等事件，再把 ModelRunnerOutput 交回 Core；Core 先处理 abort 再对账得到 EngineCoreOutputs。消息标交接对象，参与者括注归属页；不表示耗时比例。 -->
+这一队列入口的提交序（`schedule` → `execute_model(non_block=True)` → 取 `GrammarOutput` → `sample_tokens(non_block=True)`，其中**不等待 execute future 返回 None 才发采样调用**）由 [[06_vllm_engine_architecture_analysis#4.2 默认 R 与两个 12-token prompt 的最小重放|Engine 架构 §4.2]] 拥有，本页不重放；`GrammarOutput` 由 `Scheduler.get_grammar_bitmask()` 经 `StructuredOutputManager` 生成，见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。本页只接它的后果：队列保存 sampling future、原计划与 execute future，稍后按 FIFO 等待最旧结果；拿到 `ModelRunnerOutput` 后先处理执行期间到达的 abort，再调用 `update_from_output()` 生成按客户端分组的 `EngineCoreOutputs`。结果对账归 [[07_vllm_scheduler_analysis|Scheduler]] §8。
+
+<!-- 图规格：四参与者顺序图，固定已选 MRV1、PP=1、mp Executor、async=True 的普通生成批次，无 pending grammar 依赖。Core 向 Scheduler 取得计划，再向 Executor 非阻塞提交 execute；取得 GrammarOutput 后立即提交非阻塞 sample，不以 execute 的 None 回应为触发。Core 将 sampling future、原计划、execute future 配对入队；worker 按 execute/sample 顺序执行，execute 暂存 logits 返回 None，sample 返回 AsyncGPUModelRunnerOutput，由输出线程 get_output 等 copy event。Core 轮到消费该队列项时等 sampling future，先处理 abort 再对账。下一批省略，以注记说明可先入队；不表示耗时比例。 -->
 ```mermaid
 sequenceDiagram
     participant C as EngineCore（06）
@@ -54,23 +56,28 @@ sequenceDiagram
     participant R as MRV1 runner（本页）
     C->>S: schedule
     S-->>C: SchedulerOutput，计划已乐观记账
-    C->>E: execute_model，non_block，立即得到 future
+    C->>E: execute_model，non_block，取得 exec_future
     E->>R: Worker.execute_model 转入 SchedulerOutput
     C->>S: get_grammar_bitmask
     S-->>C: GrammarOutput 或 None
+    C->>E: sample_tokens，non_block，携带 GrammarOutput
+    Note over C: sampling future 与原计划、exec_future 入队<br/>可先安排下一批，再按 FIFO 消费
     R-->>E: None，logits 暂存于 ExecuteModelState
-    E-->>C: future.result 得到 None
-    C->>E: sample_tokens，携带 GrammarOutput
     E->>R: Worker.sample_tokens
-    R-->>E: ModelRunnerOutput，或 async 时 AsyncGPUModelRunnerOutput
-    Note over E: async 时输出线程调用 get_output<br/>等 async_copy_ready_event
+    R-->>E: AsyncGPUModelRunnerOutput
+    Note over E: worker 输出线程调用 get_output<br/>等 async_copy_ready_event，主循环可继续处理 RPC
+    C->>E: 轮到该项时等待 sampling future.result
     E-->>C: ModelRunnerOutput
     C->>C: 先处理执行期间到达的 abort
     C->>S: update_from_output，原 SchedulerOutput 与 ModelRunnerOutput
     S-->>C: EngineCoreOutputs，按 client 分组
 ```
 
-开启 batch queue（`max_concurrent_batches > 1`）时，Core 改用 `step_with_batch_queue()` 让多批在途；future 与原计划怎样成对入队、重放与延后采样由 [[06_vllm_engine_architecture_analysis|Engine 架构]] §4 解释。从 runner 侧看只有四处差别：`execute_model` 同样以 `non_block` 提交；`pending_structured_output_tokens` 为真时，这一批的 `sample_tokens` 延后到更早一批对账之后才调用；pooling、零 token 以及 EC producer 的批次不调用 `sample_tokens`，直接把 `exec_future` 作为结果排队；若 `sample_tokens` 的结果是 `None`，Core 调用 `exec_model_fut.result()`，让原先 `execute_model` 中的异常重新抛出。worker 侧的配合是：async 调度下 `WorkerProc.handle_output()` 把 runner 返回值交给独立的 `async_output_busy_loop` 线程，由它调用 `get_output()` 等事件后再回复 Core，worker 主循环因此可以先处理下一条 RPC。
+队列分支还有三个条件边界：`pending_structured_output_tokens` 为真时，这一批的 `sample_tokens` 延后到更早一批对账之后才调用；pooling、零 token 以及 EC producer 的批次不调用 `sample_tokens`，直接把 `exec_future` 作为结果排队；Core 保留“sampling 结果是 None 时再等待 `exec_model_fut.result()` 以暴露 execute 异常”的通用兜底，**但 MRV1 的 `GPUModelRunner.sample_tokens()` 没有正常返回 None 的分支**（§2.8），不能把该兜底写成 MRV1 的返回契约。future 与原计划的重放及延期采样由 [[06_vllm_engine_architecture_analysis#4. batch queue 怎样让上一批没回来时继续安排下一批？|Engine 架构 §4]] 解释。
+
+图固定了 mp 的异步输出通路：`WorkerProc.handle_output()` 把 runner 返回值放入独立 `async_output_busy_loop` 线程的队列，由 `enqueue_output()` 调用延迟对象的 `get_output()` 等事件，再回复 Core，worker 主循环可以先处理下一条 RPC。UniProc 没有这个 worker 输出线程，延迟结果由 `AsyncOutputFuture.result()` 调用 `get_output()` 物化；不能从图推导所有 Executor 都采用 mp 的线程组织。
+
+**同步对照分支仍然存在。** `EngineCore.step()` 的条件只有一条——`batch_queue is None`，即 `max_concurrent_batches` 不大于 1；在显式关闭 async 或自动回落到 False 且 PP=1 时才成立（自定义 `scheduler_cls` 只改 Scheduler 类，不改这个入口）。走 `step()` 时：先提交 execute、准备 grammar，在 execute future 上等待；值为 None 时再同步调用 `sample_tokens(grammar_output)`。这条路径没有图中的异步输出线程。async=False、PP>1 仍可使用 batch queue，故“非 async”和“同步 step”也不能互换。非 async 的投机解码还在 step 之后由 `post_step()` 取回 draft token 交给 Scheduler（三条发布路径见 16 §8.3）。
 
 ### 1.5 核心流程清单
 
@@ -84,7 +91,7 @@ sequenceDiagram
 | 输入物化与槽映射 | 最终 row、`num_scheduled_tokens`、computed、token store、块表 | `input_ids`、`positions`、`query_start_loc`、`seq_lens`、`slot_mapping`、`logits_indices` | attention metadata 交接；model forward | §2.5、§2.6 |
 | attention metadata 交接 | 上一行的同序张量；执行模式与 padding 决策（19） | 每层 attention metadata、按层槽映射、forward context | attention backend 与 KV 写入（10） | §2.6.1 |
 | forward | 已绑定的 forward context；`input_ids` 或 `inputs_embeds`；positions | hidden states；非末 PP rank 的 `IntermediateTensors`（18） | logits 计算；下一 PP stage | §2.8 |
-| 采样与 bookkeeping | Core 调用 `sample_tokens(GrammarOutput)`；`ExecuteModelState` | 同步时的 `ModelRunnerOutput`；token store 与镜像写回 | `Scheduler.update_from_output`（07 §8） | §2.8 |
+| 采样与 bookkeeping | Core 的队列入口立即/按 grammar 依赖延期提交 sample，或同步 step 等 execute 返回 None 后调用；`ExecuteModelState` | 同步时的 `ModelRunnerOutput`；token store 与镜像写回 | `Scheduler.update_from_output`（07 §8）；队列配对（06 §4） | §2.8 |
 | 异步输出与下一步复用 | `async_scheduling`；本步 GPU sampled tokens | `AsyncGPUModelRunnerOutput`；`prev_sampled_token_ids`、`prev_req_id_to_index`；CPU 中的 `-1` 占位 | worker 输出线程 `get_output` 后交 Core；下一步 `_prepare_input_ids` | §2.7 |
 | dummy、profile、KV 初始化与 capture | 启动期 `determine_available_memory`、`initialize_from_config`、`compile_or_warm_up_model`；DP 空步 | KV 可用显存估计；`initialize_kv_cache()` → `may_reinitialize_input_batch()` → KV 张量分配后得到的最终 `InputBatch` 与缓存 view；warm 的 kernel 与捕获的 graph | KV 容量规划（08）；graph 策略（19）；本页每步流程 | §2.9 |
 | runner 选择 | `VllmConfig.use_v2_model_runner`；`Worker.init_device` | MRV1 或 MRV2 实例；MRV1 能力校验结果 | 本页全部流程；选择矩阵（12） | §2.10 |
@@ -298,7 +305,7 @@ event 与 stream 的等待语义（`Event.synchronize()` 阻塞 host 直到已�
 
 ### 2.8 forward 与 sample 分开：结果何时可交付
 
-**触发**：`execute_model()` 的准备区结束后发出 forward；Core 在 `future.result()` 为 `None` 时调用 `sample_tokens(grammar_output)`（§1.4）；**完成点**：同步路径返回 `ModelRunnerOutput`，async 路径返回延迟对象，CPU 可见点见下文；请求进度的确认属于 07。
+**触发**：`execute_model()` 的准备区结束后发出 forward；Core 的队列入口通常紧随 execute 提交非阻塞 sample，grammar 依赖时延期，只有同步 `step()` 才等 execute future 返回 None 后调用 sample（§1.4）；**完成点**：同步路径返回 `ModelRunnerOutput`，async 路径返回延迟对象，CPU 可见点见下文；请求进度的确认属于 07。
 
 正常生成路径在 `execute_model()` 的准备区更新状态、生成输入、决定 padding/执行模式并建立 attention metadata；随后用 `set_forward_context()` 绑定当步 metadata 和槽映射，再执行 forward；backend 与模型参数此前已初始化，每步变化的只是输入。最后一个 PP rank 对 `logits_indices` 行计算 logits，把 logits、`SchedulerOutput`、spec metadata、hidden states、slot mappings 等存入 `ExecuteModelState`，返回 `None`。下一次 `sample_tokens(grammar_output)` 取出并清空这份状态，应用可选 grammar bitmask，执行 sampler（spec 时为 rejection sampler），再推进 hybrid/spec 状态与结果 bookkeeping。**得到 logits 不等于已按本步约束选出 token。** 分成两次调用让 grammar bitmask 可以在 forward 发出后才交给 runner（分析推断；bitmask 如何生成见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]）。上一份状态未被 sample 消费就再次 execute，会抛 `RuntimeError`。
 
@@ -390,7 +397,27 @@ InputBatch ..> CachedRequestState
 
 ### 3.2 调用流程
 
-缩进表示 caller → callee；行内 `a → b` 也表示 a 直接调用 b；同一行 `a / b` 表示按方括号条件二选一；先后发生的兄弟调用分行列出。方括号内是条件或注释，其中的 → 表示数据变换。NVTX/profiler 包装与纯转发省略。`Worker` 是 executor 分派到 worker 端的入口，executor 到 worker 的跨进程分派不在这里展开。
+缩进表示 caller → callee；行内 `a → b` 也表示 a 直接调用 b；同一行 `a / b` 表示按方括号条件二选一；先后发生的兄弟调用分行列出。方括号内是条件或注释，其中的 → 表示数据变换。NVTX/profiler 包装与纯转发省略。先列 06 拥有的入口选择结果，再列 worker 本地的两段调用；`=>` 是 RPC/结果交接而非直接函数调用，executor 内部广播与响应 FIFO 见 26。
+
+```text
+EngineCore.step_with_batch_queue                [MRV1 + async + PP=1；普通生成，无 pending grammar；选择轴见 06 §4.1]
++-- scheduler.schedule                         [返回 SchedulerOutput]
++-- Executor.execute_model(non_block=True)     [返回 exec_future]
+|   => Worker.execute_model                    [跨执行边界；本地展开见下树]
++-- scheduler.get_grammar_bitmask
++-- Executor.sample_tokens(non_block=True)     [返回 sampling future]
+|   => Worker.sample_tokens                    [同一 worker 中在 execute 之后；不等 Core 读取 None]
++-- batch_queue 保存 sampling future + 原计划 + exec_future
+`-- [消费最旧项] future.result；_process_aborts_queue；scheduler.update_from_output [顺序调用，非相互调用]
+    => EngineCoreOutputs
+EngineCore.step                                [对照：async=False、PP=1]
++-- scheduler.schedule
++-- Executor.execute_model(non_block=True)
++-- scheduler.get_grammar_bitmask
++-- exec future.result
++-- [execute 结果为 None] Executor.sample_tokens [同步调用]
+`-- _process_aborts_queue；scheduler.update_from_output [顺序调用]
+```
 
 ```text
 Worker.execute_model                         [非首 PP rank 先 irecv intermediate tensors]
@@ -463,11 +490,14 @@ Worker.sample_tokens
         +-- input_batch.set_async_sampled_token_ids
         `-- return AsyncGPUModelRunnerOutput
 
-WorkerProc.enqueue_output                    [调用方稍后执行]
+WorkerProc.async_output_busy_loop            [mp + async 输出线程；由 handle_output 的队列交接]
+`-- WorkerProc.enqueue_output
+    `-- AsyncGPUModelRunnerOutput.get_output → async_copy_ready_event.synchronize
+UniProcExecutor 的 AsyncOutputFuture.result  [UniProc 替代出口，无上述 worker 线程]
 `-- AsyncGPUModelRunnerOutput.get_output → async_copy_ready_event.synchronize
 ```
 
-第一棵树的返回只闭合“forward 已发出、logits 已暂存”；第二棵树的同步分支在 `_to_list()` 后 CPU 结果可见，async 分支要到 `get_output()` 才可见。请求何时被判定完成、结果怎样回到 Scheduler，由 [[07_vllm_scheduler_analysis|Scheduler]] 负责；两端的逐字段交接见 §3.4。
+worker 的 execute 树在普通生成出口只闭合“forward 已发出、logits 已暂存”；sample 树的同步分支在 `_to_list()` 后 CPU 结果可见，async 分支要到 `get_output()` 才可见。Core 的提交、等待和计划配对归 [[06_vllm_engine_architecture_analysis|Engine 架构]]；请求何时被判定完成及结果对账归 [[07_vllm_scheduler_analysis|Scheduler]]。两端的逐字段交接见 §3.4。
 
 ### 3.3 源码阅读路线
 
@@ -482,9 +512,11 @@ WorkerProc.enqueue_output                    [调用方稍后执行]
 9. dummy/profile/capture：`GPUModelRunner._dummy_run`、`GPUModelRunner.profile_run`、`GPUModelRunner.capture_model`、`GPUModelRunner._warmup_and_capture`、`GPUModelRunner._capture_cudagraphs`。
 10. 设计理由：`docs/design/model_runner_v2.md` 的 Persistent Batch、Removing Async Barrier、No Abuse of `dummy_run` 三节。
 11. 验证：`tests/v1/worker/test_gpu_model_runner.py::test_update_states_request_unscheduled`（未调度后镜像仍在、row 已移除）、`tests/v1/worker/test_gpu_model_runner.py::test_update_states_request_finished`、`tests/v1/worker/test_gpu_model_runner.py::test_update_states_request_resumed`（未调度后重新加入，append 分支；preempt-resume 替换分支无直接单测）；`tests/v1/worker/test_gpu_input_batch.py::test_sampling_metadata_in_input_batch`（condense 后与期望 metadata 比对）、`tests/v1/worker/test_gpu_input_batch.py::test_swap_states_in_input_batch`（swap 后与按交换顺序重建的参考 batch 比对）；`tests/v1/streaming_input/test_gpu_model_runner_streaming.py::test_e2e_streaming_request_update_basic_flow`；`tests/v1/worker/test_attn_utils.py::test_copy_kv_cache_blocks_shared_storage`、`tests/v1/worker/test_attn_utils.py::test_copy_kv_cache_blocks_separate_head_groups`、`tests/v1/worker/test_attn_utils.py::test_copy_kv_cache_blocks_with_virtual_block_splitting`。
-12. step 闭环、worker 输出与启动：`vllm/v1/engine/core.py::EngineCore.__init__`、`EngineCore._initialize_kv_caches`、`EngineCore.step`、`EngineCore.step_with_batch_queue`；`vllm/v1/executor/multiproc_executor.py::WorkerProc.__init__`、`WorkerProc.handle_output`、`WorkerProc.async_output_busy_loop`；`vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory`、`Worker.initialize_from_config`、`Worker.compile_or_warm_up_model`、`Worker.annotate_profile`；`GPUModelRunner.initialize_kv_cache`、`GPUModelRunner.profile_cudagraph_memory`。
+12. step 闭环、worker 输出与启动：`vllm/v1/engine/core.py::EngineCore.__init__`、`EngineCore._initialize_kv_caches`、`EngineCore.step`、`EngineCore.step_with_batch_queue`；配置选择依据为 `vllm/config/vllm.py::VllmConfig.__post_init__` / `max_concurrent_batches` 与 `vllm/config/scheduler.py::SchedulerConfig.get_scheduler_cls`（规则 owner：06 §4.1）；`vllm/v1/executor/multiproc_executor.py::WorkerProc.__init__`、`WorkerProc.handle_output`、`WorkerProc.async_output_busy_loop`、`WorkerProc.enqueue_output`；`vllm/v1/executor/uniproc_executor.py::UniProcExecutor.collective_rpc`、`AsyncOutputFuture.result`；`vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory`、`Worker.initialize_from_config`、`Worker.compile_or_warm_up_model`、`Worker.annotate_profile`；`GPUModelRunner.initialize_kv_cache`、`GPUModelRunner.profile_cudagraph_memory`。
 13. 上下游契约与 placeholder：`vllm/v1/core/sched/output.py::SchedulerOutput`；`vllm/v1/outputs.py::ModelRunnerOutput`；`vllm/v1/core/sched/scheduler.py::Scheduler.schedule`、`Scheduler._make_cached_request_data`、`Scheduler.get_grammar_bitmask`、`Scheduler.update_from_output`、`Scheduler._update_request_with_output`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`、`AsyncScheduler._update_request_with_output`；`vllm/v1/request.py::Request.is_prefill_chunk`；`InputBatch.update_req_spec_token_ids`；`vllm/v1/worker/mamba_utils.py::cleanup_mamba_state_idx`；`vllm/v1/spec_decode/ngram_proposer_gpu.py::update_scheduler_for_invalid_drafts`；`vllm/v1/structured_output/utils.py::apply_grammar_bitmask`；`vllm/v1/utils.py::compute_iteration_details`；调度侧 connector 读取抢占：`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py::OffloadingConnectorScheduler.build_connector_meta`、`vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py::MooncakeStoreScheduler.build_connector_meta`、`vllm/v1/simple_kv_offload/manager.py::SimpleCPUOffloadScheduler.build_connector_meta`。
 14. attention metadata 交接：`GPUModelRunner._compute_cascade_attn_prefix_lens`、`GPUModelRunner._determine_batch_execution_and_padding`、`GPUModelRunner._get_slot_mappings`、`GPUModelRunner._build_attention_metadata`；`GPUModelRunner._pool`、`GPUModelRunner._copy_draft_token_ids_to_cpu`；encoder cache：`GPUModelRunner._process_encoder_cache_scheduler_output`、`GPUModelRunner._cache_encoder_output`。
+
+补充返回边界证据：`tests/v1/worker/test_gpu_model_runner.py::test_sample_tokens_receives_pp_sampled_ids_only_on_non_last_rank` 与 `test_sample_tokens_skips_pp_group_lookup_without_async_scheduling` 覆盖空 `execute_model_state` 的 PP 接收条件；断言宽松地接受空输出或 None，不能单靠它们证明返回值。当前 `vllm/v1/outputs.py::ModelRunnerOutput.with_kv_conn_output_only` 在无 connector 输出时返回 `EMPTY_MODEL_RUNNER_OUTPUT`，尽管其旧 docstring 仍写返回 None；因此 §1.4 的 MRV1 契约按实际返回分支判断。Core 队列顺序另由 `tests/v1/engine/test_engine_core.py::test_engine_core_concurrent_batches` 固定，该测试显式关闭 async 并强制容量 2，不是默认配置测试。
 
 以上测试是静态核验过的测试合同；本轮未运行 vLLM 的 GPU 或分布式测试，也不把文档演算当成端到端正确性证明。
 
@@ -525,10 +557,10 @@ WorkerProc.enqueue_output                    [调用方稍后执行]
 | `req_id_to_index` | 同上复制 | 07 §8.3 |
 | `sampled_token_ids` | 同步：`_to_list()` 或 `RejectionSampler.parse_output()`，discard 行清空；async：`get_output()` 等事件后填入，无效行清空 | 07 §8.1–§8.4 |
 | `logprobs` | 同步：`tolists()`；async：`get_output()` | 07 §8.5 |
-| `prompt_logprobs_dict` | `_bookkeeping_sync()` 调 `_get_prompt_logprobs_dict()` | 07 §8.5 |
+| `prompt_logprobs_dict` | `_bookkeeping_sync()` 调 `_get_prompt_logprobs_dict()`；位置变换、分块与跨 chunk 累积归 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]] §3.8 | 07 §8.5 |
 | `pooler_output` | `_pool()`：非 CUDA 类平台直接复制；CUDA 类由 `AsyncGPUPoolingModelRunnerOutput` 在 copy stream 复制，`get_output()` 等事件后可见 | 07 §8.4 |
 | `kv_connector_output` | KV mixin 在 forward 上下文退出时写 finished_sending/recving、invalid_block_ids、统计与事件；空步由 `kv_connector_no_forward()` 产生 | 07 §8.3、§8.6 |
-| `ec_connector_output` | EC mixin；仅 `supports_mm_inputs` 时放入 | 15 §7.4：`update_from_output()` 交 `ECConnectorBase.update_connector_output()` |
+| `ec_connector_output` | EC mixin；仅 `supports_mm_inputs` 时放入 | 15 §7.7：`update_from_output()` 交 `ECConnectorBase.update_connector_output()` |
 | `num_nans_in_logits` | 开启 `VLLM_COMPUTE_NANS_IN_LOGITS` 时：同步由 `_get_nans_in_logits()` 算出；async 在 `get_output()` 把计数张量转成字典 | 07 §8.5 |
 | `cudagraph_stats` | `_determine_batch_execution_and_padding()` 的结果经 `ExecuteModelState` 带到输出 | 07 §8.6 |
 | `routed_experts` | 同步：包装 pinned buffer 的 `RoutedExpertsLists`；async：私有 GPU clone 在 `get_output()` 转成列表 | 07 §8.5 |

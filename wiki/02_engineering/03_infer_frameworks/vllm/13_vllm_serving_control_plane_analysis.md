@@ -4,10 +4,10 @@ title: "vLLM Serving 控制面：DP 路由与 Coordinator 协调"
 
 # vLLM Serving 控制面：DP 路由与 Coordinator 协调
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07 UTC）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从一个请求的副本选择与空闲唤醒出发，解释 DP 负载反馈、Coordinator 的 wave 协调及 API/Engine 的代码协作。随后闭合部署就绪、故障传播、退出和配置边界。
 > **适用范围**：Python 在线 Serving 控制面；请求协议归请求语义页，Engine 调度执行归 Engine/Scheduler 页，设备 collective 归分布式推理页，完整 FT 状态机归可靠性页。
-> **最近更新**：2026-09-11。补齐 DP Coordinator 的状态协议、调用路径和成本，重组为特性分析。
+> **最近更新**：2026-09-16。展开负载均衡的评分与反馈闭环，补齐消息通道、协议载荷、Coordinator 事件处理及订阅就绪协作。
 
 ## 1. 特性概览
 
@@ -19,7 +19,9 @@ title: "vLLM Serving 控制面：DP 路由与 Coordinator 协调"
 
 vLLM 将反馈与请求分发分开：**Coordinator 汇总各 Engine 的统计和协同运行状态，API 侧 Core client 根据反馈选择目标，推理请求正文直接发给所选 Engine。** MoE 再用 `wave` 表示一轮全组共同推进的工作，Coordinator 广播启动通知，Engine 通过全组状态同步决定何时回到空闲，并回报实际开始与结束。`wave` 不是一个请求或一个 batch，也不是每个 token 都经过 Coordinator 批准。
 
-进程管理者负责将这套协议接入服务生命周期：启动时核验地址和各级 READY，运行时观察进程故障，退出时逐层传递剩余等待预算。下面先从副本选择和 wave 两个最小机制讲起，再接到实际进程与调用路径。
+这里有两层“调度”：**DP 路由决定请求交给哪个 Engine；该 Engine 的 Scheduler 决定哪些请求在下一步获得 token budget 和 KV block。** Coordinator 提供路由所需的反馈；它既不替 API 逐条选副本，也不替 Scheduler 排下一步的 batch。
+
+进程管理者负责将这套协议接入服务生命周期：启动时核验地址和各级 READY，运行时观察进程故障，退出时逐层传递剩余等待预算。关注负载均衡时，先读 §1.4 的普通请求闭环，再读 §2.2 的算法；关注当前 `coordinator.py` 中的 `publish_front`，接着读 §3.2；MoE 的额外唤醒协议在 §2.3。
 
 ### 1.3 收益、开销与约束
 
@@ -29,6 +31,46 @@ vLLM 将反馈与请求分发分开：**Coordinator 汇总各 Engine 的统计�
 | MoE wave | 有活的 rank 能带动空闲同伴，结束时统一确认 | 空闲 rank 可能执行 dummy batch；Engine 侧周期性同步；显式 pause 还需保护 |
 | 启动 | 区分地址、设备、缓存、通道与服务就绪 | 需要多个握手和等待点，端口出现不能替代完整就绪 |
 | 故障与退出 | 将进程错误向服务传播，并限制正常退出等待 | 默认不自动迁移或重放旧请求；drain 可能耗尽预算后被强制终止 |
+
+### 1.4 一条普通请求：谁观察负载，谁做决定，谁执行？
+
+先假定 internal LB、服务已就绪、Engine 正常推进，只有一个需要选路的 `EngineCoreRequest` R。A0/A1 是两个 API 进程，E0/E1 是两个 DP Engine；每个 API 都有自己的 Core client。它们共享 Coordinator 发布的信息，但各自做决定，各自记账。
+
+| 参与方 | 普通请求中的工作 | 负载信息在哪里 |
+|---|---|---|
+| HTTP 调用方与 API handler | 进入 `AsyncLLM`，经输入处理形成 R；`AsyncLLM._add_request` 注册输出状态并调用 Core client | HTTP 请求数不能直接当作 Engine 工作量；例如多输出请求可能拆成多个子请求 |
+| A0 的 `DPLBAsyncMPClient` | 算分、选 E1、登记 R 的去向，再直接发送 ADD | `lb_engines` 是可被新快照替换的缓存；`engine_inflight` 与 `reqs_in_flight` 是 A0 自己维护的未完成记录 |
+| `DPCoordinatorProc` | 收各 Engine 报告，保存并发布逐 Engine 的统计 | `engines[i].request_counts` 保存 Eᵢ 的 waiting、running、KV usage；没有 R 正文，也没有每条 R 的路由表 |
+| E1 的 EngineCore 与 Scheduler | 收 R、加入真实等待队列，按本步预算调度并执行；发布队列统计和结果 | 真实 waiting/running、KV 状态属于 E1；A0 对缓存的修改不会直接修改这些状态 |
+| A0 的输出处理任务 | 消费 E1 的 `finished_requests`，释放 R 的映射与 inflight；结果继续交给 AsyncLLM | 收到终态才释放本地计数；收到一个中间 token 或 ADD 发送成功都不够 |
+
+下面将循环展开为一次“已有反馈 → R 的选路 → 新反馈”。图中后半段的统计供后续请求使用，不要求等待 R 完成后才上报；各 Engine 的报告也不要求同时到齐。
+
+<!-- Figure spec: sequence with caller, A0 AsyncLLM/Core client, Coordinator, E0 and E1. E0/E1 send pre-existing load to Coordinator, Coordinator publishes to A0, caller submits R, A0 locally scores and records R→E1, then sends ADD directly to E1. E1 queues/executes and independently emits changed counts through Coordinator; completion returns directly to A0 and releases inflight. Note that subsequent routing uses both refreshed snapshots and local counters. Wave wake is explicitly outside this ordinary running case. -->
+```mermaid
+sequenceDiagram
+    %%{init: {"theme":"base","themeVariables":{"primaryColor":"#ffffff","primaryTextColor":"#0f172a","primaryBorderColor":"#64748b","lineColor":"#64748b","noteBkgColor":"#dbeafe","noteBorderColor":"#2563eb","actorBkg":"#ffffff","actorBorder":"#64748b"}}}%%
+    participant U as HTTP 调用方
+    participant A as A0 AsyncLLM 与 Core client
+    participant C as Coordinator
+    participant E0 as E0 Engine
+    participant E1 as E1 Engine
+    E0-->>C: waiting、running、KV usage
+    E1-->>C: waiting、running、KV usage
+    C-->>A: publish_front 发布统计快照
+    U->>A: 提交请求 R
+    A->>A: 比较分数，选 E1，登记 R 与 inflight
+    A->>E1: 直接发送 ADD R
+    E1->>E1: 收到 R，进入 Scheduler，按预算执行
+    E1-->>C: 请求计数变化时报告新统计
+    C-->>A: 后续快照替换 A0 的负载缓存
+    Note over A,E1: 后续请求结合快照和本地 inflight 继续选路<br/>不等待 R 完成，也不逐请求询问 Coordinator
+    E1-->>A: 结果；终态包含 finished_requests
+    A->>A: 终态释放 R 的映射与 inflight
+    A-->>U: 输出经 AsyncLLM 和 HTTP 返回
+```
+
+读图时抓住三个方向：**R 正文由 API 直达 Engine；统计由 Engine 经 Coordinator 回到 API；完成通知由 Engine 直接回到原 API。** A1 同样订阅统计，但不能直接读到 A0 刚增加的本地 inflight。API 与 Coordinator 没有逐请求的“申请名额—批准”握手，所以一次选路很快，但跨 API 的决策不是原子操作。MoE 全局空闲时另有 FIRST_REQ/START_DP_WAVE 分支，见 §2.3。
 
 ## 2. DP 路由与 Coordinator 详细方案
 
@@ -63,6 +105,82 @@ vLLM 将反馈与请求分发分开：**Coordinator 汇总各 Engine 的统计�
 4. 保存请求 ID 到 engine 的映射，并将本 client 对该 engine 的 inflight 加一。之后异步发送 ADD，请求携带 `client_index` 与 `current_wave`。
 
 扫描开销随候选 engine 数线性增长，源码仍把大 DP 使用 power-of-two-choices 留作 TODO。乘 `client_count` 不是观测到了别的 API 的精确计数，而是源码用于估计负载的缩放；各 API 并没有共享一个同步的 inflight counter。
+
+#### 算法模型：带 KV 压力惩罚的在线贪心最小负载选择
+
+这是按到达顺序逐请求决策的 **online greedy（在线贪心）**：针对当前 R，选择当前缓存视图中分数最低的候选，随后更新本地状态。它不预测整个请求序列，也不回头重排已分配请求。这里的“贪心”描述决策方式，“负载评分”描述每一步的比较依据。
+
+对 API Aₐ 与候选 Engine Eᵢ，记号与代码对应如下。省略时间下标，但各项不保证采自同一时刻。
+
+| 记号 | 源码字段 | 含义 |
+|---|---|---|
+| $C$ | `client_count` | 传入选择器的 API client 数量 |
+| $I_{a,i}$ | `engine_inflight[engine]` | Aₐ 已路由到 Eᵢ、尚未消费完成通知的请求数 |
+| $W_{a,i}$ | `lb_engines[i][0]` | Aₐ 缓存的 waiting，可能已叠加本地乐观增量 |
+| $R_{a,i}$ | `lb_engines[i][1]` | Aₐ 最近消费快照中的 running |
+| $U_{a,i}$ | `lb_engines[i][2]` | 同一缓存条目的 KV 使用率，以 0 到 1 表示 |
+| $\mathcal E_a$ | `core_engines` 对应的候选范围 | Aₐ 本次能选择的 Engines；hybrid 时只含所管理的本地组 |
+
+评分和选择可以写成：
+
+$$
+\begin{aligned}
+B_{a,i} &= \max\bigl(C I_{a,i},\; W_{a,i}+R_{a,i}\bigr), \\
+P_{a,i} &= 6 W_{a,i}\max\bigl(0,\;U_{a,i}-0.5\bigr), \\
+S_{a,i} &= B_{a,i}+P_{a,i}, \\
+i^* &\in \operatorname*{arg\,min}_{i\in\mathcal E_a} S_{a,i}.
+\end{aligned}
+$$
+
+$W_{a,i}=0$ 时惩罚本来就是零，因此公式与源码 `if waiting` 等价。同分的多个最小值由扫描顺序决定；循环只在 `score < min_score` 时更新目标，保证扫完后留下本次视图中的最小分。评分循环无 `await`，但其输入仍是异步、可能陈旧的观测，不能把“求到了最小分”解释成“求到了真实全局最小负载”。
+
+#### 每一项为什么这样设计？
+
+**① 为什么先看 waiting + running？** 两者合起来表示已在 Engine 队列中的未完成工作数量；只看 waiting 会把“没有等待、但已有很多请求在执行”的 Engine 当成空载。它是低成本的压力代理量，无法区分长短请求、prefill/decode 的计算量，也不是剩余 token 数或预计完成时间。
+
+**② 为什么用本地 inflight，再乘 C？** 刚发出的 R 尚未进入 Engine 统计，或者新收到的快照仍落后于 R；Aₐ 自己却知道它还没完成。保留独立的 inflight，可使新快照重绑后仍有本地负载下限。乘 C 的一种解释是：若流量大致均匀分到 C 个 API，本 API 的份额可以用来估计总量。**这是分析推断，不是无偏估计保证**；API 流量不均时，乘 C 可能高估或低估实际全局压力。源码确实使用这一缩放，但没有在这里测量各 API 的实时流量比例。
+
+**③ 为什么取 max，不直接相加？** Engine 快照可能已经包含本 API 发出的请求；把 `C × inflight` 再加到 `waiting + running` 上，会将两种重叠的估计叠加。取 max 表示“至少按较强的压力信号处理”：本地 burst 未被统计时由 inflight 托底，其他 API 带来更大压力时由快照抬高分数。该解释由运算关系推导；max 并不能消除两种观测的所有误差。
+
+**④ 为什么让 waiting 与 KV usage 联合产生惩罚？** 源码注释的意图是区分“低 KV 使用率下的短暂排队”和“KV 紧张、队列可能消化缓慢”。只按 waiting 加重惩罚，会把瞬时 burst 也当成严重拥塞；只按 KV 使用率加罚，又会惩罚没有等待队列的 Engine。两者相乘，让“已有积压且 KV 紧张”更不容易接到新请求。这是启发式信号；低 KV usage 不能证明排队一定短暂，高 KV usage 也不能证明等待只由 KV 引起。
+
+**⑤ 0.5 和 6 有什么依据？** 源码注释明确规定的曲线是：使用率不超过 50% 时关闭惩罚，100% 时额外加三倍 waiting。选用线性斜坡后，其斜率为 $3/(1-0.5)=6$。这解释了 **6 如何与两端目标对应**，并没有证明 **50% 和三倍为何在性能上最优**。
+
+| KV 使用率 | 每条 waiting 的额外惩罚 | 若基础项由 waiting + running 决定，最终分数等价于 |
+|---|---|---|
+| 不超过 50% | 0 | running + waiting |
+| 75% | 1.5 | running + 2.5 × waiting |
+| 100% | 3 | running + 4 × waiting |
+
+最后一列有前提：若 `C × inflight` 更大，应以它作为基础再加惩罚。**本页已核验的代码注释与单元测试提供了设计意图和行为依据，没有给出这些常数的参数搜索、真实流量 benchmark 或最优性证明。** 本地 checkout 是浅克隆，本次也未取得可验证的引入 PR 论证，因此不把上面的代数解释写成社区已证明的性能结论。
+
+#### 从请求到达，到确定目标的流程图
+
+<!-- Figure spec: flowchart of DPLB selection only. Entry checks explicit/sticky routing. Direct target skips scan and optimistic waiting/start rotation but joins request-map/inflight update. Normal branch computes base and KV penalty for each engine, retains the first minimum, loops until all candidates inspected, updates waiting and advances old scan start by one, then joins common bookkeeping and sends ADD. Complexity O(N); no Scheduler admission or synchronous Coordinator query. -->
+```mermaid
+flowchart TB
+    A[请求 R 到达 DPLB client] --> B{已指定 rank 或粘性目标？}
+    B -->|是| C[直接采用指定目标]
+    B -->|否| D[从 eng_start_index 开始扫描候选]
+    D --> E[读取当前候选的队列、KV 与 inflight]
+    E --> F[基础分：本地 inflight 乘 C<br/>与 waiting 加 running 取较大值]
+    F --> G[加 KV 惩罚：waiting 乘 6<br/>再乘 KV 超过 0.5 的部分]
+    G --> H[严格小于当前最小分才替换目标<br/>同分保留先遇到者]
+    H --> I{所有候选已扫描？}
+    I -->|否，检查下一候选| E
+    I -->|是| J[所选 waiting 乐观加 C<br/>原扫描起点向后移动一位]
+    C --> K[登记请求到 Engine 的映射<br/>该 Engine 的本地 inflight 加一]
+    J --> K
+    K --> L[ADD 直接发给目标 Engine<br/>之后等待 Engine 的实际调度与完成]
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class A,B,C,D,E,F,I,L neutral
+    class H,J,K acc1
+    class G acc2
+```
+
+图中循环每轮取下一个候选，一次比较全部 N 个候选，时间开销为 $O(N)$。起点更新为“旧起点加一取模”，**不是“本次选中位置加一”**；初始化起点还按 `client_index` 在候选范围内分散。指定 rank／粘性路由绕过算分、waiting 乐观增量与起点旋转，但仍建立映射并增加 inflight。
 
 #### 用同一条请求对比 KV 压力的作用
 
@@ -106,6 +224,32 @@ Coordinator 在统计变化时按默认 100 ms 更新间隔发布，无变化时
 Engine 在 step 前后检查 waiting/running 计数，**只有计数变化时才构造统计消息，并随包读取 KV usage**；KV 使用率单独变化不保证立即上报。Coordinator 的发布间隔也不是端到端新鲜度上界。MoE 用 `(current_wave, step_counter)` 识别统计窗口，但没有等待每个 rank 同一步统计全部到齐的屏障；遇到乱序会告警，仍更新该 Engine 的计数。因此这里是异步估计，不是全局原子快照。
 
 同样的 R 在 internal LB 与“E0/E1 均属本地候选”的 hybrid LB 下都会选 E1；hybrid 会先按 `engine_ranks_managed` 从全局快照切出本地范围，远端低分并不使请求跨组迁移。若外部 LB 已把 R 送到 E0 的固定服务，external client 就发 E0，不在 vLLM 内比较 30 与 20；外部 LB 如何决策未在本仓核验。Multi-port 将这种固定目标暴露为多个端口，supervisor 负责健康聚合，见 §4.1、§4.4。
+
+#### 为什么倾向于均衡，能保证到什么程度？
+
+**分析推断：这套机制构成负反馈。** 一个 Engine 被选中后，本 API 立即提高它的 waiting 估计并增加 inflight；后续请求再来时，它的分数不会因这次记账而降低。Engine 的真实队列与 KV 压力再经 Coordinator 反馈给其他 API。较空的 Engine 更容易被选中，而拥挤 Engine 的分数较高，会减少继续堆积新请求的机会。这里的目标是分散估计的排队压力，不要求请求数、GPU 利用率或响应时间完全相等。
+
+一个能严格推演的特殊情形是：只有 A0 连续选路，E0/E1 初始空载，KV 惩罚关闭，期间没有完成事件，快照即使重绑也一直是零。在这个条件下，本地 inflight 最少的 Engine 获得下一条请求；两个计数之差最多为一。例如 C=2、起点为 E0：
+
+| 事件 | 选路前本地 inflight：E0 / E1 | 即使零快照重绑后的基础分 | 决策后 inflight：E0 / E1 |
+|---|---|---|---|
+| R1 | 0 / 0 | 0 / 0，同分从 E0 开始 | 1 / 0 |
+| R2 | 1 / 0 | 2 / 0，选 E1 | 1 / 1 |
+| R3 | 1 / 1 | 2 / 2，同分从 E0 开始 | 2 / 1 |
+| R4 | 2 / 1 | 4 / 2，选 E1 | 2 / 2 |
+
+这类 burst 均匀性由 `test_dplb_burst_round_robins_despite_snapshot_rebinds` 在四 Engine 的特定输入上验证。**测试通过能证明对应输入下的行为，不能推广为任意线上流量的均衡保证。** 多 API 可能同时基于相似旧快照选中同一个低分 Engine；请求长短差异、前缀复用、硬件速度差异和实际 token 工作量也没有进入这条评分公式。旋转同分起点能减少固定 rank 偏置，不能消除所有并发偏斜。
+
+#### 与 Round-robin、最少请求和 P2C 的关系
+
+| 算法 | 一条新请求如何选目标 | 单次选择成本 | 与当前实现的关系 |
+|---|---|---|---|
+| Round-robin，轮询 | 按 E0、E1、E2、E0 顺序循环 | $O(1)$ | 当前仅在同分处理和特定空载 burst 上出现轮转效果；高负载时可跳过下一 rank |
+| 全扫描最少请求 | 比较全部候选的未完成请求数 | $O(N)$ | 当前基础项与它相近，但另外融合本地计数与 KV 压力 |
+| P2C，Power of Two Choices | 随机抽两个候选，比较其负载并选较低者 | $O(1)$，假定采样和取分为常数成本 | 当前源码只留 TODO；没有随机抽两个的执行分支 |
+| 本页的在线贪心评分 | 对全部候选计算 S，保留最低分，再乐观记账 | $O(N)$ | 冻结基线的实际内部 LB |
+
+例如三个 Engine 的分数为 30、20、5，全扫描一定选第三个；一次 P2C 若抽到前两个，会选第二个；轮询则由游标决定。P2C 用较少的比较换取较低的选择开销，并不保证每次选到全局最低分。这里借用的是标准术语，定义可核验于 [Envoy 1.25.7 的负载均衡说明](https://www.envoyproxy.io/docs/envoy/v1.25.7/intro/arch_overview/upstream/load_balancing/load_balancers)；它不构成 vLLM 已实现 P2C 或应当立即切换的依据。
 
 
 ### 2.3 Wave 协调：只有 E1 收到 R，为什么 E0 也要醒来？
@@ -220,8 +364,38 @@ flowchart TB
 
 ### 3.2 通信通道与消息合同
 
+同一个 R 同时带来两种变化：目标 Engine 增加真实工作，API 增加对负载的本地估计。两者通过异步统计逐渐对齐；若此前全局空闲，还要额外唤醒协同执行的 ranks。因此请求正文、统计反馈和 wave 控制各有通道，不能把它们画成一次同步 RPC。
+
+<!-- Figure spec: socket-level topology with one representative API containing request-routing task R and stats task S, Coordinator C and the set of DP EngineCores E. A is R to S local PAIR notification; B is R to E targeted ADD/ABORT; C is E to R results. D has separate S-to-C notifications and C-to-S snapshots; E has E-to-C subscription and C-to-E READY/START; F is E-to-C engine reports. Local state updates stay in prose, so every arrow is a message path. Blue highlights Coordinator/statistics; B is the thick request path. Payload details stay in the protocol tables. -->
+```mermaid
+flowchart TB
+    %%{init: {"theme":"base","themeVariables":{"clusterBkg":"#ffffff","clusterBorder":"#64748b","edgeLabelBackground":"#ffffff"},"flowchart":{"nodeSpacing":90,"rankSpacing":90,"wrappingWidth":260}}}%%
+    subgraph API[API 进程：每个 client 各自维护状态]
+        R["请求路由与结果处理<br/>请求归属、inflight"]
+        S["统计与控制任务<br/>负载快照、wave、running"]
+        R -->|A · PAIR · FIRST_REQ / SCALE| S
+    end
+    C["DP Coordinator<br/>全组负载、wave、running"]
+    E["各 DP EngineCore<br/>输入线程、busy loop、输出线程"]
+    R -->|B · ROUTER → DEALER · ADD / ABORT| E
+    E -->|C · PUSH → PULL · 结果与完成 ID| R
+    S -->|D · XSUB → XPUB · 订阅与前端通知| C
+    C -->|D · XPUB → XSUB · 负载与状态| S
+    E -->|E · 订阅| C
+    C -->|E · READY / START| E
+    E -->|F · PUSH → PULL · 统计与 wave| C
+    linkStyle 1 stroke:#2563eb,stroke-width:2px
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    class R,E neutral
+    class S,C acc1
+```
+
+图中的 Engine 是 DP rank 对应的 EngineCore，不是每张 GPU 的 worker；同一组 Engine 可以连接多个 API。A 是 API 进程内的 `inproc` 通知，stats task 另通过同进程状态更新影响后续选路；其余跨进程通道按部署使用 IPC/TCP。B、C 由 API 绑定端点，D、E、F 由 Coordinator 绑定；对端连接这些端点。D、E 各自的两根箭头表示同一 socket 配对的不同方向，E 的两端是 Coordinator XPUB 与 Engine XSUB，F 则是独立的引擎上报连接。
+
 | 通道 | 两端及方向 | 承载对象与接收后的效果 |
 |---|---|---|
+| API 内部通知 A | 请求任务 PAIR → 统计任务 PAIR | `first_req_sock_addr`；让统计任务在处理广播之外响应 FIRST_REQ 与成员数变化 |
 | 请求输入 | API ROUTER → Engine DEALER | ADD 带 `EngineCoreRequest`，经预处理转换为内部 Request 与 wave 后进入 input queue；ABORT 按原目标发送 |
 | 请求输出 | Engine PUSH → API PULL | `EngineCoreOutputs` 的 token 输出与 `finished_requests`；API 输出任务消费终态后释放本地映射 |
 | 前端协调 | Coordinator XPUB ↔ API XSUB | 下行 `(counts, wave, running)`；上行目标 Engine 身份/wave 或 `SCALE_ELASTIC_EP`；本地 `FIRST_REQ` 先经 API 内 PAIR 转发 |
@@ -229,6 +403,56 @@ flowchart TB
 | Engine 报告 | Engine PUSH → Coordinator PULL | 输出队列中 `client_index=-1` 的 `EngineCoreOutputs`；输出线程补 `engine_index`，Coordinator 断言没有 token outputs 或 utility reply |
 
 地址由绑定端返回实际 endpoint。XPUB/XSUB 上的订阅消息与业务通知有独立分支，不能把控制通道当作普通 token 流。序列化、socket 与进程启动交给 msgspec、ZMQ 和 Python multiprocessing；本页证明 vLLM 的对象、路由与接收分支，不证明外部库内部可靠性或任意故障下的送达。
+
+#### 逐条协议：触发条件、载荷与接收效果
+
+下表写解码后的载荷；业务对象通过 msgspec/MessagePack 编码，`b"READY"` 与订阅控制字节则原样发送。表中的 `target_identity` 是 API 的 `EngineIdentity`，类型为 bytes；`engine_index` 是 Engine 报告中的整数，不能互换，排除判断的实现差异见 §2.3。
+
+| 通道与方向 | 消息或关键字段 | 触发条件与接收效果 |
+|---|---|---|
+| A：请求任务 → stats task | `("FIRST_REQ", target_identity)` | 提交 ADD 时 API 认为全组空闲；stats task 将 API 自己的 running 乐观置 true，转为 D 的目标身份/wave 通知 |
+| A：扩缩容流程 → stats task | `("SCALE_ELASTIC_EP", new_count)` | 更新管理 ranks 与 `lb_engines` 长度，再以同名消息经 D 通知 Coordinator；不代表在此处完成专家或请求迁移 |
+| D：API → Coordinator | `b"\x01"` / `b"\x00"` | 空前缀订阅／取消订阅事件；Coordinator 忽略这两类前端控制字节，API 不等待 E 通道的 READY |
+| D：API → Coordinator | `(target_identity, current_wave)` | FIRST_REQ 的转换结果，不再带 FIRST_REQ 字符串；Coordinator 若认为空闲则发 START，前端 wave 过旧时清除排除目标 |
+| D：API → Coordinator | `("SCALE_ELASTIC_EP", new_count)` | 增补或截短 Coordinator 的 `engines` 列表；前端分支的 rank、模式约束见 §4.6 |
+| D：Coordinator → API | `(counts, current_wave, engines_running)` | 定期发布；counts 按 rank 排列，每项为 waiting、running、KV usage；API 按管理范围切片 |
+| D：Coordinator → API | `(None, current_wave, engines_running)` | 接受 Engine 的 wave 状态变化后立即发布；API 更新 wave/running，保留已有负载缓存 |
+| E：Engine → Coordinator | `b"\x01"` / `b"\x00"` | 初始订阅用于 READY 计数；运行期新订阅触发再次广播 READY，取消订阅不改变成员列表 |
+| E：Coordinator → Engine | `b"READY"` | 初始订阅计数满足，或运行期有新订阅；首次收到后 input thread 继续就绪流程，既有 Engine 忽略重复 READY |
+| E：Coordinator → Engine | `START_DP_WAVE`、`(wave, exclude_engine_index)` | 两帧广播：第一帧为请求类型 `b"\x02"`，第二帧编码载荷；Engine 经 input queue 交给 busy loop 检查 wave、排除目标和 pause 保护 |
+| F：Engine → Coordinator | `EngineCoreOutputs.scheduler_stats` | 计数变化时报告；输出线程补整数 `engine_index`，Coordinator 更新该 Engine 的负载记录并标记待发布 |
+| F：Engine → Coordinator | `EngineCoreOutputs.start_wave` | rank 0 报告实际启动转换，或 Engine 补偿旧 wave 请求；有效报告更新 Coordinator 的 wave/running，并广播 START 与前端状态 |
+| F：rank 0 → Coordinator | `EngineCoreOutputs.wave_complete` | 全组结束当前 wave；Coordinator 接受不落后的完成号，推进到下一 wave/false，并发布前端状态 |
+
+F 复用 `EngineCoreOutputs` 结构，却禁止 token outputs 与 utility reply。普通请求完成则走 C 的 `finished_requests`；两者的分流键是 Engine 内部输出队列的 `client_index`，`-1` 发给 Coordinator，其他值选择原 API 的输出 socket。
+
+| 请求通道 | 载荷与匹配键 | 与负载闭环的关系 |
+|---|---|---|
+| B：ADD，类型 `b"\x00"` | ROUTER 帧为目标 identity、类型、编码后的 `EngineCoreRequest`；请求带 request ID、client index、wave | API 先选目标并登记 inflight，再提交；发送完成不等于 Engine 已调度 |
+| B：ABORT，类型 `b"\x01"` | 请求 ID 列表；按 `reqs_in_flight` 找原 Engine | 不重新评分；等待 C 的完成通知才释放本地计数 |
+| B：UTILITY，类型 `b"\x03"` | `(client_index, call_id, method, args)`；回复走 C 的 `utility_output` | 暂停、恢复等管理动作与 wave 保护配合；具体方法边界见 §2.4、§4，不枚举全部管理 RPC |
+| C：`EngineCoreOutputs` | `outputs` 传推理结果，`finished_requests` 传已结束 ID | 原 API 消费完成集合后删除请求归属并扣减 inflight；中间 token 不释放计数 |
+| B 的启动反向消息 | `EngineCoreReadyResponse` | Engine DEALER 向 API ROUTER 报身份与模型/cache 等元数据；与 E 的原始 READY 不同，顺序见 §4.2 |
+
+同一个 `b"\x01"` 在 B 是 ABORT 类型，在 D/E 上行是订阅控制字节；意义由通道和帧位置共同决定。E 的 START 是广播，不是向某个 identity 定向回复；目标引擎是否忽略由接收侧判断。源码没有在这些通知之间建立通用的一问一答关系。
+
+**分析推断：这些通道分别承担不同的交付职责。** B 需要选定目标，C 需要回原 API，D/E 需要分发全组状态，F 需要汇集各 Engine 的报告。A 把前端本地事件交给同一个 stats task，与 D 的接收一起等待和处理。这样请求不必等待一轮统计 RPC，代价是两条发送路径和三方状态副本之间存在延迟；wave 补偿与本地 inflight 分别处理运行状态错位和负载反馈滞后。
+
+#### 对照 coordinator.py：publish_front 为什么既 send 又 recv？
+
+`front` 指 API frontend，`back` 指 Engine 后端。`process_input_socket` 中三个局部 socket 名称对应三种工作：
+
+| 局部变量 | 主要接收／发送动作 | 本次请求闭环中的意义 |
+|---|---|---|
+| `output_back`，PULL | `recv` 并解码 Engine 的 `EngineCoreOutputs` | 按 `engine_index` 更新 `engines`，或处理 start/wave_complete |
+| `publish_front`，XPUB | `send` 向 API 发布；也监听 `POLLIN` 并 `recv` 前端消息 | 把观察结果交给评分器，同时接收订阅、唤醒与弹性扩缩容通知 |
+| `publish_back`，XPUB | `send` READY 与 START_DP_WAVE；`recv` Engine 订阅通知 | 建立并维持 wave 控制通道，不发送 R 正文 |
+
+`publish_front` 的下行有两类内容：常规统计发布 `(counts, current_wave, engines_running)`；wave 状态变化时可以立即发布 `(None, current_wave, engines_running)`，此时 API 只更新 wave/running，不替换 counts。API 的 XSUB 在订阅后由 `run_engine_stats_update_task` 排空待收消息，仅处理最后一条；只有最后一条携带非空 counts 才重绑 `lb_engines`。因此“取最后一条消息”不等于“分别取最新统计和最新 wave”——若最后一条只有 wave，前面排空的统计不会在本轮另行应用。
+
+上行则先识别并忽略订阅／取消订阅控制字节，再处理扩缩容通知或 MoE 唤醒信息。它收到的“目标 Engine、wave”表示 API 已选好目标、希望唤醒其他 ranks，**不是让 Coordinator 再算一次分**。`publish_front` 同时调用 `send/recv` 是本源码使用 XPUB/XSUB 控制连接的方式；名称中的 publish 不意味着它只有发送分支。
+
+完整反馈链可以按变量追踪：Engine `_maybe_publish_request_counts` → 输出队列里的 `client_index=-1` 报告 → `output_back.recv` → `engines[i].request_counts` → `publish_front.send` → API stats task → `lb_engines` → 下一次 `get_core_engine_for_request`。这里每一步都可以晚于请求正文的发送；默认 100 ms 是发布节奏参数，不能视为一次请求必须等待的调度周期。
 
 ### 3.3 从构造到请求完成的调用路径
 
@@ -275,6 +499,25 @@ ServeSubcommand.cmd
 
 控制侧的实际循环也有独立完成条件：`DPCoordinatorProc.process_input_socket` 从前端收到唤醒后调用 `_send_start_wave`；Engine 输入线程把它排入 input queue，busy loop 的 `DPEngineCoreProc._handle_client_request` 检查 wave/排除目标/pause 保护。Engine 再经 output queue 与输出线程报告开始或完成，Coordinator 才发布新的运行状态。§2.3 的时序图应沿这些消息接收入口阅读，不能把广播与 Engine 执行连成一个同步调用栈。
 
+#### Coordinator 如何将消息合成为下一份可用状态
+
+`process_input_socket` 完成初始订阅握手后，在一个循环里监听 D、E、F。它没有为每个 Engine 单独启动一个状态修改线程；一轮先处理 E 的订阅，再处理 D 的前端通知，最后处理 F 的 Engine 报告。三个接收分支是独立的 if，同一轮可以处理多个就绪通道；但 D 中忽略订阅或处理 SCALE 的分支会直接 continue，尚未读取的 F 消息留待下一轮。
+
+| 本轮输入 | 修改的状态或发送动作 | 为什么在此处处理 |
+|---|---|---|
+| E 新订阅 | 再广播 READY | 新 Engine 正在初始化，不能等扩缩容完成通知才允许它继续 |
+| D 唤醒通知 | 按当前 wave 广播 START，不把 Coordinator 的 running 直接置 true | 前端只证明已提交请求；Engine 可能受 pause 保护，实际运行须由 F 确认 |
+| D SCALE | 调整 `engines` 长度 | 后续统计和广播使用新的成员范围；这不是重配置完成屏障 |
+| F 统计 | 更新对应 Engine 的三项负载，置 `stats_changed` | 多份报告先汇集，再让前端消费；列表之外的 Engine 统计被忽略 |
+| F 有效 start/complete | 更新 wave/running，必要时发 START，并立即发 D 的状态消息 | 不让前端等到下一次负载刷新才知道运行阶段改变 |
+| poll 超时且无事件 | 优先发布 `last_step_counts`，否则发布当前负载；同时携带 wave/running | 合并频繁报告；没有新统计时也刷新当前视图 |
+
+统计变化时 `wait_for` 取默认 100 ms，否则取 5000 ms，再减去距离上次统计发布的时间。MoE 且没有待发快照时，poll 的超时参数至少取 50 ms；有事件会提前返回，这不是每轮强制睡眠，也不是收齐 ranks 的屏障。持续事件可能推迟无事件发布分支，wave-only 广播也不更新时间戳 `last_publish_time`，所以不能把这几个数字解释为固定节拍或端到端上界。
+
+MoE 用 `(current_wave, step_counter)` 识别新窗口。例如已记录 E0/E1 的 step10，先收到 E0 的 step11 时，若有待发布变化，先复制现有计数到 `last_step_counts`，再更新 E0。后续发布可先用更新前的快照，避免立刻把刚到的 E0 新值与 E1 旧值混在一起；复制保证后续原地更新不会改掉这份快照。它只有一个快照槽，不保存每一步历史，也未检查所有 rank 的 step10 是否齐全。发布旧快照后不清除最新统计的 dirty 标记，仍可再发布当前负载；若直接发布当前记录才清除 `stats_changed`。
+
+API 的 stats task 是这条闭环的另一端：同时等待 A 的本地通知和 D 的广播，将 FIRST_REQ 转成目标身份/wave，将 SCALE 转成成员更新，并排空收到的广播后应用最后一条。§3.2 已说明最后一条若只有 wave，本轮不会另行应用前面丢弃的 counts。两端都在减少中间状态的消费，因此最终评分必须继续结合本地 inflight，不能仅凭“订阅了统计”假定负载实时精确。
+
 ## 4. 配套机制：让控制协议成为可用服务
 
 ### 4.1 部署拓扑与 API 数量
@@ -289,11 +532,42 @@ ServeSubcommand.cmd
 | Multi-port external LB | 顶层默认 1；supervisor 为每个本地 DP rank 启动独立 server | 外部 LB 选择对应端口，supervisor 汇总本地 children 的健康 |
 | Headless | 0 | 此进程不启动 HTTP API，为别处的 frontend 提供执行部分 |
 
-表中是 CLI 的默认解析，不是推荐配置。`data_parallel_start_rank` 在未选择其他相关模式时推导 hybrid；multi-port、external、hybrid 同时启用会抛 `ValueError`。Rust frontend 默认按一个多线程进程处理，显式 API count 大于一会被改为一；elastic EP 当前也把 API count 限至至多一。其后才分流到 supervisor、headless、multi-API 或 single-API 四类入口。
+表中是 CLI 的默认解析，不是推荐配置。`data_parallel_start_rank` 在未选择其他相关模式时推导 hybrid；multi-port、external、hybrid 同时启用会抛 `ValueError`。Rust frontend 默认按一个多线程进程处理，显式 API count 大于一会被改为一；elastic EP 当前也把 API count 限至至多一。其后才分流到 supervisor、headless、multi-API 或 single-API 四类入口。**还有一个不在这张表里的兄弟入口**：`--grpc` 让 `ServeSubcommand.cmd` 直接委托 `vllm/entrypoints/grpc_server.py::serve_grpc`，走另一套协议前端；它不参与上面的 API 数推导，本域也尚无页面展开其协议合同（覆盖缺口见 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 的「已知覆盖边界」）。
 
 Headless 还要区分两种职责：同一 DP 副本内 `node_rank_within_dp > 0` 的节点直接启动 `MultiprocExecutor` 并监控 workers；其余 headless 路径由 `CoreEngineProcManager` 持有本地 cores。headless 拒绝 hybrid，且本地 engine 数必须大于零。这些计数和选择不能从“每 GPU 一个 worker”的示意图反推。
 
 ### 4.2 分阶段启动与 READY
+
+#### Coordinator：地址交接先于订阅就绪
+
+Coordinator 的三条地址先在管理进程中生成，真正的 socket 在 `DPCoordinatorProc.process_input_socket` 中创建并绑定。前端侧在 internal LB 下假定与 Coordinator 同机；external/hybrid 需要允许远端 API 连接。Engine 侧只有全局 DP 数等于本地 DP 数时才使用本地端点；elastic EP 强制使用 TCP，允许后续新增远端 Engine，避免把当前单机部署固化到控制地址里。
+
+子进程绑定 D/E/F 后，通过 `LAST_ENDPOINT` 取实际地址，以 `(front_publish, back_output, back_publish)` 顺序经一次性 Pipe 发回父进程。父进程存入 `stats_publish_address`、`coord_out_address`、`coord_in_address`；后两个 in/out 按 Engine 的视角命名。TCP `:0` 在此时替换为实际端口。必须先交付地址，再等 Engine 订阅，否则 Engine 无法获得连接入口，启动依赖会成环。
+
+<!-- Figure spec: initial Coordinator startup only, three participants parent P, child C, Engine group E. P starts child with pipe; C binds all endpoints and returns actual addresses before P's transitive address distribution reaches E. E sends subscription; C counts expected subscriptions then broadcasts READY; E releases input-thread ready event. Explicitly distinguish pipe completion from engine readiness and omit unrelated worker/model init. -->
+```mermaid
+sequenceDiagram
+    %%{init: {"theme":"base","themeVariables":{"primaryColor":"#ffffff","primaryTextColor":"#0f172a","primaryBorderColor":"#64748b","lineColor":"#64748b","noteBkgColor":"#dbeafe","noteBorderColor":"#2563eb","actorBkg":"#ffffff","actorBorder":"#64748b"}}}%%
+    participant P as 管理进程
+    participant C as Coordinator 子进程
+    participant E as 各 DP Engine 输入线程
+    P->>C: 启动，传候选地址与 Pipe 发送端
+    C->>C: 绑定 D、E、F，读取实际 endpoint
+    C-->>P: Pipe 回传实际地址并关闭发送端
+    Note over P,C: 地址已绑定，不代表 Engine 已订阅
+    P-->>E: 经启动握手分发 Coordinator 地址
+    E->>C: 连接 E 通道，发送订阅字节 0x01
+    C->>C: 收到预期数量的初始订阅
+    C-->>E: 广播 READY
+    E->>E: 设置 input thread 的 ready_event
+    Note over P,E: Core 后续才能完成 launcher READY
+```
+
+此处不是直接跨进程调用：图中的地址分发折叠了启动管理与 handshake 路径。Engine 在等待 Coordinator READY 前还会向 API 发送数据通道 ready response，下表给出完整就绪层次。
+
+协调器初始循环按 `len(self.engines)` 次读取 E 通道，要求每条都是 `b"\x01"`；辅助函数为 XPUB 设置 `XPUB_VERBOSE`，用于观察重复主题的订阅事件。这里计数的是订阅事件，未逐条去重核验 Engine identity。异常内容会记录错误并返回；该循环没有自己的接收超时，某个 Engine 未订阅时不能仅靠这段代码保证退出。`_wait_for_zmq_addrs` 的 120 秒只覆盖父进程等待实际地址，不能当作这个后续握手的超时；外围进程故障监控见下文。
+
+**分析推断：READY 把“端点已经存在”推进到“初始控制订阅已经到达”。** 新 Engine 沿用同一等待协议，所以运行期 E 出现新订阅就要发 READY，不能等 D 的 SCALE 通知。已有 Engine 对重复 READY 的忽略与新 Engine 的首次等待配套，成员变化边界见 §4.6。
 
 #### 先发布实际地址，再允许 Engine 连接
 
@@ -301,7 +575,7 @@ Headless 还要区分两种职责：同一 DP 副本内 `node_rank_within_dp > 0
 
 `APIServerProcessManager.gather_actual_addresses` 按 `client_index` 收集地址，同时观察 children 的 sentinel，并在共享收集 deadline 到期时报错。pipe 与退出事件同时到达时先读 pipe，以免把“已回报后退出”误作“未回报”；真正未回报就退出或 pipe EOF 都会使收集失败。地址已回报也只证明 bind 成功，不证明 child 之后仍然存活。
 
-单 API 的 client 自己启动 engines 时，同样先 bind 并读取 `LAST_ENDPOINT`。Ray DP 是这里的明确分支：主流程使用预分配地址，不走 Python children 的动态地址回收。vLLM 向 ZMQ、操作系统 socket 和 Ray 交付了端点/启动请求；本页核验的是 vLLM 的调用与检查，未验证这些外部运行库内部的传输或调度实现。
+单 API 的 client 自己启动 engines 时，同样先 bind 并读取 `LAST_ENDPOINT`。Ray DP 是这里的明确分支：主流程使用预分配地址，不走 Python children 的动态地址回收。**但它只是地址分配上的分支**——Ray DP 后端本身（`vllm/v1/engine/utils.py::CoreEngineActorManager` 持有 actor 集合，actor 的 core 类由 `vllm/v1/engine/utils.py` 的 actor 构造点按 `dp_size > 1 and model_config.is_moe` 选出：命中取 `vllm/v1/engine/core.py::DPMoEEngineCoreActor`，否则取 `EngineCoreActor`）的**故障传播与退出语义在基线下全域无 owner**，本页的 §4.4／§4.5 只覆盖 Python 多进程路径，不能外推给 actor；该缺口见 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 的「已知覆盖边界」。vLLM 向 ZMQ、操作系统 socket 和 Ray 交付了端点/启动请求；本页核验的是 vLLM 的调用与检查，未验证这些外部运行库内部的传输或调度实现。
 
 #### 设备、缓存、数据通道和全局屏障逐级闭合
 
@@ -354,7 +628,7 @@ supervisor 的 `/health`、`/ready`、`/readyz` 都只返回这份聚合 ready �
 
 单 API 收到 SIGTERM/SIGINT 后，launcher 先在执行线程中等待 engine client shutdown，再要求 HTTP server 退出并取消 watchdog；API worker 随后退出 backend context，最后 await HTTP shutdown task、关闭 socket。收到 signal、client shutdown 返回、HTTP 完成退出不是同一个事件。
 
-EngineCore 收到退出请求后停止接受新 ADD。`shutdown_timeout=0` 立即 abort 未完成请求；正值选择 drain，让已接收工作继续推进。`_handle_shutdown` 等 `has_work()` 为 false 才进入资源 teardown；外层 process manager 则限制等待时间并能强制结束进程。drain 不等于保证每个请求成功完成：请求可能失败，或耗尽父级预算后被终止。
+EngineCore 收到退出请求后停止接受新 ADD。`shutdown_timeout=0` 立即 abort 未完成请求；正值选择 drain，让已接收工作继续推进。`_handle_shutdown` 等 `has_work()` 为 false 才进入资源 teardown；外层 process manager 则限制等待时间并能强制结束进程。多进程 executor 这一侧的退出链（death pipe、响应队列与 RPC 广播队列的收尾顺序）见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]] §8.2。drain 不等于保证每个请求成功完成：请求可能失败，或耗尽父级预算后被终止。
 
 多 API 主流程在用户请求 shutdown 时只创建一个绝对 `shutdown_by`：先把预算交给 API manager，再用剩余时长调用 local engine manager，最后交 coordinator。假设总等待预算为 30 秒，API manager 消耗 24 秒，则后两者共享约 6 秒，不是各自再获得 30 秒。各 manager 对自己的 children 也先发 SIGTERM、在同一个 deadline 内逐个 join，最后 kill 仍未退出的进程树。
 
@@ -455,6 +729,9 @@ EngineCore 收到退出请求后停止接受新 ADD。`shutdown_timeout=0` 立�
 | Worker 到 Core 两种 ready 怎样排序？ | `vllm/v1/executor/multiproc_executor.py::WorkerProc.__init__ / worker_main / wait_for_ready`；`vllm/v1/engine/core.py::EngineCore.__init__ / _initialize_kv_caches / EngineCoreProc.__init__ / _make_ready_response / process_input_sockets / _perform_handshakes / _perform_handshake` |
 | 全局屏障与 frontend 怎样接上？ | `vllm/v1/engine/utils.py::launch_core_engines / wait_for_engine_startup`；`vllm/v1/engine/core_client.py::MPClient._apply_ready_response`；`vllm/entrypoints/launchers/api_server/entry.py::build_async_engine_client_from_engine_args / build_and_serve / run_server_worker` |
 | Coordinator 何时存在、反馈什么？ | `vllm/config/vllm.py::VllmConfig.needs_dp_coordinator`；`vllm/v1/engine/coordinator.py::DPCoordinator / DPCoordinatorProc.process_input_socket / _send_start_wave` |
+| 消息载荷、订阅与地址交接怎样配套？ | `vllm/v1/engine/__init__.py::EngineCoreRequestType / EngineCoreRequest / EngineCoreOutputs`；`vllm/v1/engine/core_client.py::DPAsyncMPClient.__init__ / _ensure_stats_update_task / add_request_async`；`vllm/v1/engine/coordinator.py::DPCoordinator.__init__ / _wait_for_zmq_addrs`；`vllm/v1/utils.py::get_engine_client_zmq_addr`；`vllm/utils/network_utils.py::make_zmq_socket` |
+| 真实队列如何进入负载快照？ | `vllm/v1/engine/core.py::EngineCoreProc._maybe_publish_request_counts / DPEngineCoreProc._maybe_publish_request_counts / EngineCoreProc.process_output_sockets`；`vllm/v1/engine/coordinator.py::DPCoordinatorProc.process_input_socket`；`vllm/v1/engine/core_client.py::DPAsyncMPClient._ensure_stats_update_task` |
+| AsyncLLM 如何进入选路？ | `vllm/v1/engine/async_llm.py::AsyncLLM.add_request / _add_request`；`vllm/v1/engine/core_client.py::DPAsyncMPClient.add_request_async` |
 | wave、pause 与恢复怎样闭合？ | `vllm/v1/engine/core.py::DPEngineCoreProc.add_request / _handle_client_request / run_busy_loop / _has_global_unfinished_reqs / _pause_complete / resume_scheduler`；`vllm/config/parallel.py::ParallelConfig.sync_dp_state / has_unfinished_dp`；`tests/v1/distributed/test_async_llm_dp.py::test_dp_pause_late_request_does_not_block_drain / test_dp_pause_barrier_request_deadlock` |
 | 线程与 socket 怎样交接？ | `vllm/v1/engine/core.py::EngineCoreProc.process_input_sockets / preprocess_add_request / _process_input_queue / process_output_sockets`；`vllm/v1/engine/core_client.py::AsyncMPClient._send_input / _send_input_message / _ensure_output_queue_task` |
 | 评分、发送与完成怎样串起来？ | `vllm/v1/engine/core_client.py::DPAsyncMPClient._ensure_stats_update_task / add_request_async / DPLBAsyncMPClient.get_core_engine_for_request / process_engine_outputs / abort_requests_async`；`tests/v1/engine/test_engine_core_client.py::test_dplb_burst_round_robins_despite_snapshot_rebinds / test_dplb_snapshot_backpressure_overrides_inflight / test_dplb_kv_pressure_amplifies_waiting_penalty / test_dplb_finished_requests_release_inflight` |

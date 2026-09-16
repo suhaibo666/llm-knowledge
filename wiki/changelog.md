@@ -13,6 +13,60 @@ All source ingestions and significant wiki updates are logged here.
 ---
 
 
+## 2026-09-16：终审扫查后修正两处类归属
+
+- 终审的全域机械扫查（40 处带锚点链接、179 处跨页 `§` 引用、40 处标签与锚点层级、2565 处 `Class.member` 按 AST 继承链解析）只剩两条 P2，均属同一类“写到基类上”的归属问题，本条修掉：
+- [[17_vllm_quantization_analysis|17 量化执行]] §1.1 流程表与 §8.3 调用树的 `LinearBase.forward` 改为 `ReplicatedLinear` / `ColumnParallelLinear` / `RowParallelLinear` 的 `forward`；`vllm/model_executor/layers/linear.py::LinearBase` 只定义 `__init__` 与 `update_param_tp_status`，`forward` 在这三个具体子类上。
+- [[13_vllm_serving_control_plane_analysis|13 Serving 控制面]] 与域索引的覆盖边界行改写 Ray actor core 的选择口径：`vllm/v1/engine/utils.py` 的 actor 构造点按 `dp_size > 1 and model_config.is_moe` 选 `DPMoEEngineCoreActor`，否则为 `EngineCoreActor`；旧稿把前者写成“每个 DP actor 的 core”。
+- 基线不变（`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`，2026-09-07 UTC）；T0 四项与 `mkdocs_site.cli build --changed` 通过。静态读码，未运行 vLLM、GPU 或跨机传输。
+
+## 2026-09-16：按第四轮验收收口 vLLM 01–26
+
+- 按 `2026-09-16-vllm-domain-review-round4.md` 修掉 2 条新 P1，都是同一类“基类 vs DP 子类”归属：25 §13 源码路线的 `_has_global_unfinished_reqs` 改归 `DPEngineCoreProc`（`vllm/v1/engine/core.py` 全库只有这一处定义，在 `DPEngineCoreProc` 内，`EngineCore` 上没有同名方法），index 覆盖边界表的 `03 §9` 改为 `03 §6`（03 只有 §1–§6，输入路径缺口登记在 §6）。后者是裸 `§` 引用，`check_links` 不覆盖这一类。
+- 事实性 P2：11 §1.4 删掉改写后留下的残句（它无条件断言“容量 2”，而 `config/vllm.py::max_concurrent_batches` 对 MRV1 + async 只有 `pp_size <= 1` 才返回 2，PP>1 返回 `p`），并把 PP 的容量规则一句写清；07 §8.4 补出 delay 的第三支来源——`_connector_finished` 返回的是 `request_finished()` **或** `register_finished_partial_tail()`，页末的 partial Mamba tail 现在挂回这一支；07 §8.3 把 waiting 跳过限定到**可交付** stale（源码条件含 `and not drop_stale_output`，drop 份额同样排空但不被跳过）；08 §5.3 区分两个不同的“默认”（配置键 `prefix_cache_retention_interval` 默认 0，`cache_blocks(retention_interval=None)` 是形参默认）；20 §5.2 改正 HIP 的归属（`use_aiter` 分支是独立实现而非复用 `forward_cuda`，两支都原地）并补出 masked 路径把 SILU + clamp 改名为 `silu_with_clamp` 这一支；26 §1.1 写明 `VLLM_USE_RAY_V2_EXECUTOR_BACKEND` 运行期默认为 **1**（同文件顶部的类型标注 `: bool = False` 只是 stub，按它读会得到相反结论）。
+- 06 §4.2 的最小重放补完 R 的第二个输出 token 与完成（round-2 起未闭合）：默认配置下走满 `max_tokens=2` 需要**三次** Core 调用，第三次调度侧已按 `num_computed_tokens + 2 − num_output_placeholders >= num_prompt_tokens + max_tokens` 跳过 R、只为排空在途的 S2，`check_stop` 随后置 `FINISHED_LENGTH_CAPPED`；图 2 补画 S2 的 `X2` execute future，使跨边界对象与本页图的自述规则一致。06 §4.1 把本节结论句从新插入的 `model_executed` 段里切回容量段落，避免“因此”读成从 EC producer 那点推出。
+- 交接精度：6 处“标签写子节、锚点落父节”的链接改为 `§5.1 的 5.1.3` 一类写法（H4 标题不在 wikilink 解析器的标题清单里，锚点只能落在父 H3，标签因此不能单写子节号）；四处“裸页链接 + 手写节号”改成锚点链接（02 两处 → 06 §4.1/§4.2、08 → 07 §5.4、11 → 06 §4）；22 §14.4 的 transfer 失败一格由页级 `→ 23` 改为 23 §5.2 锚点加 §6；18 把 `Executor.get_class` 分支到类的映射如实交给 26 §1.1（该表本轮才由 26 拥有，18 原先四处自行枚举“六分支”）；index 的 pooling 行改指真正写下缺口的 12 §2.6、§1.6。
+- 20 的两张新图改用房内配色（`neutral` / `acc1` / `acc2`）并给全部节点分类，`pairOffset = 4 / 2` 的边标签改为 `(8/2)/2 = 2`（源码 `pairOffset = (rotary_dim / 2) / numElemsPerThread`），避免读成“4 或 2”。26 页页头 `最近更新` 统一为 2026-09-16。
+- “基类 vs 子类”归属已连续四轮出错，这次改用机械核对收口：按基线源码的 AST 建出类→成员（含继承链）映射，再扫全域 26 页里所有 `Class.method` 写法。除评审报的 25 §13 外另查出三处评审未发现的同类问题——16 的两处 `EngineCore._process_engine_step`（该方法只在 `EngineCoreProc` 上，同一棵树里被调的 `post_step` 才在基类）、25 调用树的 `EngineCoreClient.pause_scheduler_async`（实体在 `AsyncMPClient`，下一行本来就写着 `AsyncMPClient.call_utility_async`），以及一处近亲类型混淆：14 的 `LogprobsTensors.slice_request` 应为 `LogprobsLists.slice_request`（被切的是 `ModelRunnerOutput.logprobs`，类型是 `LogprobsLists`；`LogprobsTensors` 只有 `tolists` / `to_cpu_nonblocking` / `filter` / `cat`）。扫描余下 20 条经逐条核实均为假阳性（`__init__` 里赋值的实例属性、ctypes `_fields_`、dataclass 字段、prometheus 外部类）。
+- 基线不变（`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`，2026-09-07 UTC）。仍为静态读码，未运行 vLLM、GPU、跨机传输或故障注入。
+
+## 2026-09-16：按第三轮验收收口 vLLM 01–26
+
+- 按 `2026-09-16-vllm-domain-review-round3.md` 修掉 9 条新 P1，全部回源码核对：02 的调用树把 `_run_output_handler` 改挂到 `add_request` 之下（`_add_request` **之前**，且 `__init__` 在有事件循环时已先启动过）、scale-out 往返改为“一个 `vllm serve` 加 `VLLM_ENABLE_SCALE_OUT_ENDPOINTS=1` 即可”（render/derender 路由不按 `render` 任务门控，`vllm launch render` 与 `--tokens-only` 是专用部署形态而非必要条件）、`VLLM_RUST_FRONTEND_PATH` 的报错条件改正（`auto` 找不到二进制才 `FileNotFoundError`，显式路径原样返回不校验）；07 §8.4 改为 delay 有 connector 与 Scheduler 两个来源并由 `delay_free_blocks |= connector_delay_free_blocks` 求或；12 的 worker 树把 `_set_active_loras` 移到 forward **之前**；18 的 `_eep_scale_up_before_kv_init` 改归 `DPEngineCoreProc`（基类只 `raise NotImplementedError`）；24 换掉不可能成立的 MRV2 举例（装了该组 entry point 即阻断 MRV2），改用 MRV1 + 投机解码；22 §14.4 最后一格与 index 的 `logprob_token_ids` 行分别改为如实登记与删除——后两条都是“一次如实化没覆盖全部出现位置”。
+- 约 30 条 P2 同步修掉：06 图 2 的队列项改成三元组并写明 execute future 的真实用途（采样结果为 `None` 时重抛原异常）、`model_executed` 在 EC producer 上恒假、§2 的 scoping 限到 §2.2；07 补回去重时丢失的 stale 排空 2→1→0 算例；08 改正 `prefix_cache_retention_interval` 的语义（token 间隔而非保留时长）；11/12 把“未自定义 Scheduler”从 async 解析条件中摘出；19 修 `post_update` 写入清单、图 1 残留边、MRV1 键集合公式、resolve 的真实调用者、两代 LoRA case 不对称与 `step_with_batch_queue` 的提前返回；20 更正 Helion 未接线的判据；22 补 HMA 的 `disable_hybrid_kv_cache_manager` 合取项、把 `N → N−1` 限定到整段 prompt 全命中；23 明确异步远端 KV load **就是** `deferred`（不是它的替代项）、给 telemetry 矩阵加范围声明、补 `KVEventsConfig` 八字段表、把负 queue 限定到带 QUEUED 的 ERROR 终态；24 改正 `run_method` 的实际异常类型（`NotImplementedError`）并补 pooling/speculative 配显式项时的启动硬失败；把若干“裸页链接 + 手写节号”统一成锚点链接。
+- index 的覆盖边界表修正登记方：把 `logprob_token_ids` 行删除（14 §3.5 已是 owner），并把三行指向“其实什么也没登记”的页面改成显式的 **无页面登记**。
+- **更正上一条变更记录**：中文标题锚点并不落在页首——wikilink 改写器在每个标题前另输出 `<a name="…">` 别名锚点保留中文，站点产物中两种形式都能跳转；`build` 打出的相关 INFO 只是 MkDocs 自带校验不认别名锚点，仓库自己的 `missing_anchors` 已计入别名并报 0。
+- 基线不变（`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`，2026-09-07 UTC）。T0 四项全绿（453 页），`build --changed` 通过，`check_locators --changed` errors=0，`git diff --check` 无空白错误。仍为静态读码，未运行 vLLM、GPU、跨机传输或故障注入。
+
+## 2026-09-16：按复审验收收口 vLLM 01–26
+
+- 按 `2026-09-16-vllm-domain-review-recheck.md` 的收口顺序处理三类阻塞项。**B1**：修 24、25 三处指向已改标题的 wikilink 锚点（14 §4.3、13 §3.1、26 §6），`python -m tools.mkdocs_site.cli build --changed` 由中止转为通过（`broken_links`/`missing_anchors`/`missing_assets` 均 0）。**B2**：十条改稿引入的 P1 全部回源码改正——20 的 `do_fused_qk_norm_rope_and_cache` 换成实链 `do_qk_norm_rope_kvcache_update → fused_qk_norm_rope_and_cache`、lowering pass UUID 改为覆盖全部 provider；24 的 `vllm.logits_processors` 补出前端每请求校验这第二个进入点；17 §6.1 的 tracking 豁免与 09 §2.8 对齐为无条件；18 三处类归属改 `DPEngineCoreProc`；12 的 align 缓存边界与 `max_concurrent_batches` 与 08/06 对齐；19 两张图改正 sampled token 落点（写 `RequestState` 而非 `InputBuffers`）与启动顺序（resolve 在首次编译之后且跑两次），`compile_sizes` 硬约束限定到 `CudagraphDispatcher` 路径。**B3**：02 补 `test_abort_defers_free` 的双条件门、scale-out render→token-in 往返与其环境变量门、DP=2 默认 2 个 API server 的推导，并为 14/15/16 建立架构落点。
+- 按单一真相源收敛重复正文：07 §8.5 的 finished 对照表改为指向 06 §6.1，06 §6.1 的“不能 `clear()`”生产规则交还 07 §8.1.2，06 §5.1 收成“为何必须按原计划对账”一段并把 stale/drop 判定表留给 07 §8.3，07 §2.1 的 async 解析条件交还 06 §4.1；08 §3.2/§5.1 的复用上限、07 §5.4/08 §5.1.3 的 checkpoint 校验、11 与 06 的 `non_block` 提交序、25 与 13 的 DP pause 共识各留一份。07 §8.1 新增 §8.1.4 承接原被并入 §8.1.3 的 placeholders 与四元组算例。
+- 把指向不拥有该内容页面的交接改为如实登记：22 的 P/D proxy 路由（§2、§14、§14.4 三处自相矛盾）、23 §6.2 的 Ray/external launcher 监督、02 §5.3 的 gRPC/Rust/Omni；域 index 新增「已知覆盖边界」一节，把 11 项无 owner 主题对读者显式化，均标注已提交 `planning-codebase-analysis` 裁决。
+- 各组约 60 条 P2 逐条回源码修正，覆盖 01–26 全部页面：包括 `FinishReason` 五取值、`GUARDED_PREFIX` 的鉴权范围、ready check 默认跳过、`request_success_total` 含 abort/error、`_set_cudagraph_sizes` 的完整推导、`_is_compatible` 六条谓词的三三分组、wrapper 四种走法、`ensure_model_parallel_initialized` 只校验 size、`get_response_mqs` 以 world_size 为界、`DPEngineCoreProc.barrier` 的 test-only 限定、26 多节点 MQ 按 `nnodes_within_dp` 分支与 `/dev/shm` 的 group broadcaster 份额、`w2_scale` clamp、Helion kernel 未接线、XPU 默认 priority、`CompilationConfig` 36 字段的三方对账，以及 17 的链接标签由四套统一为一套。
+- 基线不变（`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`，2026-09-07 UTC）。四项 T0 严格门禁全绿，`check_locators --changed` errors=0（53 条 warning 全部来自 `docs/research/` 下的评审归档，不在 wiki 页面），`build --changed` 通过，三页 154 条公式渲染 PASS。核验为固定源码的静态阅读，未运行 vLLM、GPU、跨机传输或故障注入。
+- 关于中文标题锚点的一处说明：MkDocs 自己的标题 id 会剥掉中文（生成 `#83-scheduler` 一类），但 wikilink 改写器在每个标题前另输出 `<a name="…">` 别名锚点保留中文，两种形式都能跳转，链接并不落在页首。因此 `build` 打出的相关 INFO 只是 MkDocs 自带校验不认别名锚点，仓库自己的 `missing_anchors` 计数已计入别名并报 0。（`check_links` 目前仍不校验 wikilink 内的锚点，这一类只能靠 `build --changed` 把关。）
+
+## 2026-09-15：按全域审查收口 vLLM 01–26
+
+- 按 `2026-09-15-vllm-domain-review.md` 第6节分三波修复现有页面：校正 P0/P1 页内事实，由 06 独占默认 async／batch-queue 选择轴并同步 02、11、12、19，再把 SchedulerOutput、KV admission/HMA/hash/Mamba、投机尾部、MoE 专家写入、量化 loader/Marlin、KV scale、prompt logprobs、response format、connector telemetry/KV events 与 IR provider/tolerance 等无主链闭合到明确 owner。
+- 三位非原作者交叉复审后，继续修正 MRV1 普通 async PP 的 sampled-ID 回传、NIXL HMA 失败算例前提、compressed-tensors per-head scale、async draft 的 CPU/worker owner、logits-processor 早返回、Endpoint 的 `worker_extension_cls` 扩展路径、utility RPC 回包跳、执行器默认条件与四处稳定锚点；13 的并发正文只读复审并保留。
+- 统一 26 页冻结基线为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`（2026-09-07 UTC），把 24–26 的稳定源码路线收敛为 `path::symbol`，并调整域索引中的 23、26、20/21 依赖方向及 MRV2 默认阅读提示。页面边界与分类变更未擅自落地，P/D proxy、Elastic EP 编排、Ray/external launcher、配置总链、tool/reasoning、pooling、非 CUDA 与 gRPC/Rust frontend 留待规划批准。
+- 四项 T0 严格门禁与空白检查通过；本轮改动涉及的 Mermaid 全部解析，新增或改写图完成渲染目检。核验为固定源码的静态阅读，未运行 vLLM、GPU、多机传输、外部服务或故障注入。
+
+## 2026-09-15：补充 vLLM DP 消息协议与订阅协作
+
+- 在 [[13_vllm_serving_control_plane_analysis|13 Serving 控制面]] §3.2 展开六条消息通道图、FIRST_REQ 转换、统计/wave/成员变更协议和请求完成反馈；§3.3 补 Coordinator 事件分支、统计快照合并及 API 消费行为；§4.2 补地址回传与订阅 READY 的时序和等待边界。
+- 保留已有评分推导、wave/pause 推演及 bytes identity 与整数排除判断的差异，源码基线不变；通用通信基础不纳入本次补充。
+- 四项 T0 检查通过；页面八幅 Mermaid 完成解析与渲染，新增通道图和订阅时序图经目视检查并修正标签重叠。本次为文档及静态源码核验，未运行 vLLM 模型或多卡测试。
+
+## 2026-09-15：展开 vLLM DP 负载均衡调度与评分依据
+
+- 在 [[13_vllm_serving_control_plane_analysis|13 Serving 控制面]] 补齐普通请求的参与端与反馈闭环、在线贪心评分的数学模型、max／本地 inflight 缩放／KV 惩罚的逐项解释、有限条件下的 burst 均匀性推演，以及 Round-robin、最少请求与 P2C 的对照。
+- 新增请求时序图和逐请求选路流程图，展开 `publish_front`、`output_back`、`publish_back` 的消息方向与缓存更新语义。保留已有 wave、pause、部署、生命周期、配置及冲突记录，源码基线维持 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`。
+- 明确区分源码注释、行为测试与分析推断：线性曲线能解释斜率 6，但本次证据不能证明 50% 门槛与三倍惩罚的性能最优性。
+- 独立审阅通过公式、调用闭环、三处源码抽查、图示复演与原文守恒检查；严格链接／数学／Markdown／资源检查通过，六幅 Mermaid 完成解析渲染，新增图与算法原则图完成目视复核，14 处公式通过 MathJax 验证。本次为文档与静态源码核验，未运行 vLLM 模型或多卡性能测试。
+
 ## 2026-09-14：vLLM 24–26 按功能与机制画像重构
 
 - 参考 Megatron-LM 12 的连续因果解释深度，并按知识库归属分类：[[24_vllm_extension_plugin_system_analysis|24 扩展插件系统]]与[[26_vllm_multiproc_executor_rpc_deepdive|26 MultiprocExecutor RPC]]使用机制分析画像，[[25_vllm_weight_transfer_online_update_analysis|25 在线权重更新]]使用功能分析画像；三页形成“启动扩展 → 运行时权重变更 → 本地多进程 collective”的连续主线，冻结基线仍为 `199cb9b964822e59ab9b58d88e7be31eb419a2ae`。

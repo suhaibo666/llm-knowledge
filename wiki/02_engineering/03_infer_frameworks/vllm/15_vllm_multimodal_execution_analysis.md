@@ -4,10 +4,10 @@ title: "vLLM 多模态执行：一张图片怎样变成当前 token 的 embeddin
 
 # vLLM 多模态执行：一张图片怎样变成当前 token 的 embedding
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：用一张图片的占位展开、缓存复用、整 item encoder 准入与分步切片，解释媒体怎样精确替换当前请求的 token embedding，并追踪多模态位置与变体接缝。
 > **适用范围**：媒体加载/解析、模型 processor、processor cache、encoder budget/cache、设备侧 encode/gather/merge、多模态位置演算与变体接缝；协议字段归请求语义页，一般调度归 Scheduler 页，KV block hash 算法归 KV 页，模型构造与 embedding 接口接模型库页，具体 VLM 网络内部不在本页展开。
-> **最近更新**：2026-09-12。补定位与闭环交接图、核心流程清单、所有权视图、调用树、配置契约与成本账；新增 `strip_covered_mm_data`、`can_allocate` 已提交逐出、抢占预算回补、HF 依赖边界、XD-RoPE、encoder-only 实例、`prompt_embeds` 两条通路、EVS 与四个数据面对照。
+> **最近更新**：2026-09-16。补齐正常每步按确认进度与 drafter lookahead 解除 encoder 输入引用的边界，区分渐进释放、finish/preempt、逐出与 reset。
 
 ## 1. 定位：把媒体字节变成当前 token 窗口的 embedding 行
 
@@ -15,7 +15,7 @@ title: "vLLM 多模态执行：一张图片怎样变成当前 token 的 embeddin
 
 反过来说，这个特性**不是**下面任何一件事，各自的归属也已明确：
 
-- **不是公开请求/协议表面**。`extra_body={"prompt_embeds": ...}`、chat part 解析、媒体字段的合法取值归 [[03_vllm_request_semantics_analysis|请求语义]]；本页从渲染器交出的 `EngineInput` 开始。
+- **不是公开请求/协议表面**。`extra_body={"prompt_embeds": ...}`、chat part 解析、媒体字段的合法取值归 [[03_vllm_request_semantics_analysis|请求语义]]。**本页的起点是渲染器交出的媒体引用**，而不是已经处理好的 `EngineInput`：§2.1–§2.3 正是从 `MediaConnector` 取数据、`MultiModalDataParser` 解析、HF processor 的 `apply()` 产出 feature 讲起，这段在 vLLM 内部而不在协议表面。
 - **不是一般调度器**。队列策略、token/KV 预算、victim 选择、KV 分配失败后的整体回退归 [[07_vllm_scheduler_analysis|Scheduler]]；本页只负责"媒体使得哪段 token 窗口本步不可执行"，以及 encoder 专属的那半份记账。
 - **不是 KV block hash 算法**。`identifier` 参与前缀缓存 block hash 这件事本页要点名（§4.1），但 extra key 的组合与 `hash_block_tokens` 归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 - **不是 VLM 网络内部**。模型注册、构造、权重加载与 `SupportsMultiModal` 接口声明归 [[09_vllm_model_library_analysis|模型库]]；视觉塔与 projector 的层结构不在本页展开。
@@ -91,7 +91,7 @@ flowchart TB
     style PW fill:#f8fafc,stroke:#94a3b8,color:#0f172a
 ```
 
-两处容易读错。其一，`SchedulerOutput.free_encoder_mm_hashes` 不是"请求结束"的信号，而是"逻辑 entry 已被逐出、请把设备 tensor 删掉"的信号；请求结束只解除引用（§4.2）。其二，worker 端 `EncoderCache` 只在 `supports_mm_inputs and is_first_pp_rank` 时创建，因此非首 PP rank 既没有 `encoder_outputs`，也拿不到 EC connector（返回 no-op）。依据：`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.__init__`、`vllm/v1/worker/gpu/ec_connector.py::get_ec_connector`。
+两处容易读错。其一，普通 decoder-only 路径的 `SchedulerOutput.free_encoder_mm_hashes` 不是"请求结束"的信号，而是"逻辑 entry 已被逐出、请把设备 tensor 删掉"的信号；正常每步越过媒体的安全边界、请求结束或抢占都只解除相应引用（§4.2），encoder-decoder 的延迟通知另见 §7.9。其二，worker 端 `EncoderCache` 只在 `supports_mm_inputs and is_first_pp_rank` 时创建，因此非首 PP rank 既没有 `encoder_outputs`，也拿不到 EC connector（返回 no-op）。依据：`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.__init__`、`vllm/v1/worker/gpu/ec_connector.py::get_ec_connector`。
 
 ### 1.3 核心流程清单
 
@@ -105,12 +105,13 @@ flowchart TB
 | processor 两级缓存与漂移恢复 | `mm_processor_cache_gb > 0` | `MultiModalRegistry._get_cache_type` 选出的 sender/receiver 对 | `data=None` 的 feature；或 `mm_cache_miss_hashes` | `Request.from_engine_core_request`；`AsyncLLM._run_output_handler` | §3.1、§3.2 | 条件 |
 | 外部已处理 kwargs 注入 | 前端在外部跑完 HF processor | `InputProcessor.inject_into_mm_cache` | 写入 P0 cache 的 item（或 SHM address） | 后续同 hash 请求（本页） | §3.1 | 条件 |
 | 整 item 准入与窗口裁剪 | 每次 `Scheduler.schedule` 扫到有 encoder 输入的请求 | `Scheduler._try_schedule_encoder_inputs` | `scheduled_encoder_inputs`、裁剪后的 `num_new_tokens`、`external_load_encoder_input` | 设备 encoder（本页）；token 计划（07） | §4.1 | 基础 |
-| 逻辑 slot、引用与逐出通知 | 准入成功、请求结束、抢占、容量不足 | `EncoderCacheManager.allocate` / `check_and_update_cache` / `free_encoder_input` / `can_allocate` / `get_freed_mm_hashes` | `free_encoder_mm_hashes` | `GPUModelRunner.free_states`（本页） | §4.2 | 基础 |
+| 逻辑 slot、引用与逐出通知 | 准入成功、逐步解除引用、请求结束、抢占、容量不足 | `EncoderCacheManager.allocate` / `check_and_update_cache` / `free_encoder_input` / `can_allocate` / `get_freed_mm_hashes` | 引用与 freeable 状态；实际逐出才产生 `free_encoder_mm_hashes` | `GPUModelRunner.free_states`（本页） | §4.2 | 基础 |
 | prefix 覆盖项的 payload 剥离 | 首次下发请求且 `num_computed_tokens > 0` | `NewRequestData.from_request` → `strip_covered_mm_data` | `data=None` 或只留 `keep_on_cpu` 字段的 feature | `prepare_mm_inputs`、`RopeState`、SHM receiver（本页） | §4.2 | 条件 |
 | 设备 encoder 执行与发布 | `SchedulerOutput.scheduled_encoder_inputs` 非空 | `ModelState.execute_mm_encoder` → `EncoderRunner.prepare_mm_inputs` / `execute_mm_encoder` | `EncoderCache.encoder_outputs[identifier]` | 本步 gather（本页）；EC producer 的 `save_caches`（本页 §7.7） | §5.1 | 基础 |
 | 窗口切片与 embedding 合并 | 每步有非纯 decode 请求 | `EncoderRunner.gather_mm_embeddings` → `get_inputs_embeds` | `mm_embeds` 列表、`is_mm_embed` mask、`inputs_embeds` | forward（11、12） | §5.2、§5.3 | 基础 |
 | 多模态位置演算 | 模型声明 M-RoPE 或 XD-RoPE；PrefixLM；EVS | `get_rope_state`、`RopeState.init_prefill_positions` / `prepare_positions`、`compute_mm_prefix_ranges` | `positions` 张量；attention 的 `mm_req_doc_ranges` | forward（12）；attention metadata（10） | §6 | 条件 |
-| 释放与失效 | finish、preempt、逐出、`reset_prefix_cache` | `GPUModelRunner._remove_request`、`free_states`、`Scheduler._free_request` | 删除 `req_id → mm_features`、删除 `identifier → E` | 下一步的 gather（本页） | §4.2 | 基础 |
+| 正常渐进释放 | 每步结果返回，有 encoder 输入且达到安全边界（普通 decoder-only：确认进度越过 span 末尾 + lookahead） | `Scheduler.update_from_output` → `_free_encoder_inputs` → `EncoderCacheManager.free_encoder_input` | 普通 decoder-only 解除已消费 item 的引用；最后引用消失进入 freeable，不删除设备 E；encoder-decoder 另见 §4.2 | 后续准入/逐出（本页）；drafter gather（16） | §4.2 | 基础 |
+| finish/preempt 与逐出清理 | 请求结束、抢占（含 `reset_prefix_cache(reset_running_requests=True)`）、容量逐出 | `Scheduler._free_request` / `_preempt_request`；`GPUModelRunner._remove_request` / `free_states` | 前两者解除请求全部引用；worker 分别删除 `req_id → mm_features` 与被逐出的 `identifier → E` | 下一步的 gather（本页） | §4.2 | 基础 |
 | 启动 profiling 与预算定型 | `EngineCore` 初始化 KV 前的 `profile_run` | `MultiModalBudget`、`compute_mm_encoder_budget`、`get_dummy_encoder_profile_inputs`、`EncoderRunner.profile_encoder_cache` | `encoder_compute_budget`、`encoder_cache_size`；显存峰值计入测量 | Scheduler 构造与 KV 预算（07、08、12） | §4.1、§9.1 | 基础 |
 | 权重更新后的 reset | 在线权重更新或调试接口 | `EngineCore.reset_encoder_cache` → `Scheduler.reset_encoder_cache` + runner `reset_encoder_cache` | 清空 `EncoderCacheManager` 状态与 `encoder_outputs` | 后续请求重算 E（本页） | §4.2 | 条件 |
 | EC transfer 与 encoder-only 发布 | 配置 `ec_transfer_config` | `get_ec_connector`、`ActiveECConnector.maybe_get_output`、`MMEncoderModelRunner.execute_model` | `ECConnectorOutput`；远端写入的 `encoder_outputs`；`ec_transfer_params` | `Scheduler.update_from_output`（07）；consumer 实例（本页） | §7.7、§7.8 | 条件 |
@@ -138,7 +139,7 @@ flowchart TB
 
 ### 1.5 调用树：从渲染到 inputs_embeds
 
-缩进表示 caller → callee；方括号是条件分支或执行边界注记；纯转发已折叠。三段之间由对象交接而非函数调用相连，故分列。
+缩进表示 caller → callee；方括号是条件分支或执行边界注记；纯转发已折叠。各段之间由对象交接而非函数调用相连，故分列。
 
 ```text
 Renderer.render_chat / render_cmpl                          [P0，归 03]
@@ -205,6 +206,16 @@ GPUModelRunner.execute_model                                 [worker；MRV2]
 |   `-- [enable_prompt_embeds] PromptEmbedsState.apply       [Triton kernel 覆盖对应行]
 `-- DefaultModelState.prepare_inputs -> RopeState.prepare_positions
     => inputs_embeds 与 positions 进入 forward（归 12）
+    => ModelRunnerOutput 返回 Scheduler（返回链路归 07、12）
+Scheduler.update_from_output                                 [P1；本步实际执行后，先处理有效 rejection 回退]
+`-- [request.has_encoder_inputs] Scheduler._free_encoder_inputs
+    +-- EncoderCacheManager.get_cached_input_ids             [仅扫描该请求仍引用的 item]
+    `-- [达到 §4.2 安全边界] EncoderCacheManager.free_encoder_input
+        => decoder-only 解除 item 引用；最后引用消失才进入 freeable，设备 E 尚未删除
+        => encoder-decoder 回补逻辑 slots，通知延迟另见 §7.9
+Scheduler._free_request / _preempt_request                   [结束/抢占，独立于正常进度条件]
+`-- EncoderCacheManager.free
+    `-- EncoderCacheManager.free_encoder_input               [解除该请求全部剩余引用]
 ```
 
 ## 2. 从媒体到展开后的 prompt
@@ -262,7 +273,7 @@ IPC 条件是 `_api_process_count == 1`，且 `data_parallel_size == 1` 或启�
 
 这里有两个独立的轴，**不要合成一个**：`mm_processor_cache_type`（`lru`/`shm`）决定**谁保存 processed item**；`mm_tensor_ipc`（`direct_rpc`/`torch_shm`）决定**未命中时 tensor 怎么过进程**——`direct_rpc` 走 msgspec 序列化，`torch_shm` 走 `torch.multiprocessing` 队列（`TensorIpcSender`），后者还使 processor 的输出能留在设备上不回拷主机。`torch_shm` 要求 `world_size_across_dp == 1`，并要求 `VLLM_WORKER_MULTIPROC_METHOD=spawn`，否则配置期报错。容量的度量规则由 `MultiModalCache.get_item_size()` 定义：tensor 按 `nbytes`、其余叶子按 `sys.getsizeof` 求和，LRU 的 `maxsize` 是 `mm_processor_cache_gb` 折算的字节数；SHM 的单对象上限另由 `mm_shm_cache_max_object_size_mb` 控制。它和后面的 encoder embedding slots 是两种资源。
 
-还有第三个入口：前端若已在外部跑完 HF processor，可调 `InputProcessor.inject_into_mm_cache()` 用空 prompt-update 列表把结果塞进 P0 cache（SHM 下返回 address），使命中率统计正确并省掉后续同 hash 请求的重复处理；这个入口把异常整体 warning 吞掉，失败不影响请求。依据：`vllm/multimodal/registry.py::MultiModalRegistry._get_cache_type`、`processor_cache_from_config`、`receiver_cache_from_config`、`vllm/multimodal/cache.py::MultiModalCache.get_item_size`、`MultiModalProcessorOnlyCache`、`MultiModalProcessorSenderCache`、`ShmObjectStoreSenderCache`、`ShmObjectStoreReceiverCache`、`vllm/v1/engine/input_processor.py::InputProcessor.inject_into_mm_cache`、`vllm/v1/engine/core_client.py` 与 `vllm/v1/engine/utils.py` 的 tensor queue 构造、`vllm/config/model.py::ModelConfig` 对 `torch_shm` 的并行度校验。
+还有第三个入口：前端若已在外部跑完 HF processor，可调 `InputProcessor.inject_into_mm_cache()` 用空 prompt-update 列表把结果塞进 P0 cache（SHM 下返回 address），使命中率统计正确并省掉后续同 hash 请求的重复处理；这个入口把异常整体 warning 吞掉，失败不影响请求。依据：`vllm/multimodal/registry.py::MultiModalRegistry._get_cache_type`、`processor_cache_from_config`、`engine_receiver_cache_from_config`、`worker_receiver_cache_from_config`、`vllm/multimodal/cache.py::MultiModalCache.get_item_size`、`MultiModalProcessorOnlyCache`、`MultiModalProcessorSenderCache`、`ShmObjectStoreSenderCache`、`ShmObjectStoreReceiverCache`、`vllm/v1/engine/input_processor.py::InputProcessor.inject_into_mm_cache`、`vllm/v1/engine/core_client.py` 与 `vllm/v1/engine/utils.py` 的 tensor queue 构造、`vllm/config/model.py::ModelConfig` 对 `torch_shm` 的并行度校验。
 
 ### 3.2 miss 恢复结束旧请求，再由调用方重试
 
@@ -305,7 +316,7 @@ Scheduler 对本步窗口和 feature 区间做相交查询（`get_mm_features_in
 2. 未命中时，`can_allocate()` 检查整 item 的 compute budget 和 cache capacity，包括本请求刚预留的其他 item。例图需要4 slots，即使本步只触及2个 I，也不能只预留2。
 3. 不足时裁到图片起点：从 `[0,4)` 退到 `[0,2)`。若 prefix cache 使 computed 位置已经越过起点，图片却无 E 可用，本步只能排0 token。
 4. 有空间后再把相交 token 区间转换为 embedding 行区间；稀疏 span 若本窗口没有真正的 embedding 行，可跳过 encoder。当前代码的容量检查在这一步之前，不应改述成"先排除所有空 mask，再检查预算"。
-5. 本地计算项进入 `scheduled_encoder_inputs`，随后 `EncoderCacheManager.allocate()` 扣减整 item 预算并分配逻辑 cache entry；外部 E 命中走 §7.7 的 EC 分支。
+5. 本地计算项进入 `scheduled_encoder_inputs`，随后 `EncoderCacheManager.allocate()` 登记 cache entry 并按整 item 的 `get_num_encoder_embeds()` 扣减 `num_free_slots` / `num_freeable_slots`。**它只动 cache slot，不动 compute 预算**——`encoder_compute_budget` 是传给第 2 步 `can_allocate()` 的参数、由 Scheduler 逐步自行扣减，两笔账分开记（`allocate()` 只 `assert` slot 够用，因为驱逐已在 `can_allocate()` 里做完）。外部 E 命中走 §7.7 的 EC 分支。
 
 `disable_chunked_mm_input` 还会把从媒体前方进入、却不能覆盖完整 span 的计划退到媒体之前；具体判断要求 `num_computed_tokens < start_pos`，不是无条件重写一切已经进入 span 的窗口。EAGLE 等路径的 `shift_computed_tokens` 也参与查询和回退，以免多看一个位置却没有 E。依据：`vllm/v1/core/sched/scheduler.py::Scheduler._try_schedule_encoder_inputs`、`Scheduler.schedule`、`vllm/multimodal/utils.py::get_mm_features_in_window`。
 
@@ -315,7 +326,13 @@ Scheduler 对本步窗口和 feature 区间做相交查询（`get_mm_features_in
 
 Scheduler 的 `EncoderCacheManager` 持有 `identifier → request 引用集`、每请求的 cached item IDs 与可回收 LRU；`can_allocate()` 不分配 GPU 内存。准入写入计划后，首个 PP rank 才运行 encoder，并把 `identifier → E` 放入设备 `EncoderCache`。因此"feature 已建立""逻辑4 slots 已分配""设备 E 已可取"是三个先后成立的事实。
 
-一个请求结束使用图片，只会解除引用；最后一个引用消失后，entry 进入 freeable，仍可能供后续请求复用。有新 allocation 需要容量时才逐出 freeable entry，把 identifier 通过 `free_encoder_mm_hashes` 通知 runner 删除 tensor。新基线还保证两点：同一请求重复出现同一图片，直到最后一个 occurrence 释放才解除 request 引用；同轮逐出后又重新分配的 identifier 不得再出现在释放通知里。依据：`vllm/v1/core/encoder_cache_manager.py::EncoderCacheManager.free_encoder_input`、`can_allocate`、`allocate`、`get_freed_mm_hashes`、`reset`；`vllm/v1/worker/gpu/mm/encoder_cache.py::EncoderCache`。
+**正常解除引用不必等请求结束。** `Scheduler.update_from_output()` 在本步实际执行、有效的 speculative rejection 回退处理之后，对仍进入结果处理且有 encoder 输入的请求调用 `_free_encoder_inputs()`。它遍历该请求仍引用的 item；普通 decoder-only 路径仅在 `offset + length + num_prefill_lookahead <= num_computed_tokens - num_output_placeholders` 时调用 `free_encoder_input()`。左边是媒体 span 的末尾加 drafter 预读余量，使用完整 `length` 而非 `get_num_embeds()`；右边是已确认进度。扣除 async output placeholders，是因为乐观推进的 computed 仍可能被在途拒绝回退；加上 lookahead，是为了让 drafter 的预读窗口也走过该媒体。这是每步结果处理边界，不是只要 `schedule()` 提前增大 computed 就可释放。
+
+沿用图1的 `[2,6)`，若 `num_prefill_lookahead=1`、`num_output_placeholders=4`，释放条件为 `7 <= computed - 4`：computed 为 10 时确认进度只有 6，仍保留；到 11 时确认进度为 7，才解除该 item 引用。没有 lookahead 且没有未确认 placeholders 时，computed 到 6 即满足条件。Scheduler 默认 lookahead 为 0；`use_eagle()` 路径通常为 1，multi-module MTP 则取 `num_spec_tokens`，不能把它与 KV slot 预留量 `num_lookahead_tokens` 混用。drafter 与在途结果的上下文见 [[16_vllm_speculative_decoding_analysis#8.4 MRV1、抢占和在途结果的边界|投机解码 §8.4]]，本页拥有 E 的释放规则。
+
+encoder-decoder 有独立优先分支：只要 `num_computed_tokens > 0` 就调用 `free_encoder_input()`，源码理由是 cross-attention K/V 已计算并缓存，不再按 decoder 媒体 span 加 lookahead 等待。它使用 `EncoderDecoderCacheManager` 回补逻辑 slots，通知延迟与不缓存 E 的数据面见 §7.9，不能套用下面普通 decoder-only 的跨请求 freeable 生命周期。依据：`vllm/v1/core/sched/scheduler.py::Scheduler.__init__`、`update_from_output`、`_free_encoder_inputs`；`tests/v1/core/test_scheduler.py::test_free_encoder_inputs_respects_unconfirmed_placeholders`、`test_free_encoder_inputs_defers_for_eagle_lookahead`、`test_free_encoder_inputs_unchanged_without_spec_decode`。
+
+普通 decoder-only 中，一个 item 结束使用只会解除引用；最后一个引用消失后，entry 进入 freeable，增加 `num_freeable_slots`，但不增加 `num_free_slots`，仍可能供后续请求复用。有新 allocation 需要容量时才逐出 freeable entry，把 identifier 通过 `free_encoder_mm_hashes` 通知 runner 删除 tensor。新基线还保证两点：同一请求重复出现同一图片，直到最后一个 occurrence 释放才解除 request 引用；同轮逐出后又重新分配的 identifier 不得再出现在释放通知里。finish 的 `_free_request()` 与抢占的 `_preempt_request()` 则走 `encoder_cache_manager.free(request)`，解除该请求的全部剩余引用，不受上面的正常进度条件限制。依据：`vllm/v1/core/encoder_cache_manager.py::EncoderCacheManager.free_encoder_input`、`free`、`can_allocate`、`allocate`、`get_freed_mm_hashes`、`reset`；`vllm/v1/worker/gpu/mm/encoder_cache.py::EncoderCache`。
 
 **上面的三级阶梯之间还夹着第四个事实：逐出已经提交，而它不随后续失败回滚。** `can_allocate()` 在容量检查内部就做逐出——`freeable.popitem(last=False)`、`del self.cached[mm_hash]`、`self.freed.append(mm_hash)`，源码注释明说"物理内存直到 scheduler output 通知 runner 才释放"。真正的 `allocate()` 发生在更晚，只有 `allocate_slots()` 成功后才执行。于是存在这样一条路径：为请求 X 的 item 腾地方而逐出了受害 hash，随后 X 的 KV 分配失败、X 本步未被调度，可被逐出的那些 hash 仍会经 `get_freed_mm_hashes()` → `free_encoder_mm_hashes` → `GPUModelRunner.free_states()` 被真的删掉；`get_freed_mm_hashes()` 只过滤**同一轮里又被重新分配**的 hash，不过滤"为之腾地方的请求最终没排上"。这是一个**已提交的部分副作用，没有回滚**。
 
@@ -331,7 +348,7 @@ Scheduler 的 `EncoderCacheManager` 持有 `identifier → request 引用集`、
 
 下述以 MRV2 的函数拆分为主。V1 仍是实际可选路径：自动选择 V2 取决于 Triton、平台及 unsupported feature 检查；显式配置也参与选择。V1 同样消费 `scheduled_encoder_inputs`，按 identifier 缓存，并按 mm_position gather。本页的两 key、整 item 准入和按位置合并不依赖"所有请求都走 V2"。依据：`vllm/config/vllm.py::VllmConfig.use_v2_model_runner`、`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._execute_mm_encoder`、`GPUModelRunner._gather_mm_embeddings`。
 
-MRV2 仅在 first PP rank 建立 `EncoderCache`、准备多模态输入；新请求先登记 feature。`prepare_mm_inputs()` 按 Scheduler 的 item indices 收集 data，跳过已缓存及 `data=None` 项（两个成因见 §4.2）。需要编码的 kwargs 按**连续 modality 组**处理，组内再受字段布局、共享字段等兼容性约束；不是全局重排后任意 zip 回原顺序。可用的 encoder CUDA Graph 路径会接管支持的 modality——交接对象是分组后的 `mm_kwargs_batch`，捕获与 replay 归 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]；其余调用 `model.embed_multimodal()`。ViT 自身的 attention 后端（`mm_encoder_attn_backend`）与 fp8 ViT attention（`mm_encoder_attn_dtype`、`mm_encoder_fp8_scale_path`）分别归 [[10_vllm_attention_backends_analysis|Attention 后端]] 与 [[17_vllm_quantization_analysis|量化]]，本页只把它们记作相邻配置轴。输出数必须等于输入 item 数，每项必须是二维 tensor；模型还须保持对应顺序（`execute_mm_encoder()` 用 `zip(mm_hashes, encoder_outputs)` 写缓存），单靠 rank 检查抓不到"形状一样但图 A/B 对调"。依据：`vllm/v1/worker/gpu/mm/encoder_runner.py::EncoderRunner.prepare_mm_inputs`、`execute_mm_encoder`、`vllm/multimodal/utils.py::group_and_batch_mm_kwargs`、`vllm/v1/worker/utils.py::sanity_check_mm_encoder_outputs`。
+MRV2 仅在 first PP rank 建立 `EncoderCache`、准备多模态输入；新请求先登记 feature。`prepare_mm_inputs()` 按 Scheduler 的 item indices 收集 data，跳过已缓存及 `data=None` 项（两个成因见 §4.2）。需要编码的 kwargs 按**连续 modality 组**处理（写回缓存的那句 `encoder_cache.encoder_outputs.update(zip(mm_hashes, encoder_outputs))` 在 `model_states/interface.py::execute_mm_encoder` 里，不在 `EncoderRunner.execute_mm_encoder` 中——前者是 ModelState 钩子，后者是它调用的编码实现），组内再受字段布局、共享字段等兼容性约束；不是全局重排后任意 zip 回原顺序。可用的 encoder CUDA Graph 路径会接管支持的 modality——交接对象是分组后的 `mm_kwargs_batch`，捕获与 replay 归 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]；其余调用 `model.embed_multimodal()`。ViT 自身的 attention 后端（`mm_encoder_attn_backend`）与 fp8 ViT attention（`mm_encoder_attn_dtype`、`mm_encoder_fp8_scale_path`）分别归 [[10_vllm_attention_backends_analysis|Attention 后端]] 与 [[17_vllm_quantization_analysis|量化]]，本页只把它们记作相邻配置轴。输出数必须等于输入 item 数，每项必须是二维 tensor；模型还须保持对应顺序（`execute_mm_encoder()` 用 `zip(mm_hashes, encoder_outputs)` 写缓存），单靠 rank 检查抓不到"形状一样但图 A/B 对调"。依据：`vllm/v1/worker/gpu/mm/encoder_runner.py::EncoderRunner.prepare_mm_inputs`、`execute_mm_encoder`、`vllm/multimodal/utils.py::group_and_batch_mm_kwargs`、`vllm/v1/worker/utils.py::sanity_check_mm_encoder_outputs`。
 
 `ModelState.execute_mm_encoder()` 先把 outputs 按 identifiers 写入缓存；后续 gather 才读取它。非 realtime 模型在纯 decode 时（`num_computed_tokens >= prefill_lens` 对所有请求成立）不再 gather prompt 内的媒体；realtime 分支不采用这个跳过条件。因此也可以只完成 encoder 计算/发布，不立即为某个 LM 窗口拼接 embedding——`MMEncoderModelRunner` 就长期停在这一步（§7.8）。gather 返回本步需要的媒体行，并附加 modality 标记；`get_inputs_embeds()` 调用模型合并，再复制进预分配 buffer，以满足后续图执行的稳定缓冲区要求。开启 `enable_mm_processor_stats` 时 `timed_encoder_operation()` 会把每次 encoder 调用计入 `encoder_forward_secs` / `num_encoder_calls`，与 `SchedulerOutput.scheduled_encoder_input_stats` 一起构成本特性的观测交接；指标链路归 [[23_vllm_observability_reliability_analysis|可观测性与可靠性]]。依据：`vllm/v1/worker/gpu/model_states/interface.py::ModelState.execute_mm_encoder`、`vllm/v1/worker/gpu/mm/encoder_runner.py::EncoderRunner.gather_mm_embeddings`、`get_inputs_embeds`、`timed_encoder_operation`、`vllm/v1/core/sched/scheduler.py::Scheduler._make_scheduled_encoder_input_stats`。
 
@@ -463,7 +480,7 @@ Scheduler 的 EC connector 可先用 `ensure_cache_available()` 把尚未可用�
 
 ### 7.8 encoder-only 实例：这里"完成"的定义变了
 
-EC 的 producer 通常不是一个普通实例：`VllmConfig._resolve_mm_encoder_only()` 在 `ec_transfer_config.is_encode_only`（是 producer 而不是 consumer）时自动把 `mm_config.mm_encoder_only` 置真，`VllmConfig.is_mm_encoder_only` 随之为真，`gpu_worker.py` 于是构造 `MMEncoderModelRunner` 而不是普通 `GPUModelRunner`。这个 runner 的类文档一句话说清它的形状：**不跑语言模型，因此没有 KV cache、没有 sampler、没有 CUDA graph**——`get_kv_cache_spec()` 返回 `{}`，`capture_model()` 返回 0，`_dummy_run`/`_dummy_sampler_run`/`_dummy_pooler_run` 都是空壳，并断言 `dp_size == 1` 且模型必须是多模态的。它的 `execute_model()` 只做请求状态维护、`prepare_inputs`、可选的 `set_active_mm_loras`，然后在 `ec_connector.maybe_get_output()` 上下文里调 `model_state.execute_mm_encoder()`，返回一个空的 encoder-only `ModelRunnerOutput`。
+EC 的 producer 通常不是一个普通实例：`VllmConfig._resolve_mm_encoder_only()` 在 `ec_transfer_config.is_encode_only`（是 producer 而不是 consumer）时自动把 `mm_config.mm_encoder_only` 置真，`VllmConfig.is_mm_encoder_only` 随之为真，`gpu_worker.py` 于是构造 `MMEncoderModelRunner` 而不是普通 `GPUModelRunner`。`mm_encoder_model_runner.py` 的模块 docstring 一句话说清这个 runner 的形状：**不跑语言模型，因此没有 KV cache、没有 sampler、没有 CUDA graph**——`get_kv_cache_spec()` 返回 `{}`，`capture_model()` 返回 0，`_dummy_run`/`_dummy_sampler_run`/`_dummy_pooler_run` 都是空壳，并断言 `dp_size == 1` 且模型必须是多模态的。它的 `execute_model()` 只做请求状态维护、`prepare_inputs`、可选的 `set_active_mm_loras`，然后在 `ec_connector.maybe_get_output()` 上下文里调 `model_state.execute_mm_encoder()`，返回一个空的 encoder-only `ModelRunnerOutput`。
 
 **这改变了"完成"的含义**，所以它属于本页而不只属于部署文档：Scheduler 在 `update_from_output()` 里为这类实例加了一条独立的停止分支——没有新 token、也没有 pooling 输出时，只要 `self.is_mm_encoder_only and request.num_computed_tokens >= request.num_prompt_tokens`，请求即转 `FINISHED_STOPPED`。注释给出的理由值得记住：encoder 输入从不会被排到"encoder cache 装不下的那个 item"之后（§4.1 规则3），所以"整个 prompt 已消费"同时也意味着"prompt 里每个 item 都编码过了"。这类实例还被强制关掉前缀缓存（`is_mm_encoder_only and cache_config.enable_prefix_caching` 时打 info 并置假，理由是它不持 KV cache、coordinator 无组可管），并被列入 DBO 不支持项。
 
@@ -594,7 +611,7 @@ flowchart LR
 | tensor IPC | 每个未双命中 item 一次 | P0+P1 双命中省掉整份 payload；`direct_rpc` 为 msgspec 序列化，`torch_shm` 为共享内存/CUDA IPC 句柄 | `MsgpackEncoder` / `TensorIpcSender` |
 | encoder slot | 每个 item 一次，按整 item 计 | 是两个不同的闸门，不能合成一个 min：本步的计算上限只有 `Scheduler.max_num_encoder_input_tokens`（构造时取 `mm_budget.encoder_compute_budget`，每轮 `schedule()` 重新播种）；缓存容量是**跨步**的独立池 `EncoderCacheManager.num_free_slots`，不按步重置。`MultiModalBudget.get_encoder_budget()` 的 `min(两者)` 是**启动期**量，用于 `_get_max_items()` 与 profiling 门控，只在缓存全空时才等于单 item 的可行上限（§9.2 第一项按这两个量分别列）。本例整图 4 slots，本步只用 2 行也付 4 | `vllm/v1/core/sched/scheduler.py::Scheduler.max_num_encoder_input_tokens` / `EncoderCacheManager.num_free_slots` / `vllm/multimodal/encoder_budget.py::MultiModalBudget.get_encoder_budget` |
 | tower forward | 每个未缓存 item 一次 | 本例 grid 乘积 16 个 patch 产出 4 行；FLOPs 由 tower 结构决定（归 09），slot 数不是它的代理 | `embed_multimodal` 或 encoder graph |
-| 设备 E 常驻 | 直到被逐出 | 行数 × H × dtype；本例 4×H | `EncoderCache.encoder_outputs` |
+| 设备 E 常驻 | 普通 decoder-only 直到逐出或 reset | 行数 × H × dtype；本例 4×H。正常进度释放或 finish/preempt 只使引用减少；最后引用消失后仍占设备内存，lookahead/未确认 placeholders 还会推迟其进入 freeable | `EncoderCache.encoder_outputs` / `Scheduler._free_encoder_inputs` |
 | `inputs_embeds` 缓冲 | 常驻 | `max_num_batched_tokens × get_inputs_embeds_size()` × dtype；为稳定缓冲区而预分配 | `EncoderRunner.inputs_embeds`（无多模态但开 prompt embeds 时为 `DefaultModelState.inputs_embeds`） |
 | 位置表（主机 UVA） | 常驻 | `max_num_reqs × num_dims × max_model_len × 4` 字节；源码注释说它"可能极大（数 GB）"。例：256 请求 × 3 维 × 128K × 4 B = 384 MiB | `RopeState.prefill_positions` |
 | 设备位置缓冲 | 常驻 | `num_dims × (max_num_batched_tokens + 1) × 8` 字节 | `RopeState.positions` |
@@ -602,9 +619,10 @@ flowchart LR
 | 前端 GPU 预算 | 常驻 | `mm_ipc_gpu_memory_gb`，从 KV 预算中扣除 | `MultiModalConfig.mm_ipc_gpu_memory_gb` |
 | 启动 profiling | 一次 | 最大 modality 的 `mm_max_items_per_batch` 个最大尺寸 dummy item 跑一遍 encoder，输出暂存 `tmp_{i}` 键，峰值计入显存测量；`profile_run()` 末尾 `reset_encoder_cache()` 清掉。`skip_mm_profiling` 可跳过，代价是峰值估计交给使用者 | `profile_run` → `get_dummy_encoder_profile_inputs` → `EncoderRunner.profile_encoder_cache` |
 | 每步 CPU | 每步每请求 | 两次 `bisect` 窗口查询 + 每 item 一次 inclusive prefix 查表 + CPU 上的 mask OR 与一次 pinned H2D | `gather_mm_embeddings` / `get_mm_features_in_window` |
+| 每步引用回收 | 返回结果中有 encoder 输入的请求 | 扫描仍引用的 item 并检查确认进度 + lookahead；解除引用时还检查同请求其他 occurrence 是否仍引用同一 identifier。换来更早的可回收容量，不代表即时归还 GPU 内存（耗时未测） | `Scheduler._free_encoder_inputs` / `EncoderCacheManager.free_encoder_input` |
 | 观测 | 开 `enable_mm_processor_stats` 时每次 encoder 调用 | `timed_encoder_operation` 前后各做一次 `torch.accelerator.synchronize()`——两次强制同步在关键路径上，这是它默认关闭的原因（**分析推断**，未测） | `EncoderRunner.timed_encoder_operation` |
 
-**总账。** 常驻开销主要落在三处：processor cache 的主机内存（按进程数翻倍）、设备上的 `inputs_embeds` 与 E 缓存、以及多维 RoPE 的位置表（主机 UVA，与 `max_num_reqs × max_model_len` 成积）。每请求开销集中在一次下载 + 一次 HF processor + 一次 tower forward，三者都可被对应缓存跨请求摊薄；每步开销只是 CPU 上的窗口查询与索引换算，加上一次按 mask 的散写。所以这个特性适合"同一媒体被反复使用、prompt 较长"的负载；对"每张图只用一次、prompt 很短"的负载，三级缓存只剩成本没有收益，此时把 `mm_processor_cache_gb` 调低反而更合适（**分析推断**，未测）。
+**总账。** 常驻开销主要落在三处：processor cache 的主机内存（按进程数翻倍）、设备上的 `inputs_embeds` 与 E 缓存、以及多维 RoPE 的位置表（主机 UVA，与 `max_num_reqs × max_model_len` 成积）。每请求开销集中在一次下载 + 一次 HF processor + 一次 tower forward，三者都可被对应缓存跨请求摊薄；每步还要做 CPU 上的窗口查询、索引换算和引用回收检查，加上一次按 mask 的散写。所以这个特性适合"同一媒体被反复使用、prompt 较长"的负载；对"每张图只用一次、prompt 很短"的负载，三级缓存只剩成本没有收益，此时把 `mm_processor_cache_gb` 调低反而更合适（**分析推断**，未测）。
 
 ### 9.2 运行包络
 
@@ -624,7 +642,7 @@ flowchart LR
 | hash 覆盖相关处理参数，UUID 代表稳定内容 | hash/预处理有 CPU 成本；错误 UUID 可能复用错误 feature |
 | P0 shadow 与接收缓存分别存在 | 正常 hit 省 tensor IPC；漂移时旧请求 ERROR、清 shadow、调用方重试（仅 AsyncLLM 路径） |
 | encoder 准入覆盖整个 item | 即使本步只用2行，也可能为4行支付计算和缓存；大 item 阻止窗口推进 |
-| 引用与 freeable/evicted 分开 | 缓存跨请求复用；结束请求不立即释放 GPU E，权重变化需要 reset；`can_allocate` 的逐出无回滚 |
+| 引用与 freeable/evicted 分开，正常释放等待确认进度 + lookahead | 过早解除引用可能使在途拒绝回退或 drafter gather 遇到已逐出的 E；安全边界前持续占用不可逐出容量。逐步释放或结束请求都不立即删除 GPU E，权重变化需要 reset；`can_allocate` 的逐出无回滚 |
 | 下发副本的 payload 与调度侧 feature 分开 | prefix 覆盖项省掉整份 IPC，但 `data=None` 出现两个成因，多维 RoPE 必须保留 grid |
 | span、mask、E 行数与输出顺序共同匹配 | 稀疏 mask 省 slot，但多一层 prefix 映射；shape 相同的顺序错误仍危险 |
 | 当前窗口有可读 E，位置坐标与所选行一致 | prefix 命中、chunk、lookahead、EC transfer、EVS 都必须接续；普通 target miss 是错误 |
@@ -637,11 +655,13 @@ flowchart LR
 1. 位置与 key：`vllm/multimodal/inputs.py::PlaceholderRange`、`MultiModalFeatureSpec`；`vllm/multimodal/processing/inputs.py::ProcessorInputs.get_mm_hashes`；`vllm/multimodal/utils.py::argsort_mm_positions`、`get_mm_features_in_window`。
 2. 缺失 item 的处理和占位展开：`vllm/multimodal/processing/processor.py::BaseMultiModalProcessor._cached_apply_hf_processor`、`_merge_mm_kwargs`、`_maybe_apply_prompt_updates`、`apply`；`vllm/multimodal/processing/context.py::MultiModalProcessingContext.call_hf_processor`（依赖边界）；`vllm/model_executor/models/qwen2_vl.py::Qwen2VLMultiModalProcessor._get_prompt_updates`。
 3. 缓存传输与恢复：`vllm/multimodal/registry.py::MultiModalRegistry._get_cache_type`；`vllm/multimodal/cache.py::MultiModalCache.get_item_size`、`MultiModalProcessorSenderCache`、`ShmObjectStoreSenderCache`、`BaseMultiModalReceiverCache.get_and_update_features`；`vllm/v1/engine/input_processor.py::InputProcessor.inject_into_mm_cache`；`vllm/v1/engine/core.py::EngineCoreProc._handle_mm_cache_miss`；`vllm/v1/engine/async_llm.py::AsyncLLM._run_output_handler`。
-4. 整 item 预算与引用：`vllm/multimodal/encoder_budget.py::MultiModalBudget`、`get_dummy_encoder_profile_inputs`；`vllm/v1/core/encoder_cache_manager.py::compute_mm_encoder_budget`、`EncoderCacheManager.check_and_update_cache`、`can_allocate`、`allocate`、`free_encoder_input`、`get_freed_mm_hashes`、`reset`、`EncoderDecoderCacheManager`；`vllm/v1/core/sched/scheduler.py::Scheduler._try_schedule_encoder_inputs`、`Scheduler.schedule`（抢占回补）、`_free_request`；`vllm/v1/core/sched/output.py::NewRequestData.from_request` 与 `vllm/multimodal/utils.py::strip_covered_mm_data`；`vllm/v1/core/kv_cache_utils.py::_gen_mm_extra_hash_keys`。
+4. 整 item 预算与引用：`vllm/multimodal/encoder_budget.py::MultiModalBudget`、`get_dummy_encoder_profile_inputs`；`vllm/v1/core/encoder_cache_manager.py::compute_mm_encoder_budget`、`EncoderCacheManager.check_and_update_cache`、`can_allocate`、`allocate`、`free_encoder_input`、`free`、`get_freed_mm_hashes`、`reset`、`EncoderDecoderCacheManager`；`vllm/v1/core/sched/scheduler.py::Scheduler.__init__`（`num_prefill_lookahead`）、`_try_schedule_encoder_inputs`、`schedule`（抢占回补）、`update_from_output` → `_free_encoder_inputs`（正常每步释放）、`_free_request` / `_preempt_request`（全部剩余引用）、`reset_prefix_cache` / `reset_encoder_cache`；`vllm/v1/core/sched/output.py::NewRequestData.from_request` 与 `vllm/multimodal/utils.py::strip_covered_mm_data`；`vllm/v1/core/kv_cache_utils.py::_gen_mm_extra_hash_keys`。
 5. E 的执行、切片与 merge：`vllm/v1/worker/gpu/mm/encoder_runner.py::EncoderRunner.prepare_mm_inputs`、`execute_mm_encoder`、`profile_encoder_cache`、`gather_mm_embeddings`、`get_inputs_embeds`；`vllm/v1/worker/gpu/mm/encoder_cache.py::EncoderCache`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.free_states`、`profile_run`；`vllm/model_executor/models/interfaces.py::SupportsMultiModal.embed_input_ids`；`vllm/model_executor/models/utils.py::_merge_multimodal_embeddings`。
 6. 位置与不同消费方式：`vllm/model_executor/models/qwen2_vl.py::Qwen2VLForConditionalGeneration.get_mrope_input_positions`、`iter_mm_grid_thw`；`vllm/v1/worker/gpu/mm/rope.py::get_rope_state`、`RopeState`；`vllm/v1/worker/gpu/model_states/__init__.py::resolve_model_state_cls`、`init_model_state`；`vllm/v1/worker/gpu/model_states/default.py::DefaultModelState`、`vllm/v1/worker/gpu/model_states/prompt_embeds.py::PromptEmbedsState`、`vllm/v1/worker/gpu/model_states/mm_pruning.py::MultiModalPruner`、`vllm/v1/worker/gpu/model_states/encoder_decoder.py::EncoderDecoderModelState`；`vllm/v1/worker/gpu/ec_connector.py::ActiveECConnector`；`vllm/v1/worker/mm_encoder_model_runner.py::MMEncoderModelRunner`。
 
 已阅读的测试进一步固定负向边界：`tests/multimodal/test_processing.py::test_processor_inputs_hashes_scope_kwargs_by_modality` 验证按 modality 分隔参数；`tests/multimodal/test_cache.py::test_mm_cache_miss_raises_and_recovers`、`test_mm_cache_miss_batches_all_drifted_hashes`、`test_oversized_item_is_served_uncached`、`test_processor_cache_shared_across_loras` 验证恢复/汇总/超限/LoRA 共享；`tests/v1/core/test_output.py::test_strip_covered_mm_data`、`test_strip_covered_mm_data_zero_computed`、`test_strip_covered_mm_data_mrope`、`test_strip_covered_mm_data_xdrope` 固定剥离规则与保留字段；`tests/v1/core/test_encoder_cache_manager.py::test_encoder_cache_with_is_embed_mask` 用100长 span、8个 true 证明只扣8 slots，`test_duplicate_mm_hash_stays_referenced_until_last_free` 与 `test_reallocated_hash_is_not_reported_as_freed` 固定释放时序；`tests/v1/worker/test_encoder_runner.py` 覆盖窗口、cache miss、prompt-embeds passthrough 和 encode 后独立缓存。本页只核对源码与测试断言，教学数字可手算，未执行 GPU、模型或第三方传输依赖测试。
+
+正常释放的补充 oracle 是 `tests/v1/core/test_scheduler.py::test_free_encoder_inputs_respects_unconfirmed_placeholders`、`test_free_encoder_inputs_defers_for_eagle_lookahead`、`test_free_encoder_inputs_unchanged_without_spec_decode`，分别固定未确认回退、预读余量与无投机边界；`test_encoder_cache_retained_across_preemption_and_resume` 则固定抢占只解除引用、未逐出时恢复可命中的独立路径。这些测试已静态阅读，未在本次运行。
 
 本页范围内仍有一处**无人归属的空白**需要登记而非在此补写：EPD/encoder-only 的**部署拓扑整体**（`mm_processor_device="auto"` 的角色解析及其对 `mm_tensor_ipc` 的回退、EC connector 工厂与角色划分、1P1D 的 rank 约定——其中 KV 平面的 P/D rank 约定已由 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] §11.1 承接，EC 平面的仍无归属）在本域没有专页。本页只覆盖 §7.8 所说的那部分：`MMEncoderModelRunner` 是活的变体、它的完成边界改变了"完成"的含义、以及前缀缓存被强制关闭。
 

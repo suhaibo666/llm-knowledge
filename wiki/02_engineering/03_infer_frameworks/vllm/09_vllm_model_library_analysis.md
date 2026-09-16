@@ -4,10 +4,10 @@ title: "vLLM 模型库：从 checkpoint 到可执行模型"
 
 # vLLM 模型库：从 checkpoint 到可执行模型
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：加载在引擎启动时序中的位置与核心流程清单；Registry 怎样选出模型类，统一构造器怎样建立当前 rank 的模块骨架，`load_format` 选出的加载器、名称映射与并行参数写入怎样把 checkpoint 写进本地参数，以及 EP 专家过滤、sharded state、IPC 缓存等变体和加载完成边界；随后说明构造产物的下游消费者、LoRA 接合、约束成本与配置契约。核心代码在 `vllm/model_executor/model_loader/` 与 `vllm/model_executor/models/`。
 > **适用范围**：模型选择、构造、基础权重加载与模型支持接口；量化数值见 17，attention 实现见 10，runner batch 见 11/12，TP/PP/EP 分组与通信见 18，插件发现见 24，在线权重更新见 25，KV 规划与布局见 08/10。
-> **最近更新**：2026-09-11。按特性分析重组全页，补齐启动时序定位、核心流程清单与主流程阶段表，以及 sharded state、EP 专家过滤、MTP 完整性、tying 协调、类视图、调用树、成本账和配置契约。
+> **最近更新**：2026-09-16。按特性分析重组全页，补齐启动时序、主流程阶段、MoE 专家名称映射与全局到本地写入，以及 sharded state、EP 过滤、MTP 完整性、tying 协调、类视图、调用树、成本账和配置契约。
 
 ## 1. 特性概览
 
@@ -37,7 +37,7 @@ vLLM 把这件事拆成三次选择：**Registry 选择模型类，构造器按�
 
 ### 1.5 加载在引擎启动时序中的位置
 
-模型加载不是独立的离线步骤，而是引擎启动链中间的一环：上游是已解析的配置、已加载的插件和已建立的并行组，下游四个启动阶段都直接消费它的产物。下图按 GPU worker 的真实调用顺序排列，uniproc 与 multiproc executor 汇合到同一组 worker 方法。
+模型加载不是独立的离线步骤，而是引擎启动链中间的一环：上游是已解析的配置、已加载的插件和已建立的并行组，下游四个启动阶段都直接消费它的产物。下图按 GPU worker 的真实调用顺序排列，uniproc 与 multiproc executor 汇合到同一组 worker 方法。**它画的是「加载位于何处」，不是启动顺序本身**——各阶段各自做什么、哪些条件下整段跳过，owner 是 [[12_vllm_model_runner_v2_analysis|MRV2]] §2.9；本页只标注与加载产物有交接的那几条边。
 
 <!-- Figure spec: 启动时序位置图。从已解析 VllmConfig 经 EngineCore.__init__、executor 构造、Worker.init_device 到本页 Worker.load_model，再依次进入 _initialize_kv_caches 的 get_kv_cache_specs、KV layout 解析与非因果开关、determine_available_memory、initialize_from_config、compile_or_warm_up_model 与 Scheduler 构造；每条边标交接对象，节点标归属页；本页节点蓝色，加载异常分支橙色虚线。 -->
 
@@ -80,6 +80,7 @@ flowchart TB
 | 构造 rank 本地骨架 | `Worker.load_model()` 经 loader 进入 `initialize_model()`；输入已解析的 `VllmConfig`、prefix、`init_device` 建好的 TP/PP 组 | 未初始化参数的 rank 本地 `nn.Module`、PP placeholder、`static_forward_context[prefix]` 条目、reload 元数据 | 本页权重写入；KV spec 与 bind（[[10_vllm_attention_backends_analysis\|10]]、[[08_vllm_kv_cache_management_analysis\|08]]）；在线 reload（[[25_vllm_weight_transfer_online_update_analysis\|25]]） | §2.3、§4.1 |
 | 加载器选择 | runner `load_model()` 调 `get_model_loader(load_config)`；输入 `load_format`、`model_loader_extra_config`、插件登记的 loader | `BaseModelLoader` 子类实例 | 本页各加载路径 | §2.4 |
 | Default 取数 → 名称映射 → 融合 TP 写入 | `DefaultModelLoader.load_weights()`；输入 checkpoint 文件、`secondary_weights`、读取策略、TP rank | 懒 `(name, tensor)` 迭代器 → 改名并挂 `shard_id` 的 tensor → 本地参数的 narrow+copy 结果与 loaded-name 集合 | 本页后处理；量化参数布局（[[17_vllm_quantization_analysis\|17]]）；并行层前向（[[18_vllm_distributed_inference_analysis\|18]]） | §2 阶段表、§2.5、§2.6 |
+| MoE expert/shard 写入 | `RoutedExperts.load_weights()` 或旧模型的 `make_expert_params_mapping()`；输入逐专家或 fused tensor、全局 expert id、EP map、`w1/w2/w3` | checkpoint 名映射到 `w13/w2`；非本地 expert 跳过，本地 expert 按 shard/TP 轴写入 parameter view | 量化参数创建与格式（17）；EP 拓扑与执行（18） | §2.6.1、§2.9 |
 | tied embedding 协调 | 配置阶段 `maybe_untie_word_embeddings()`；加载时 `AutoWeightsLoader` 别名去重；后处理首步 re-tie | 共享或独立的 embedding 与 `lm_head` 参数 | logits 计算（[[11_vllm_model_runner_v1_analysis\|11]]、[[12_vllm_model_runner_v2_analysis\|12]]） | §2.7 |
 | 后处理与完成 | loader 写完权重后 `BaseModelLoader.load_model()` 继续；输入 quant method、目标 device、tying 标记 | 运行格式参数；eval 模型 | runner 持有模型，接 KV 初始化、profile、warmup（08、10、11、12、[[19_vllm_compilation_cudagraph_analysis\|19]]） | §2.8、§1.5 |
 | 加载变体：EP 过滤、sharded state、IPC | EP：Default 内 MoE+EP+开关成立；sharded：`load_format` 为 sharded 且有预导出文件；IPC：`ipc_cache` 且 daemon 在线 | 过滤后的迭代器；预切 state dict 的整块写入；已处理 tensor 的注册或克隆；IPC 失败时回退 Default | 与主线相同的后处理与 runner；EP 分组（18） | §2.9–§2.11 与三平面对照图 |
@@ -96,7 +97,7 @@ flowchart TB
 | `initialize_model` | 已解析的 `VllmConfig`、HF `architectures`、并行组、prefix | 模型类、每层参数形状、PP 保留哪些层、哪些层登记静态目录 | 未初始化的 rank 本地模型（§2.1–§2.3、§4.1） |
 | 权重迭代 | checkpoint 文件列表、读取策略、`secondary_weights`、EP 专家集合 | 读哪些文件、用哪个迭代器、跳过哪些专家张量 | 懒 `(name, tensor)` 流进入模型 `load_weights()`（§2.5、§2.9） |
 | 名称映射 | checkpoint 名、`hf_to_vllm_mapper`、量化 scale 映射 | runtime 名、丢弃项、每个 tensor 的 `shard_id` | 改名后的 tensor 流交给 `AutoWeightsLoader` 递归（§2.5） |
-| 逐层写入 | 模块树、tensor 上的 `shard_id`、TP rank | 由哪个层接管、写入本地参数的哪一段 | narrow+copy 后的本地参数与 loaded-name 集合（§2.6、§2.7） |
+| 逐层写入 | 模块树、tensor 上的 `shard_id`、TP rank；MoE 另带全局 expert id 与 expert map | 由哪个层接管、写入本地参数的哪一段；MoE 先把全局 expert 映射成本地槽 | narrow+copy 后的本地参数与 loaded-name 集合（§2.6、§2.6.1、§2.7） |
 | 追踪 | loaded-name 集合、`named_parameters()`、quant method | 是否启用 tracking、哪些参数豁免、是否报漏载 | 通过则进入后处理，否则 `ValueError`（§2.8） |
 | 后处理 | 已写入参数、quant method、目标 device、tying 标记 | 有在线量化层时先 `finalize_layerwise_processing`；再 re-tie、逐层 `process_weights_after_loading`（repack、TP 状态重对齐）与 deferred 层初始化 | 运行格式参数（§2.7、§2.8） |
 | eval | 后处理后的模型 | 切到 eval 模式并返回 | runner 持有模型，接 LoRA 包装与 §1.5 的 KV 初始化 |
@@ -128,7 +129,7 @@ flowchart TB
 | `SupportsPP` | `make_empty_intermediate_tensors` 与接收 `intermediate_tensors` 的 `forward()` | 当前 stage 必须能接收或交出中间状态，构造也只保留所属层 |
 | `SupportsMultiModal` | `embed_multimodal()` 按数据项在 prompt 中出现的顺序返回 embedding，`embed_input_ids()` 合并文本与多模态 embedding；另有 placeholder 与处理器接缝 | 视觉塔、语言模型要各自带稳定前缀；数据处理与执行见 [[15_vllm_multimodal_execution_analysis|多模态执行]] |
 | `SupportsLoRA` | `supports_lora` 声明、`packed_modules_mapping`、`embedding_modules`、可选 `lora_skip_prefixes` | adapter 名称必须能找到可包装的基础层，见 §4.2 |
-| `SupportsQuant` | 构造时把 rename-only mapper 与 packed mapping 交给量化配置 | 保留原 projection 名，让逐层量化配置命中；数值算法归 [[17_vllm_quantization_analysis|量化派发]] |
+| `SupportsQuant` | 构造时把 rename-only mapper 与 packed mapping 交给量化配置 | 保留原 projection 名，让逐层量化配置命中；数值算法归 [[17_vllm_quantization_analysis|量化]] |
 
 Llama 和 Qwen2 都采用这些共同构造/加载接口并声明 LoRA、PP、量化支持，Llama 还提供输入 embedding 与 LM head 的 `embedding_modules` 名称表；它们是同一接口的不同实例，不必平铺所有模型结构。registry 的全架构 import/能力测试与初始化测试的代表子集也体现这一点；测试包含平台与依赖版本的 skip 条件，不能据此声称每个架构在每台设备都实跑通过。
 
@@ -158,7 +159,7 @@ Qwen2 用 `QKVParallelLinear` 代替独立 Q/K/V，用 `MergedColumnParallelLine
 | `tensorizer` | `TensorizerLoader` | 覆写 `load_model()`：vLLM 序列化模型在 meta 上构造后反序列化，其他 tensorizer 文件则构造后走 `load_weights()`；两条路径都不调用通用 `process_weights_after_loading()`，vLLM 序列化分支连 `.eval()` 也不调用；TP>1 时 URI 按 TP rank 格式化。本域暂无页面 |
 | `modelexpress` | `ModelExpressModelLoader` | 薄封装，`load_model()` 委托外部包的 `MxModelLoader`，外部实现未核验。本域暂无页面 |
 
-同一关切还有几条**兄弟选择轴**，不能由 `load_format` 一个字段推出：模型类由 `model_impl`、`convert` 决定（§2.1）；Default 内部，模型可用 `secondary_weights` 追加多个带自身 prefix 的来源，并以 `allow_patterns_overrides`、`fall_back_to_pt_during_load` 改变文件匹配；每层量化 method 决定参数类与 v1/v2 `weight_loader`（归 17）；已初始化模型上的在线替换走 layerwise reload 与 `checkpoint_weight_patch.py` 的 dense/sparse patch，同样复用模型 `load_weights()`，归 25。
+同一关切还有几条**兄弟选择轴**，不能由 `load_format` 一个字段推出：模型类由 `model_impl`、`convert` 决定（§2.1）；Default 内部，模型可用 `secondary_weights` 追加多个带自身 prefix 的来源，并以 `allow_patterns_overrides`、`fall_back_to_pt_during_load` 改变文件匹配；每层量化 method 决定参数类与 v1/v2 `weight_loader`，packed/scale 坐标规则归 [[17_vllm_quantization_analysis|量化 §5.1.1]]；**层类型轴**还让 `RoutedExperts.load_weights / weight_loader` 用 expert id 与 `w1/w2/w3` shard 把 MoE checkpoint 写进本地专家槽（§2.6.1）；已初始化模型上的在线替换走 layerwise reload 与 `checkpoint_weight_patch.py` 的 dense/sparse patch，同样复用模型 `load_weights()`，归 25。
 
 ### 2.5 名字被翻译，数据仍是原来的 tensor
 
@@ -204,7 +205,7 @@ flowchart TB
     class QS,KS,VS,QR,GS,US,GR acc1
 ```
 
-图中切片是视图选择，最后才向目标 parameter view 执行 `copy_`，不需要先分配全局融合矩阵。`shard_id` 是挂在 tensor 上的属性，要靠层自己的 `load_weights()` 取出：`AutoWeightsLoader` 递归到 `qkv_proj` 时发现 `QKVParallelLinear` 定义了 `load_weights()`，就把这组 tensor 整个交给它；它读 `loaded_weight.shard_id`、`validate_shard_id()`，再调 `param.weight_loader(param, w, shard_id)`。`MergedColumnParallelLinear.load_weights()` 相同；`RowParallelLinear` 没有自己的 `load_weights()`，由 `_load_param()` 以不带 `shard_id` 的两参数形式调用。非量化权重由 `UnquantizedLinearMethod` 创建 `ModelWeightParameter`，该 method 在 `WEIGHT_LOADER_V2_SUPPORTED` 中，所以层安装的是 v2 loader：`QKVParallelLinear.weight_loader_v2` 按 `shard_id` 算本地 offset/size，`_ColumnvLLMParameter.load_qkv_weight` 同时 narrow 目标段和 checkpoint 中当前 rank 的行，断言形状后复制；Merged 走 `load_merged_column_weight`。旧式 v1 loader 仍在，用参数上的维度属性做同类选择。Qwen2 前向按 `q_size, kv_size, kv_size` 拆分，MLP 对融合输出做 `SiluAndMul`（前半 SiLU 乘后半）再进 down projection——融合参数保留的是投影边界，不是消除投影身份。名称末尾相同不表示所有量化参数布局相同，packed bit/scale 布局归 [[17_vllm_quantization_analysis|量化页]]。
+图中切片是视图选择，最后才向目标 parameter view 执行 `copy_`，不需要先分配全局融合矩阵。`shard_id` 是挂在 tensor 上的属性，要靠层自己的 `load_weights()` 取出：`AutoWeightsLoader` 递归到 `qkv_proj` 时发现 `QKVParallelLinear` 定义了 `load_weights()`，就把这组 tensor 整个交给它；它读 `loaded_weight.shard_id`、`validate_shard_id()`，再调 `param.weight_loader(param, w, shard_id)`。`MergedColumnParallelLinear.load_weights()` 相同；`RowParallelLinear` 没有自己的 `load_weights()`，由 `_load_param()` 以不带 `shard_id` 的两参数形式调用。非量化权重由 `UnquantizedLinearMethod` 创建 `ModelWeightParameter`，该 method 在 `WEIGHT_LOADER_V2_SUPPORTED` 中，所以层安装的是 v2 loader：`QKVParallelLinear.weight_loader_v2` 按 `shard_id` 算本地 offset/size，`_ColumnvLLMParameter.load_qkv_weight` 同时 narrow 目标段和 checkpoint 中当前 rank 的行，断言形状后复制；Merged 走 `load_merged_column_weight`。旧式 v1 loader 仍在，用参数上的维度属性做同类选择。Qwen2 前向按 `q_size, kv_size, kv_size` 拆分，MLP 对融合输出做 `SiluAndMul`（前半 SiLU 乘后半）再进 down projection——融合参数保留的是投影边界，不是消除投影身份。名称末尾相同不表示所有量化参数布局相同，packed bit/scale 布局归 [[17_vllm_quantization_analysis|量化]]。
 
 两个变体守同一规则：
 
@@ -212,6 +213,36 @@ flowchart TB
 - **磁盘上已经融合**：`shard_id=None` 时，QKV loader 先按全局 Q/K/V 边界切开 checkpoint，再递归到上面的独立 shard 路径；Merged loader 同样按 `output_sizes` 拆 constituent，仍不是对整块融合矩阵直接均分。Merged 还接受连续 tuple shard id，越界或非连续组合被拒；QKV 只接受 `q/k/v/None`。
 
 Column parallel 参数沿输出维切，前向保留本地输出，只有 `gather_output=True` 才 all-gather。Row parallel 沿输入维切：本例 down 的全局 8×12 变成本地 8×6，每个 rank 对自己的 6 维激活算部分输出，默认 all-reduce 得到完整输出，bias 只在 rank 0 加一次。`input_is_parallel=False` 时层先切输入；`reduce_results=False` 又带未跳过的 bias 会被构造器拒绝。这里解释参数布局与消费它的运算如何对应，分组构造与 collective 顺序接续 [[18_vllm_distributed_inference_analysis|分布式推理]]。
+
+#### 2.6.1 MoE 专家写入：名字中的全局专家先映射成本地槽
+
+Dense QKV 的 `shard_id=q/k/v` 指向融合投影中的段；MoE 的名称还多出两个坐标：checkpoint 名中的**全局逻辑 expert id**，以及 gate/down/up 对应的 `w1/w2/w3` shard。现代 `RoutedExperts.load_weights()` 先由 `get_expert_mapping(include_fused=True)` 建表；仍手写模型级 loader 的兼容路径使用静态 `make_expert_params_mapping()`。两者最终都把 checkpoint 名翻成 runtime 参数名、`expert_id` 与 shard id，再调用构造期安装到参数上的 `RoutedExperts.weight_loader`。
+
+```text
+checkpoint (name, tensor)
+`-- RoutedExperts.load_weights
+    +-- get_expert_mapping / build_expert_params_mapping
+    |   `-- (runtime param, checkpoint fragment, global physical expert, w1|w2|w3)
+    +-- 匹配单专家、每专家 fused w13，或三维全专家 fused tensor
+    `-- param.weight_loader = RoutedExperts.weight_loader
+        +-- _map_global_expert_id_to_local_expert_id
+        |   `-- ExpertMapManager.map_global_to_local
+        +-- local id == -1 --> 本 rank 跳过并返回 false
+        `-- 按 w1/w3 或 w2 的轴规则 narrow，再 copy_ 到本地 expert slot
+```
+
+沿 §2.9 的 8 专家、EP=2、linear placement 例子，rank 1 拥有全局专家 `{4,5,6,7}`，映射为本地槽 `{0,1,2,3}`。设每个专家 hidden size 为 $H$、当前 rank 的 intermediate width 为 $I_r$：
+
+| 到达的 checkpoint 权重 | mapping 产物 | rank 1 的实际目标 |
+|---|---|---|
+| `experts.5.gate_proj.weight`，形状 $[I,H]$ | runtime `w13_weight`，global expert 5，`shard_id="w1"` | `w13_weight[1, 0:I_r, :]`；若 TP 还切 intermediate，则先取当前 TP 的 $I_r$ 行 |
+| `experts.5.up_proj.weight` | 同一 `w13_weight`，global expert 5，`shard_id="w3"` | `w13_weight[1, I_r:2I_r, :]` |
+| `experts.5.down_proj.weight`，形状 $[H,I]$ | runtime `w2_weight`，global expert 5，`shard_id="w2"` | `w2_weight[1, :, 0:I_r]` 对应的本地 row-parallel slice |
+| `experts.2.gate_proj.weight` | global expert 2 映射为 `-1` | 非本地专家，`weight_loader(..., return_success=True)` 返回 false，不写任何槽 |
+
+这里 `gate_proj→w1`、`down_proj→w2`、`up_proj→w3` 是 checkpoint 命名与 fused runtime 布局的合同，不是 kernel 选择。`RoutedExperts.weight_loader` 还处理 per-tensor/group/block scale、bias、`g_idx`、`weight_shape` 与不同量化轴；这些参数的**创建与数值格式**归 [[17_vllm_quantization_analysis|量化]]，本页拥有的是名称、expert/shard 坐标到目标 parameter view 的写入。三维 fused checkpoint 会先按维度拆成 expert/shard 再复用相同 loader；EPLB redundant physical experts 通过 `build_expert_params_mapping` 的 physical-to-logical 表决定 checkpoint 名，运行时仍由当前 `ExpertMapManager` 映射到本地槽。`use_global_sf` 的 input scale 是少数例外：即使 expert 非本地，也可按 global id 写共享 scale。
+
+这一链和 §2.9 的**读取前过滤**也不能合并：过滤可在取 tensor 前省 I/O，但只识别逐专家命名和特定文件策略；`RoutedExperts.weight_loader` 是 tensor 已经到达后的最终正确性门，覆盖三维 fused 输入并再次跳过非本地 expert。前者未启用不妨碍后者正确写入，后者成功也不证明 checkpoint 全部专家都齐全。
 
 ### 2.7 共享 embedding：同一对象只写一次，checkpoint 说了算
 
@@ -221,14 +252,14 @@ Column parallel 参数沿输出维切，前向保留本地输出，只有 `gathe
 
 ### 2.8 什么时候才算加载完成
 
-`BaseModelLoader.load_model()` 在目标 dtype/device scope 内依次完成：构造 → 具体 loader 写权重 → 可适用的 loaded-name 检查 → 在线量化的 layerwise finalize → `process_weights_after_loading()` → `model.eval()` 返回。`LoadConfig.device` 可覆盖初始加载设备。`download_model()` 只准备文件，`initialize_model()` 只建模型，`load_weights()` 返回也不等于运行格式已就绪。
+`BaseModelLoader.load_model()` 的 **dtype scope** 覆盖构造、具体 loader 写权重、可适用的 loaded-name 检查、在线量化 finalize 与 `process_weights_after_loading()`；其中 **target-device context 只包住 `initialize_model()` 构造**。离开 dtype scope 后才调用 `model.eval()` 返回。`LoadConfig.device` 可覆盖初始加载设备。`download_model()` 只准备文件，`initialize_model()` 只建模型，`load_weights()` 返回也不等于运行格式已就绪。
 
 后处理次序本身是模型库的接缝：先按 §2.7 re-tie，再逐层运行 `QuantizeMethodBase.process_weights_after_loading()`；若它换入新 Parameter，随即 `update_param_tp_status()` 重新对齐 TP rank/size，避免 `disable_tp` 层后续 refit 用错 offset，每层之后还在显存压力下释放 allocator 缓存。随后处理 deferred attention 与多模态 encoder、`HpcModule`，最后调用可选的模型级 hook。CPU offload 参数处理时临时迁到目标设备，`device_loading_context` 的 `finally` 再恢复 CPU/UVA 状态。具体量化与 kernel-format 转换归量化页；在线量化可能边加载边量化，不能概括为“所有量化都在全量读取之后发生”。
 
 **loaded-name 集合不等于完整数值证明。** Default loader 默认只对“非量化且模型返回 loaded-name 集合”启用 `track_weights_loading()`，extra config 的 `enable_weights_track` 可显式覆盖；它比较 `named_parameters()` 与 loaded set，但实际豁免范围比“量化例外”更宽。
 
 > [!contradiction] 纠正旧稿的漏载保证
-> 旧稿把默认非量化路径写成“任何完全未触达的参数都会报错”。当前 `DefaultModelLoader.track_weights_loading()` 会对带 `uses_meta_device` 或 `process_weights_after_loading` 方法的 quant method，把该模块参数补入 loaded set。**`UnquantizedLinearMethod` 也有这个后处理方法，普通 linear 参数因此也可能被豁免。** 所以这里只能保证未被豁免的缺失参数会报 `Following weights were not initialized`，不能保证每个普通权重都实际到达。
+> 旧稿把默认非量化路径写成“任何完全未触达的参数都会报错”。当前 `DefaultModelLoader.track_weights_loading()` 会对带 `uses_meta_device` 或 `process_weights_after_loading` 方法的 quant method，把该模块参数补入 loaded set。后一个方法已定义在 `QuantizeMethodBase`，所以**所有挂有 `quant_method` 的模块都会被必然豁免**，包括全部 `LinearBase`、`VocabParallelEmbedding` 与 `ParallelLMHead`；`UnquantizedLinearMethod` 还自行覆写了该 hook，而不是继承一个无行为特例。tracking 实际能抓住的是没有 quant method 的参数（例如 norm）及其他未豁免对象。因此这里只能保证未被豁免的缺失参数会报 `Following weights were not initialized`，不能保证普通 linear 权重实际到达。
 
 即便没有这项豁免，Q、K、V 也都回报同一个 `qkv_proj.weight`。**分析推断**：只收到 Q 就可能让这个名字进入集合，所以 name-level gate 无法证明 K/V 到齐，也检测不到重复写入；到达 tensor 的 shape/shard-id 合法，与 checkpoint 完整，是两个问题。完整性于是落到模型专项检查，而且粒度不同：DeepSeek MTP（含 DeepSeek V4）、Bailing、MiniMax M3 的 MTP `load_weights()` **按层**检查，某个期望的 MTP 层一个权重都没收到就抛 `ValueError`，其中只有 DeepSeek 的消息提示 checkpoint 可能在量化时丢了 MTP 层；Step3p5 **按参数**检查，期望参数集合（扣除可选的单元素、不需梯度的 `k_scale`/`v_scale`/`q_scale`/`prob_scale`）与 loaded 集合不等即抛 `RuntimeError`；Inkling 也按参数检查 `model.layers.`、`model.chain_norm.` 下的缺失项并抛 `ValueError`。这项检查由 `mtp_validation.py` 的 ContextVar 控制、默认开启；NCCL 与 IPC 权重传输引擎接收更新时，用 `disable_mtp_completeness_check()` 在该次加载的 scope 内关闭它（**分析推断**：一次在线更新不必包含全部 MTP 层权重）。结束标志因此是 loader 成功返回经过后处理的 eval 模型，而不是“某个 key 已出现”或“内存已分配”；这也不证明首次前向、attention backend 或 GPU 数值回归已经通过。
 
@@ -380,6 +411,7 @@ LRUCacheLoRAModelManager --> Qwen2ForCausalLM : wrap matched layers
 | `ShardedStateLoader` / `IpcModelLoader` | 用预切的运行时 state dict 或 daemon 的已处理 tensor 替代原始 checkpoint | 名称翻译与 TP 切片（输入已按当前 rank 布局） |
 | 模型 `load_weights` + `AutoWeightsLoader` / `WeightsMapper` | 递归分派、名称改写、挂 `shard_id`、tied 去重 | 物理切片与文件 IO |
 | `QKVParallelLinear` / `MergedColumnParallelLinear` / `RowParallelLinear` 与 `ModelWeightParameter` | fused 层以自己的 `load_weights()` 读出 tensor 上的 `shard_id`；按 `shard_id` 与 TP rank 算目标段并 narrow+copy；前向按相同边界拆分与规约 | 选择模型类；建立 TP 组 |
+| `RoutedExperts` / `ExpertMapManager` | 把 expert checkpoint 名映射到 `w13/w2` 与 `w1/w2/w3`；把 global expert 映射为本地槽并执行专用轴切片/copy | 选择 MoE kernel；拥有 EP group 或运行时 token 路由 |
 | `LRUCacheWorkerLoRAManager` / `LRUCacheLoRAModelManager`（runner 实际构造，继承 `WorkerLoRAManager` / `LoRAModelManager`） | adapter 读入与校验、层包装、LRU 淘汰、设备 slot 激活 | 当步 token 到 adapter 的 batch 映射 |
 
 ### 3.2 调用树：Default 路径从 runner 到返回 eval 模型
@@ -389,7 +421,7 @@ runner 之前的 executor/worker 调用与之后的 KV 初始化见 §1.5。缩�
 ```text
 GPUModelRunner.load_model                     [MRV1 与 MRV2 各一份；load_dummy_weights 时改为 dummy]
 +-- get_model_loader                          [查 _LOAD_FORMAT_TO_MODEL_LOADER；构造 Default 时校验 extra config]
-+-- BaseModelLoader.load_model                [set_default_torch_dtype 与目标 device scope]
++-- BaseModelLoader.load_model                [dtype scope；target device 只包 initialize_model]
 |   +-- initialize_model
 |   |   +-- get_model_architecture            [进程内缓存]
 |   |   |   `-- _get_model_architecture
@@ -415,6 +447,10 @@ GPUModelRunner.load_model                     [MRV1 与 MRV2 各一份；load_du
 |   |   |                   |   `-- param.weight_loader = QKVParallelLinear.weight_loader_v2
 |   |   |                   |       `-- _ColumnvLLMParameter.load_qkv_weight -> narrow + copy_
 |   |   |                   +-- MergedColumnParallelLinear.load_weights  [同上，shard_id 为 0/1]
+|   |   |                   +-- [MoE 层] RoutedExperts.load_weights
+|   |   |                   |   +-- get_expert_mapping -> build_expert_params_mapping
+|   |   |                   |   `-- param.weight_loader = RoutedExperts.weight_loader
+|   |   |                   |       `-- global expert -> local slot；非本地返回 false；按 w1/w2/w3 narrow + copy_
 |   |   |                   `-- [层无 load_weights，如 RowParallelLinear] _load_param
 |   |   |                       `-- RowParallelLinear.weight_loader_v2 -> RowvLLMParameter.load_row_parallel_weight
 |   |   `-- [tracking 启用] track_weights_loading
@@ -423,7 +459,7 @@ GPUModelRunner.load_model                     [MRV1 与 MRV2 各一份；load_du
 |   |   +-- maybe_retie_word_embeddings
 |   |   +-- 各层 quant_method.process_weights_after_loading -> update_param_tp_status
 |   |   `-- deferred attention / HpcModule / 模型级 hook
-|   `-- model.eval()                           -> 返回可执行模型
+|   `-- model.eval()                           [离开 dtype scope 后] -> 返回可执行模型
 `-- [配置了 LoRA] LoRAModelRunnerMixin.load_lora_model     [总是构造 LRUCacheWorkerLoRAManager]
     `-- LRUCacheWorkerLoRAManager.create_lora_manager
         `-- create_lora_manager(lora_manager_cls=LRUCacheLoRAModelManager) -> LoRAModelManager._create_lora_modules
@@ -440,8 +476,8 @@ sharded state 与 IPC 在 `BaseModelLoader.load_model` 这一层分叉：前者�
 3. **统一构造与模型接口**：`vllm/model_executor/model_loader/utils.py::initialize_model`、`configure_quant_config`；`vllm/model_executor/models/qwen2.py::Qwen2ForCausalLM`、`Qwen2Model`、`Qwen2Attention.forward`、`Qwen2MLP.forward`；`vllm/model_executor/models/llama.py::LlamaForCausalLM`；`vllm/model_executor/models/utils.py::make_layers`、`PPMissingLayer`、`StageMissingLayer`；`vllm/model_executor/models/interfaces.py::SupportsPP`、`SupportsMultiModal`、`SupportsQuant`、`SupportsLoRA`、`supports_lora`。设计对照：`docs/design/arch_overview.md` 的 Extensibility、Uniformity 与 Sharding and Quantization at Initialization，`docs/contributing/model/basic.md` 的 Initialization Code。验证：`tests/models/test_initialization.py::can_initialize`。
 4. **Default 取数与 EP 过滤**：`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader.__init__`、`_prepare_weights`、`_get_weights_iterator`、`get_all_weights`、`_init_ep_weight_filter`、`load_weights`、`track_weights_loading`；`vllm/model_executor/model_loader/weight_utils.py::safetensors_weights_iterator`、`_prefetch_all_checkpoints`、`_prefetch_checkpoint`；`vllm/model_executor/model_loader/ep_weight_filter.py::parse_expert_id`、`compute_local_expert_ids`、`should_skip_weight`。验证：`tests/model_executor/model_loader/test_ep_weight_filter.py::TestComputeLocalExpertIds`、`TestShouldSkipWeight`。
 5. **名称、递归与共享参数**：`vllm/model_executor/models/utils.py::WeightsMapper`、`WeightsMapper.get_rename_mapper`、`AutoWeightsLoader.load_weights`、`AutoWeightsLoader._load_module`、`AutoWeightsLoader._load_param`、`AutoWeightsLoader._check_skipped_aliases`、`_get_tied_embedding_params`。验证：`tests/models/test_utils.py::test_module_skip_tied_weights`、`test_module_skip_tied_weights_without_canonical`、`test_module_load_shared_params_that_are_not_tied_embeddings`、`test_get_rename_mapper_keeps_only_renames`；`tests/models/transformers/fusers/test_linear.py::test_weight_mappings_are_scoped_to_fused_prefixes`（验证名字与 shard 标签，不是本页教学尺寸的 GPU 数值测试）。
-6. **融合与物理切片**：`vllm/model_executor/layers/linear.py::UnquantizedLinearMethod`、`ColumnParallelLinear`、`MergedColumnParallelLinear.validate_shard_id`、`MergedColumnParallelLinear.weight_loader_v2`、`MergedColumnParallelLinear._load_fused_module_from_checkpoint`、`MergedColumnParallelLinear.load_weights`、`QKVParallelLinear.load_weights`、`QKVParallelLinear.weight_loader_v2`、`QKVParallelLinear._load_fused_module_from_checkpoint`、`RowParallelLinear`、`RowParallelLinear.weight_loader_v2`、`WEIGHT_LOADER_V2_SUPPORTED`；`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight`、`_ColumnvLLMParameter.load_merged_column_weight`、`RowvLLMParameter.load_row_parallel_weight`、`ModelWeightParameter`；`vllm/distributed/utils.py::divide`；`vllm/model_executor/layers/activation.py::SiluAndMul.forward_native`。
-7. **完成、tying 与完整性**：`vllm/model_executor/model_loader/base_loader.py::BaseModelLoader.load_model`；`vllm/model_executor/model_loader/utils.py::process_weights_after_loading`、`device_loading_context`；`vllm/config/vllm.py::VllmConfig.__post_init__`；`vllm/config/model.py::ModelConfig.maybe_untie_word_embeddings`；`vllm/model_executor/model_loader/weight_tying.py::maybe_retie_word_embeddings`；`vllm/model_executor/model_loader/mtp_validation.py::is_mtp_completeness_check_enabled`、`disable_mtp_completeness_check`；`vllm/model_executor/models/deepseek_mtp.py::DeepSeekMTP.load_weights`、`vllm/models/deepseek_v4/nvidia/mtp.py::DeepSeekV4MTP.load_weights`、`vllm/model_executor/models/bailing_moe_mtp.py::BailingMoeV25MTPModel.load_weights`、`vllm/models/minimax_m3/nvidia/mtp.py::MiniMaxM3MTP.load_weights`（按层）；`vllm/model_executor/models/step3p5_mtp.py::Step3p5MTP.load_weights`、`vllm/models/inkling/nvidia/mtp.py::_load_inkling_mtp_weights`（按参数）；`vllm/distributed/weight_transfer/nccl_engine.py::NCCLWeightTransferEngine.receive_weights`、`vllm/distributed/weight_transfer/ipc_engine.py::IPCWeightTransferEngine.receive_weights`。验证：`tests/model_executor/model_loader/test_weight_tying.py::test_retie_only_when_identical`、`test_quantized_lm_head_is_left_alone`、`test_no_retie_without_checkpoint_override`；`tests/model_executor/model_loader/test_mtp_validation.py::test_disable_mtp_completeness_check_is_scoped`。
+6. **融合、MoE expert 映射与物理切片**：`vllm/model_executor/layers/linear.py::UnquantizedLinearMethod`、`ColumnParallelLinear`、`MergedColumnParallelLinear.validate_shard_id`、`MergedColumnParallelLinear.weight_loader_v2`、`MergedColumnParallelLinear._load_fused_module_from_checkpoint`、`MergedColumnParallelLinear.load_weights`、`QKVParallelLinear.load_weights`、`QKVParallelLinear.weight_loader_v2`、`QKVParallelLinear._load_fused_module_from_checkpoint`、`RowParallelLinear`、`RowParallelLinear.weight_loader_v2`、`WEIGHT_LOADER_V2_SUPPORTED`；`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight`、`_ColumnvLLMParameter.load_merged_column_weight`、`RowvLLMParameter.load_row_parallel_weight`、`ModelWeightParameter`；`vllm/model_executor/layers/fused_moe/routed_experts.py::RoutedExperts.load_weights / RoutedExperts.get_expert_mapping / RoutedExperts.make_expert_params_mapping / RoutedExperts.build_expert_params_mapping / RoutedExperts.weight_loader / RoutedExperts._map_global_expert_id_to_local_expert_id`；`vllm/model_executor/layers/fused_moe/expert_map_manager.py::determine_expert_map / ExpertMapManager.map_global_to_local`；`vllm/distributed/utils.py::divide`；`vllm/model_executor/layers/activation.py::SiluAndMul.forward_native`。
+7. **完成、tying 与完整性**：`vllm/model_executor/model_loader/base_loader.py::BaseModelLoader.load_model`；`vllm/model_executor/model_loader/utils.py::process_weights_after_loading`、`device_loading_context`；`vllm/model_executor/layers/quantization/base_config.py::QuantizeMethodBase.process_weights_after_loading`；`vllm/config/vllm.py::VllmConfig.__post_init__`；`vllm/config/model.py::ModelConfig.maybe_untie_word_embeddings`；`vllm/model_executor/model_loader/weight_tying.py::maybe_retie_word_embeddings`；`vllm/model_executor/model_loader/mtp_validation.py::is_mtp_completeness_check_enabled`、`disable_mtp_completeness_check`；`vllm/model_executor/models/deepseek_mtp.py::DeepSeekMTP.load_weights`、`vllm/models/deepseek_v4/nvidia/mtp.py::DeepSeekV4MTP.load_weights`、`vllm/model_executor/models/bailing_moe_mtp.py::BailingMoeV25MTPModel.load_weights`、`vllm/models/minimax_m3/nvidia/mtp.py::MiniMaxM3MTP.load_weights`（按层）；`vllm/model_executor/models/step3p5_mtp.py::Step3p5MTP.load_weights`、`vllm/models/inkling/nvidia/mtp.py::_load_inkling_mtp_weights`（按参数）；`vllm/distributed/weight_transfer/nccl_engine.py::NCCLWeightTransferEngine.receive_weights`、`vllm/distributed/weight_transfer/ipc_engine.py::IPCWeightTransferEngine.receive_weights`。验证：`tests/model_executor/model_loader/test_weight_tying.py::test_retie_only_when_identical`、`test_quantized_lm_head_is_left_alone`、`test_no_retie_without_checkpoint_override`；`tests/model_executor/model_loader/test_mtp_validation.py::test_disable_mtp_completeness_check_is_scoped`。
 8. **sharded state 与其余格式**：`vllm/model_executor/model_loader/sharded_state_loader.py::ShardedStateLoader.load_weights`、`_filter_subtensors`、`save_model`；`vllm/v1/worker/gpu_worker.py::Worker.save_sharded_state`；`examples/features/sharded_state/save_sharded_state_offline.py`；`vllm/model_executor/model_loader/dummy_loader.py::DummyModelLoader.load_weights`、`runai_streamer_loader.py::RunaiModelStreamerLoader.__init__`、`tensorizer_loader.py::TensorizerLoader.load_model`、`modelexpress_loader.py::ModelExpressModelLoader.load_model`。验证：`tests/model_executor/model_loader/test_sharded_state_loader.py::test_sharded_state_loader`、`test_filter_subtensors`。
 9. **IPC 与生命周期**：`vllm/model_executor/model_loader/weight_cache/ipc_loader.py::IpcModelLoader.__init__`、`load_model`、`_check_supported`、`_build_model`、`_apply_entries`、`_request_state`、`_send_release`、`_materialize_remaining_meta_tensors`；`vllm/model_executor/model_loader/weight_cache/daemon.py::WeightCacheDaemon.load_model`、`export_entries`、`WeightCacheDaemon._handle_get_state`、`WeightCacheDaemon._handle_release`、`_reject_unsupported_parallelism`；`vllm/model_executor/model_loader/weight_cache/protocol.py::WeightCacheKey`、`hash_checkpoint`、`TensorEntry`、`check_ipc_quant_support`、`verify_socket_owner`、`send_msg`；`vllm/model_executor/utils.py::weights_already_processed`。验证：`tests/model_executor/model_loader/test_weight_cache.py::test_ipc_cache_cold_start_and_warm_restart`。
 10. **构造产物的下游消费者**：`vllm/model_executor/layers/attention/attention.py::Attention.__init__`；`vllm/config/vllm.py::get_layers_from_vllm_config`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.get_kv_cache_spec`、`GPUModelRunner.initialize_kv_cache`、`GPUModelRunner.initialize_kv_cache_tensors`（MRV1）；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.get_kv_cache_spec`、`GPUModelRunner.initialize_kv_cache`（MRV2）；`vllm/v1/worker/gpu/attn_utils.py::get_kv_cache_spec`、`init_kv_cache`；`vllm/v1/worker/utils.py::bind_kv_cache`；`vllm/forward_context.py::ForwardContext`、`set_forward_context`。验证：`tests/v1/worker/test_utils.py::test_bind_kv_cache`、`test_bind_kv_cache_non_attention`、`test_bind_kv_cache_draft_model`；`Duplicate layer name` 守卫没有测试覆盖。
@@ -455,7 +491,7 @@ sharded state 与 IPC 在 `BaseModelLoader.load_model` 这一层分叉：前者�
 
 构造还留下一份按 prefix 索引的静态目录。它在 §1.5 的 `Worker.load_model()` 之内、由 `initialize_model()` 递归构造各层时写入，loader 返回时已经完整：部分层在构造器里把自己登记进 `vllm_config.compilation_config.static_forward_context[prefix]`，`Attention` 遇到重复 prefix 直接抛 `Duplicate layer name`；MLA、DeepSeek V4 的 indexer/compressor cache 与 MoE runner 也写同一目录，所以不能把它缩写成“KV 层列表”。若两个子模块错误复用 prefix，后续按名字查询、规划或绑定可能指向错误对象。这份目录保存**构造期确定的模块身份与能力**；`set_forward_context()` 建立的动态 `ForwardContext` 把它作为 `no_compile_layers` 引用，另外携带本步 attention metadata、slot mapping、DP metadata 与 CUDA Graph 运行模式——前者寿命跟随配置和模型，后者围绕一次 forward。
 
-这份目录在 §1.5 的启动链上被消费两次，两代 runner 相同：第一步 `get_kv_cache_specs()` 经 `Worker.get_kv_cache_spec()` 进入 runner 的 `get_kv_cache_spec()`，由 `get_layers_from_vllm_config()` 按类型从目录筛出本 rank 的真实层（`PPMissingLayer` 不会凭空产生缓存能力）并逐层询问 spec，MRV2 还允许已选 backend 的 `customize_spec()` 调整；planner 再按这些 spec 与 profile 得到的字节分组并计算容量；第三步 `initialize_from_config()` 进入 runner 的 `initialize_kv_cache()`，申请 backing（MRV2 在 `init_kv_cache()` 中经 `allocate_kv_cache()`）后由 `bind_kv_cache()` 按层名把各层 view 交给目录中的模块（MRV1 在 `initialize_kv_cache_tensors()` 中调用它）；此后每步 forward 才另外设置动态 `ForwardContext`。因此模型“权重加载成功”仍可能在 KV 规划时报层缺失、重复名或 spec 不兼容：两套合同共享 prefix 语义，验证的却是不同事实。所有权按层次划分：本页拥有 prefix → 静态目录 → `get_layers_from_vllm_config` → `bind_kv_cache` 这条模块身份链；spec、布局与 view 分配归 [[10_vllm_attention_backends_analysis|Attention Backend]]，该页使用独立的 per-rank 教学形状（4 个 Q head、2 个 KV head、head size 64），与本页 Qwen2 小配置无关；容量规划归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
+这份目录在 §1.5 的启动链上被消费两次，两代 runner 相同：第一步 `get_kv_cache_specs()` 经 `Worker.get_kv_cache_spec()` 进入 runner 的 `get_kv_cache_spec()`，由 `get_layers_from_vllm_config()` 按类型从目录筛出本 rank 的真实层（`PPMissingLayer` 不会凭空产生缓存能力）并逐层询问 spec，**MRV1 与 MRV2 都**允许已选 backend 的 `customize_spec()` 调整；planner 再按这些 spec 与 profile 得到的字节分组并计算容量；第三步 `initialize_from_config()` 进入 runner 的 `initialize_kv_cache()`，申请 backing（MRV2 在 `init_kv_cache()` 中经 `allocate_kv_cache()`）后由 `bind_kv_cache()` 按层名把各层 view 交给目录中的模块（MRV1 在 `initialize_kv_cache_tensors()` 中调用它）；此后每步 forward 才另外设置动态 `ForwardContext`。因此模型“权重加载成功”仍可能在 KV 规划时报层缺失、重复名或 spec 不兼容：两套合同共享 prefix 语义，验证的却是不同事实。所有权按层次划分：本页拥有 prefix → 静态目录 → `get_layers_from_vllm_config` 的模块身份发现；spec、布局、view 分配与 `bind_kv_cache` 归 [[10_vllm_attention_backends_analysis|Attention Backend]]，该页使用独立的 per-rank 教学形状（4 个 Q head、2 个 KV head、head size 64），与本页 Qwen2 小配置无关；容量规划归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。
 
 ### 4.2 LoRA：包装已构造的基础层
 
@@ -554,7 +590,7 @@ LoRA 产物的下游有两段。启动链上，wrapper 在 profile 与 warmup �
 - [[02_vllm_architecture_overview_analysis|vLLM 架构概览]] — 将模型库放回配置、Engine、Executor 与设备执行的整体关系。
 - [[10_vllm_attention_backends_analysis|Attention Backend]] — 接续模型层构造出的 attention 对象如何选择实现、声明 spec 并消费 metadata/KV layout。
 - [[12_vllm_model_runner_v2_analysis|Model Runner V2]] — 解释模型返回之后的 batch、buffer、持久设备状态与当步 LoRA mapping。
-- [[17_vllm_quantization_analysis|量化派发]] — 深入量化参数、scale、后处理和 kernel 格式，承接本页的加载接缝。
+- [[17_vllm_quantization_analysis|量化]] — 深入量化参数、scale、后处理和 kernel 格式，承接本页的加载接缝。
 - [[18_vllm_distributed_inference_analysis|分布式推理]] — 解释本页并行层与 EP 过滤依赖的 TP/PP/EP 分组与通信执行。
 - [[24_vllm_extension_plugin_system_analysis|插件与扩展边界]] — 解释外部 model/loader 注册之前的插件发现与初始化。
 - [[25_vllm_weight_transfer_online_update_analysis|在线权重更新]] — 解释已初始化模型上的 layerwise reload、dense/sparse patch 与替换事务。

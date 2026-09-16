@@ -234,6 +234,10 @@ Inductor 内部五阶段一览(原 overview 页要点,`compile_fx` 编排入口�
 - **捕获与编译器开发**:eager 地基(按需)→ §1 全部 → §3 全部 → §4 段 0-1 → §6 前三篇。
 - **线上性能与稳定性**:§1(quickstart+guards+dynamic shapes)→ §4(内存/scheduler/codegen)→
   §5 全部 → §6 全部 → §7 全部。
+- **看这套机制在推理引擎里落成什么样**:读完 §4 与 §7 后转
+  [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]](compile range、capture 阶梯与运行期 dispatch)→
+  [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]](自定义 post-grad pass 与 IR lowering)→
+  [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]](pass 改写后的实现端点)。这三页是 PyTorch 侧机制的下游消费者,不重复本课已讲的编译栈内部。
 
 ---
 

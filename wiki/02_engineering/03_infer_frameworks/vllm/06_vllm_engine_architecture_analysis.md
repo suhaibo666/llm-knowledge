@@ -7,7 +7,7 @@ title: "vLLM Engine 架构：一次请求怎样提交、执行并完成"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从一个已经 render 的请求出发，追踪前端登记、Client 传输、Core 调度与 Executor 返回。再解释 batch queue 怎样把计划与 future 配对，以及抢占、完成和内存释放为何需要不同的判断。
 > **适用范围**：拥有 Engine 内对象、可选进程边界与执行协作；调度预算和 KV 分配算法归 Scheduler/KV 专题，设备异步与 host buffer 细节归两代 Model Runner，启动与恢复拓扑归 Serving 专题。
-> **最近更新**：2026-09-08。补充普通请求与两批在途示例，核验 stale output、延迟回收、传输缓冲和 DP 同步边界。
+> **最近更新**：2026-09-16。补齐异步调度解析、Scheduler 类、并发容量与 step 入口的选择链，区分同步教学分支与默认 R 的队列调用。
 
 ## 1. 已经拿到 token 输入，为什么还不能直接等一个结果？
 
@@ -19,7 +19,9 @@ title: "vLLM Engine 架构：一次请求怎样提交、执行并完成"
 
 本页会用“提交”“完成”加上具体对象说明含义。尤其不能把一个 future 已返回、一个 request 已结束、一个 buffer 可以重写当成同一个事件。
 
-## 2. 先跟随 R 走完一次普通 core step
+## 2. 先跟随 R 走完一次同步 core step
+
+**这条 scoping 只约束 §2.2 那一格**：`async_scheduling=False`、PP=1、未自定义 `scheduler_cls`，因此使用 `Scheduler` 与 `EngineCore.step`；这是便于逐步观察的同步教学分支，**不是当前普通生成模型的缺省执行分支**。§2.1（前端登记接收者、MP ADD 消息）与 §2.3（输出线程与前端可见完成）在同步与异步两条分支下**是同一套流程**，不受这条假设限制。兼容配置下保留 `async_scheduling=None`、使用 MRV2 且 PP=1，会解析成 `AsyncScheduler`、容量 2 的 `step_with_batch_queue`。完整选择规则由本页 §4.1 统一解释，同一个 R 的默认调用重放见 §4.2 第一张表。这里的同步/异步指调度方式，与前端选择 `LLMEngine` 或 `AsyncLLM` 是不同的轴。
 
 ### 2.1 前端登记的是接收者，Core 登记的是等待执行的请求
 
@@ -35,13 +37,15 @@ MP 路径中，Client 把 `EngineCoreRequest` 编码为 ADD 消息；异步 Clie
 
 ### 2.2 schedule 给出计划，然后才执行并归并结果
 
-`EngineCore.step` 先检查 Scheduler 是否还有工作，再做以下顺序：
+在上述容量为 1 的同步分支中，`EngineCore.step` 先检查 Scheduler 是否还有工作，再做以下顺序：
 
 1. `Scheduler.schedule` 选择本步请求，分配所需 KV slots，生成 `SchedulerOutput`。其中包括新/缓存请求数据、每请求 token 数、block 变化、encoder/connector 信息、finished/preempted ids 等。
 2. schedule 返回前，`_update_after_schedule` 增加 `num_computed_tokens` 与 `num_in_flight_tokens`，必要时记录释放 fence。这里的 computed 是包含在途工作的乐观进度，并非“GPU 已经完成”的计数。
 3. Core 调用 `Executor.execute_model(..., non_block=True)`，得到 future；同时准备 grammar bitmask，然后在 `future.result()` 等待。如果 execute 返回 `None`，继续调用 `sample_tokens` 取得最终 `ModelRunnerOutput`。pooling 或某些执行分支可以直接返回结果，不能把 `None` 当成统一的失败码。
 4. 等待期间到达的 abort，先由 `_process_aborts_queue` 处理，再把**这份 SchedulerOutput 与对应 ModelRunnerOutput**交给 `Scheduler.update_from_output`。
 5. Scheduler 结算 in-flight 数、更新真实输出 token、处理停止及释放，按 `client_index` 组织 `EngineCoreOutputs`。
+
+（术语对齐：本页说的“归并结果”与 [[07_vllm_scheduler_analysis|Scheduler]] 页说的“结果对账”是同一个操作——`update_from_output()` 按原计划把返回结果落回请求状态。两页各自沿用本页既有措辞，不是两套机制。）
 
 对 R，假设本步预算允许完整处理 12 个 prompt tokens：schedule 后它的 computed 已是 12、in-flight 是 12，Executor 尚未兑现结果；归并返回后这份 in-flight 份额归零，并可能追加第一个输出 token。下一步再消费这个 token 的模型输入位置，直到满足输出上限或其他停止条件。只分到部分 prompt 的 step 可以完成计算却没有新的用户 token。
 
@@ -77,7 +81,7 @@ sequenceDiagram
     Note over F,S: 调度侧完成与用户可见完成分开判断
 ```
 
-图中省略 socket 和队列线程，只表达改变有效状态的顺序；Core 并没有另存一份与 Scheduler 竞争的 token/KV 真相。
+图中仍采用本节显式关闭 async、PP=1 的同步分支；省略 socket 和队列线程，只表达改变有效状态的顺序。默认 batch-queue 分支不会先等 execute 返回 `None` 再发 sampling（见 §4.1）。Core 并没有另存一份与 Scheduler 竞争的 token/KV 真相。
 
 ## 3. Client 与 Executor 可以怎么换？
 
@@ -107,13 +111,49 @@ Multiproc 广播 collective RPC，从指定 output rank 取一个结果，或经
 
 ### 4.1 队列里必须同时保留 future 和原计划
 
-EngineCore 在 `max_concurrent_batches > 1` 时创建 batch queue，改用 `step_with_batch_queue`。当前容量由 `VllmConfig.max_concurrent_batches` 决定：普通 PP 为 PP 大小；启用 async 时，V2 为 `pp_size + 1`，V1 在 PP≤1 时为 2，其余按源码的 PP 分支。**batch queue 和 async scheduling 不是同义词**：PP 可需要多个 batch，测试也能在 async scheduling 关闭时强制两批来验证队列协作。
+这条选择轴的 owner 是本页：`SchedulerConfig.async_scheduling` 的原始缺省为 `None`，先由 `VllmConfig.__post_init__` 解析；`SchedulerConfig.get_scheduler_cls()` 再选择实际类；`VllmConfig.max_concurrent_batches` 结合已解析的 async 值、runner 代际与 PP 大小给出容量；最后 `EngineCore.__init__` 构造调度器与队列并确定 `step_fn`。07 拥有调度算法，11/12 拥有设备执行，两者不替代此处的入口选择。
+
+| `async_scheduling` 输入与条件 | 解析结果 | 边界 |
+|---|---|---|
+| `None`，普通生成模型且没有下列不兼容项 | `True` | 这是自动缺省，不需要显式开启 |
+| `None`，pooling 模型 | `False` | 源码以当前实现的性能负收益为理由默认关闭；不是禁止用户显式设 True |
+| `None`，不兼容 speculative method、`disable_padded_drafter_batch=True`、Executor 不支持 async，或 ROCm + DeepEP high-throughput + DBO | `False`，并记录相应 warning | 方法允许集合是 `get_args(EagleModelTypes)`、`get_args(NgramGPUTypes)`、`draft_model`、`dspark`；名称中的 EAGLE 不能缩写成仅 eagle/eagle3 |
+| 显式 `True` | 通过上述兼容检查后保持 True | 遇不兼容项抛 `ValueError`，不是静默回落；pooling 不在这些显式拒绝条件中 |
+| 显式 `False` | 保持 False | 不再被自动开启；这不等于禁止 PP 使用多批队列 |
+
+Executor 支持与否来自选中类的 `supports_async_scheduling()`，不是从拓扑名称猜测：基类默认 False，`UniProcExecutor` 与 `MultiprocExecutor` 返回 True。未指定 `scheduler_cls` 时，最终 async 为 True 选择 `AsyncScheduler`，否则选择 `Scheduler`；自定义类/导入路径会覆盖这个内置类选择，`get_scheduler_cls()` 会告警其接口兼容性不保证，不能套用以下内置默认推导。投机方法的具体算法和适用边界仍归 [[16_vllm_speculative_decoding_analysis|投机解码]]。
+
+| 已解析配置（PP 大小记作 p） | `max_concurrent_batches` | 内置 Scheduler / `EngineCore.step_fn` |
+|---|---|---|
+| async=False，p=1 | 1 | `Scheduler` / `step`；本页 §2 |
+| async=False，p>1 | p | `Scheduler` / `step_with_batch_queue` |
+| async=True，MRV2 | p+1 | `AsyncScheduler` / `step_with_batch_queue`；p=1 时容量为 2 |
+| async=True，MRV1，p=1 | 2 | `AsyncScheduler` / `step_with_batch_queue` |
+| async=True，MRV1，p>1 | p | `AsyncScheduler` / `step_with_batch_queue`；源码说明 MRV1 对 async+PP 的支持不完整，因此这里没有 V2 的额外一批 |
+
+EngineCore 仅在容量大于 1 时创建 `deque(maxlen=capacity)`；`batch_queue is None` 才选 `step`，否则选 `step_with_batch_queue`。因此**普通生成、兼容配置、MRV2、PP=1 的缺省是 AsyncScheduler + 容量 2 的 batch queue**，pooling 或自动回落到 False 也只有在 PP=1 时才回到同步 `step`。**batch queue 和 async scheduling 不是同义词**：PP 可需要多个 batch，测试也能在 async scheduling 关闭时强制两批来验证队列协作。
+
+**`model_executed` 有一个容易读反的默认值。** 它初始化为 `False`，**只有 `self.is_ec_consumer` 为真时**才被改写成 `total_num_scheduled_tokens > 0`；而 `is_ec_consumer` 的定义是「没配 EC transfer，或配了且本实例是 consumer」。也就是说普通部署恒为 consumer、行为符合直觉，但在 **EC producer 引擎**上 `model_executed` 恒 `False`——即使本轮排了 token 也永不进入采样分支，队列里放的始终是 execute future。所以这个名字读作“本轮是否执行了模型”会在 EPD 分离部署下读错。
+
+对队列分支中实际执行普通生成的批次，Core 发出 `execute_model(..., non_block=True)` 后立即取得 grammar mask，并调用 `sample_tokens(..., non_block=True)`，不先等待 execute future 的值。pooling 或本轮没有模型执行时直接排入 execute future；存在 `pending_structured_output_tokens` 时延期 sampling（§4.3）。同步 §2 才是“先等 execute，返回 None 后再 sample”的顺序。
 
 每个队列项保存三者：结果 future、对应 SchedulerOutput、原 execute future。第三者用于在 sampling 得不到结果时找回真正的 execute 异常。新项 `appendleft`，消费从 `pop` 取最旧项，保持 FIFO 的计划/结果配对。
 
 一次调用先尝试安排新工作。若入队后还有空位且可以继续工作，就返回 `None`，优先填队列；若已达到容量或没有更多可调度工作，就等待最旧结果并归并。方法入口断言队列尚未满，因为上一次调用达到容量时已经取出了最旧项。它并非每轮先无条件 drain 所有完成 future，再开始 schedule。
 
-### 4.2 两个 12-token prompt 的最小重放
+### 4.2 默认 R 与两个 12-token prompt 的最小重放
+
+先把 §2 的 R 放回缺省：普通生成、MRV2、PP=1、无 speculative/结构化输出、无自定义 Scheduler，保留 `async_scheduling=None`，本步 token 预算至少 12，R 仍要求两个输出 token。下面是依据执行分支推导的教学重放，不是实测时间线；假设资源充足、没有 prefix 命中、抢占、其他请求或提前停止。
+
+| Core 调用 | 新计划与调用顺序 | 本次等待/消费 | 调用结束 |
+|---|---|---|---|
+| 第 1 次 `step_with_batch_queue` | S1 消费 R 的 12 个 prompt tokens；发 execute 后立即发非阻塞 sample | 容量 2 尚有空位，返回 `None`，不等 S1 | S1 在途；computed=12、in-flight=12，AsyncScheduler 登记 1 个 output placeholder |
+| 第 2 次 `step_with_batch_queue` | S2 为 R 安排后续 1 个输入位置；仍先发 execute，再发非阻塞 sample | 队列达到 2，等待最旧 S1 的 sampling future，再以 S1 归并首个输出 token | S2 仍在途；R 已有首个真实输出，S2 对应的 placeholder 仍待结算 |
+| 第 3 次 `step_with_batch_queue` | R 已不再进入新计划：running 扫描里 `num_output_placeholders > 0` 且 `num_computed_tokens + 2 − num_output_placeholders`（13 + 2 − 1 = 14）已达 `num_prompt_tokens + max_tokens`（12 + 2 = 14），该请求被跳过；本轮 S3 是 0 token 的空计划，`model_executed` 为假，入队的就是 execute future 本身 | 队列再次达到 2，等待并归并最旧的 S2，R 拿到第二个输出 token | `check_stop` 见 `num_output_tokens >= max_tokens`，R 置 `FINISHED_LENGTH_CAPPED` 并进 `finished_req_ids` |
+
+所以 §2 中“一次 step 先提交再等 S1”的工作，在默认配置下分成这里第 1 次的提交和第 2 次的 FIFO 消费，期间 S2 已可安排。第二个输出要等 S2 自己的 future 被消费才归并，因此**默认配置下 R 走满两个输出 token 要三次 Core 调用，而不是两次**——最后一次里调度侧已经不给 R 排新工作，它存在的意义只是把在途的 S2 排空。Core 侧的 `FINISHED_LENGTH_CAPPED` 只是调度侧终结；R 的用户可见完成仍按 §2.3 走前端，两者先后不固定。设备上怎样消费未回 CPU 的 token 由 [[12_vllm_model_runner_v2_analysis|Model Runner V2]] 解释，placeholder 本身不是一个猜出的 token id。
+
+下面保留一个**隔离队列机制、并非缺省 async 行为**的双请求测试重放。
 
 源码 `test_engine_core_concurrent_batches` 设置每步 10 tokens、R0/R1 各 12 prompt tokens、两批容量，并关闭 async scheduling 来隔离 batch queue 行为。这个例子只借用测试的已给定调度结果，不在此重讲预算算法。
 
@@ -125,25 +165,30 @@ EngineCore 在 `max_concurrent_batches > 1` 时创建 batch queue，改用 `step
 
 这解释了最容易看错的一点：R0 的 computed=12 早于 S2 的真实结果；只有 S2 归并后的新 token 才进入 core 的输出序列。computed 让下一轮知道已经安排了哪些输入，future/result 则告诉它哪些计算事实真正返回。
 
-<!-- 图2 spec：三泳道Core/Scheduler、batch queue、Executor。S1包含R0:10，F1与S1成对入队，空位尚有直接返回；下一调用发S2 R0:2/R1:8并入队达到容量2，取最旧F1/S1等待M1，用S1归并M1，S2仍在途。不使用比例时间轴，不声称测得overlap时长。 -->
+<!-- 图2 spec：三泳道Core/Scheduler、batch queue、Executor。每步Core先非阻塞发execute再非阻塞发sample，入队的是 (sampling future, S, execute future) 三元组；S1包含R0:10，空位尚有直接返回；下一调用发S2 R0:2/R1:8并入队达到容量2，取最旧F1/S1等待M1，用S1归并M1，S2仍在途。不使用比例时间轴，不声称测得overlap时长。 -->
 ```mermaid
 sequenceDiagram
     participant C as Core与Scheduler
     participant Q as Batch queue 容量2
     participant E as Executor
-    C->>E: S1：R0处理10个位置
-    E-->>C: F1
-    C->>Q: 保存F1 + S1 + execute future
+    C->>E: S1：execute_model(non_block=True)
+    E-->>C: X1 execute future（不取值）
+    C->>E: S1：sample_tokens(non_block=True)
+    E-->>C: F1 sampling future
+    C->>Q: 入队 (F1, S1, X1)
     Note over C,Q: 还有空位，返回None<br/>R0 computed已是10
-    C->>E: S2：R0处理2 + R1处理8
-    E-->>C: F2
-    C->>Q: 保存F2 + S2，达到容量2
-    Q-->>C: 取最旧F1和S1
+    C->>E: S2：R0处理2 + R1处理8，同样两次非阻塞提交
+    E-->>C: X2 execute future（不取值）
+    E-->>C: F2 sampling future
+    C->>Q: 入队 (F2, S2, X2)，达到容量2
+    Q-->>C: 取最旧的 (F1, S1, X1)
     C->>E: 等F1.result
     E-->>C: M1
     C->>C: 用S1归并M1
     Note over C,Q: S2仍在途<br/>原计划不被S2覆盖
 ```
+
+图上把 execute 与 sampling 两个 future 分开画，是因为它们的角色不同：真正入队并在下一轮被 `.result()` 等待的是 `sample_tokens` 返回的 F1；X1 在正常路径**不被取值**，但它一起进队列是有用的——`future.result()` 返回 `None` 说明原来的 `execute_model()` 失败了，此时 Core 正是靠 `exec_model_fut.result()` 把原异常重抛出来。pooling 或本轮没有模型执行时，入队的 future 本身就是 execute future（§4.1）。
 
 ### 4.3 输出依赖可以限制跑在前面的距离
 
@@ -151,32 +196,15 @@ async scheduling 在发出 decode 后加入 output placeholders，表示尚未�
 
 这段协作接续旧系统设计页的 async 主题：异步不是在同步循环外面套一个 Future，它改变“已安排进度”与“真实输出”的时序。设备侧怎样用持久 row、staged copy 和同步事件避免 CPU 改写 GPU 尚在读取的 host buffer，分别见 [[11_vllm_model_runner_v1_analysis|Model Runner V1]]、[[12_vllm_model_runner_v2_analysis|Model Runner V2]]；本页不以 batch queue 图替代这些内存算法。
 
-兼容性也会决定是否采用这条路径。显式开启 async 遇到不支持的 executor、speculative method、`disable_padded_drafter_batch` 或 ROCm DeepEP high-throughput DBO 会拒绝；自动配置会对不兼容组合关闭 async，pooling 因当前实现的性能负收益默认关闭。当前允许的 speculative 分支比旧注释“只支持EAGLE”更宽，代码还列出 MTP/Draft Model/NGram GPU/DSpark 对应类型；能力细项须按配置代码判断，不能拿旧02的版本描述当作新基线事实。
+是否进入异步调度以及哪些不兼容项会回落/拒绝，统一按 §4.1 的选择表判断。当前允许的 speculative 分支比旧注释“只支持EAGLE”更宽，包含 MTP/Draft Model/NGram GPU/DSpark 对应类型；能力细项须按配置代码判断，不能拿旧02的版本描述当作新基线事实。
 
 ## 5. 如果 R 在结果回来前已被抢占或取消，会发生什么？
 
-### 5.1 普通抢占后的旧输出仍可交付，但不能重复结算重置计数
+### 5.1 为什么结果必须按产生它的那份计划对账
 
-考虑 R 已经有两份 decode 工作在途，每份计划各处理一个位置。抢占前 `num_in_flight_tokens=2`；抢占把 computed 和 output placeholders 重置为0，将这两份工作记为 `num_stale_output_tokens=2`，R 回到 waiting 体系。**stale 指计算计划属于抢占前的状态，并不自动等于用户不应得到的 token。**
+抢占之后仍会有旧计划的结果回来。Core 这一侧要守住的只有一条：**`update_from_output()` 是按传入的那份 `SchedulerOutput` 的 `num_scheduled_tokens` 遍历的，不是按结果本身**。因为抢占已经把该请求的 computed 与 output placeholders 归零，只有原计划还记得这批工作当时安排了几个位置，份额才能被正确排空；拿新状态去对账就会重复结算或让 placeholders 下溢。这条不变量是 §2 那张“先等 execute、再 sample”的时序，以及 §4.2 那两批在途重放能够成立的前提。
 
-普通 KV 压力抢占会保留这些输出。第一份旧计划返回时，按该计划的 scheduled token 数将 in-flight/stale 2→1，把有效输出 token 追加到 R；第二份返回时 1→0，再追加其 token。已经归零的 computed/placeholders 不重新扣减，旧 speculative rejection 也不再次回滚重置计数。AsyncScheduler 对非stale输出才扣 placeholders，且只有更新前仍 RUNNING 的请求才按当前进度推进 cache block 提交。
-
-在可交付 stale 份额排空前，Scheduler 暂缓 R 的恢复调度，避免新执行重采样同一位置、旧输出随后又交付一次。测试通过多批流水与变化的 spec acceptance 检查输出恰好交付一次、位置连续、placeholders 不下溢。
-
-另有明确的 drop 模式：`reset_prefix_cache(reset_running_requests=True)` 可同轮抢占并恢复，因此旧位置会重新采样；需要有效 KV hand-off 的 connector 也不能交付依赖已释放 KV 的旧完成输出。这些路径设置 `drop_stale_output`，返回时只排空旧份额，整段跳过。再次抢占时 stale 份额取当前 in-flight 值而非相加；尚未排空的 drop 份额保持 drop，防止误把旧 token 重新公开。
-
-<!-- 图3 spec：R有两批各1位置inflight；preempt设置computed/placeholders=0，stale=2。分普通deliver与显式drop两路：每份返回都将stale/inflight 2→1→0；普通追加t1/t2且不扣reset counters、排空后恢复；drop不追加旧token，可按新状态重算。终端/已删除请求另示忽略。 -->
-```mermaid
-flowchart TB
-    A[R：两批各1位置在途] --> P[抢占：computed与placeholders归零<br/>stale份额设为2]
-    P --> D{是否drop模式}
-    D -->|否| K[旧结果依次回来<br/>份额2 → 1 → 0，追加t1和t2]
-    K --> R[旧份额排空后才恢复调度]
-    D -->|是| X[旧结果依次回来<br/>份额2 → 1 → 0，不追加旧token]
-    X --> N[按恢复后的新计划取得输出]
-    K -.-> I[不再次扣减已重置的计数]
-    X -.-> I
-```
+至于旧结果回来时到底交付还是丢弃——普通 KV 压力抢占的 stale 可交付、`drop_stale_output` 路径整段跳过、KV load 失败另有截断与恢复策略——这三类的判定表、计数规则与图归 [[07_vllm_scheduler_analysis|Scheduler]] §8.3，本页不再重放一遍。
 
 ### 5.2 取消、已完成、抢占，不能用一个“失效输出”规则处理
 
@@ -197,15 +225,15 @@ Core input 线程把 ABORT 同时加入普通 input queue 和专用 abort queue�
 | `EngineCoreOutputs.finished_requests` | 按client收集的完成集合；例如DPLB用来解除request→engine关联并减少inflight计数 | 前端已经输出了最终文本，或KV blocks已经回池 |
 | `EngineCoreOutput.finish_reason` / 前端 `RequestOutput.finished` | 前者是该输出的core结束语义，后者是前端用户结果完成 | 所有后续设备工作、发送buffer和connector资源同步完成 |
 
-schedule 将旧 finished/preempted set 放进计划后换成一个**新 set**，不能对原 set 原地 `clear()`，否则已经交给 Executor 的计划也会被清空。没有未完成用户请求时，Scheduler 仍可能因待发 finished ids、connector 延迟清理或 pending push work 保持 `has_requests=true`；这允许清理继续取得执行机会。无模型执行但仍有这类工作时，Core 可短暂让出 GIL，给后台传输线程推进机会。
+这四行是**消费侧**对照：谁读它、能推出什么。生产侧——`finished_req_ids` 由哪些生命周期路径积累、`_update_after_schedule` 为什么必须换新 set 而不能原地 `clear()`——归 [[07_vllm_scheduler_analysis|Scheduler]] §8.1.2。没有未完成用户请求时，Scheduler 仍可能因待发 finished ids、connector 延迟清理或 pending push work 保持 `has_requests=true`；这允许清理继续取得执行机会。无模型执行但仍有这类工作时，Core 可短暂让出 GIL，给后台传输线程推进机会。
 
 ### 6.2 两批在途时的 block fence
 
 下面固定启用了 `defer_block_free` 的路径：当前生产 gate 是**存在 KV consumer connector 且 `max_concurrent_batches > 1`**。不能把“凡是async都延迟回收”写成通用规则；无 connector 的测试明确验证此 gate 关闭，回收仍按对应路径立即进行。
 
-设 S1、S2 都曾安排 R，`last_sched_seq=2`。处理 S1 输出时 R 遇到 stop，`processed_step_seq=1`，但 S2 仍可能写 R 的 KV block。`_free_request_blocks` 先把 block 从请求关联中摘出，放入带 fence 的 deferred list，而不立刻交回可分配 pool；只有 FIFO 处理到 S2，使 processed 序号达到 fence 后，`_drain_deferred_frees` 才归还这些 blocks。
+设 S1、S2 都曾安排 R，因此 `request.last_sched_seq = 2`。处理 S1 输出时 R 遇到 stop，`processed_step_seq = 1`。`_free_request_blocks` 用 `last_sched_seq <= processed_step_seq` 判断“最后一次安排它的 step 是否已处理完”：这里 `2 > 1` 不成立，说明 S2 仍可能写 R 的 KV block，于是把 block 从请求关联中摘出、放入 deferred list，而不立刻交回可分配 pool。**要注意入队时写的 fence 值是 `self.sched_step_seq`（当前已发出的最新 step 序号），不是 `last_sched_seq`**——两者在本例恰好都是 2，但当 R 之后又被安排过、或 CoW 释放走 `_free_cow_retained_blocks(..., fence_seq)` 这条另行传入 fence 的路径时就会分开。只有 FIFO 处理到该 fence 对应的 step、使 processed 序号达到它之后，`_drain_deferred_frees` 才归还这些 blocks。
 
-<!-- 图4 spec：S1和S2已提交且最后seq=2；S1返回stop将R终止、通知前端，但processed=1<2，blocks进入deferred fence2；S2返回使processed=2，才归还pool。标明gate仅多批KV consumer；旧S2的token可被忽略但完成事件仍排空fence。 -->
+<!-- 图3 spec：S1和S2已提交且最后seq=2；S1返回stop将R终止、通知前端，但processed=1<2，blocks进入deferred fence2；S2返回使processed=2，才归还pool。标明gate仅多批KV consumer；旧S2的token可被忽略但完成事件仍排空fence。 -->
 ```mermaid
 flowchart TB
     A[多批KV consumer：S1、S2已提交<br/>R最后使用序号2] --> B[S1返回stop<br/>processed序号1，R结束]
@@ -227,7 +255,7 @@ Client 与 Core 之间除小字段外，还可能传 prompt embeds、媒体 tens
 
 Core 输出端会复用 `MsgpackEncoder.encode_into` 的可写 bytearray，必须更谨慎：**需要跟踪第一帧 payload 何时发送完，而不是只看最后一帧 tensor。** `_send_msg_tracking_payload` 单独给第一帧 `track=True`，其他帧再发送；未完成的 `(tracker, buffer)` 放入 pending，只有 `tracker.done` 才放回 reuse list。普通 `send_multipart(track=True)` 返回最后帧 tracker，不足以保护这里复用的第一帧。
 
-<!-- 图5 spec：输出A编码至可重用bytearray P并附tensor帧T；P首帧tracker未done时P进pending，B改用另一buffer；done后P进reuse可供下一输出编码。辅助tensor帧由ZMQ引用保活，明确不同保护信号，防止A的tensor配B的payload。 -->
+<!-- 图4 spec：输出A编码至可重用bytearray P并附tensor帧T；P首帧tracker未done时P进pending，B改用另一buffer；done后P进reuse可供下一输出编码。辅助tensor帧由ZMQ引用保活，明确不同保护信号，防止A的tensor配B的payload。 -->
 ```mermaid
 flowchart TB
     A[输出A：payload buffer P + tensor帧T] --> S[发送第一帧P并取得tracker<br/>再发送辅助帧T]
@@ -246,7 +274,7 @@ Executor 是故障传播边界，不是回滚器。Multiproc 在 permanent faile
 
 输入socket的request预处理异常可产生请求级 ERROR 输出；媒体cache miss还可返回missing hashes供前端失效缓存后由客户端重试。Core/worker永久失败与前端异常队列传播则可能结束整个引擎。当前代码没有一个保证跨所有GPU和connector副作用自动回滚的统一事务；故障检测、进程监督、ready/shutdown与恢复策略见 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]、[[23_vllm_observability_reliability_analysis|可靠性机制]]。
 
-DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模型通信时，当前rank可能需要dummy pass。`DPEngineCoreProc` 在每个wave的**step 1以及 `dp_sync_interval` 的倍数step**同步全局unfinished与pause状态，其他step先保持running。默认interval为16，对应同步点1、16、32……；不是等完16步才第一次同步。这样idle pause可以在一个dummy batch后形成共识，避免额外空转一整段interval；源码测试覆盖此序列与step1 pause。全局空闲时发 `wave_complete`、递增wave并将step counter归零；单请求结束与整个DP wave停止仍是不同边界。
+DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模型通信时，当前rank可能需要dummy pass。`DPEngineCoreProc` 在每个wave的**step 1以及 `dp_sync_interval` 的倍数step**同步全局unfinished与pause状态，其他step先保持running。默认interval为16，对应同步点1、16、32……；不是等完16步才第一次同步。这样idle pause可以在一个dummy batch后形成共识，避免额外空转一整段interval；源码测试覆盖此序列与step1 pause。全局空闲时递增 wave 并将 step counter 归零；`wave_complete` 则**不是每个 rank 都发**——发送条件是 `dp_rank == 0 or not has_coordinator`，且 `client_index` 取 `-1 if has_coordinator else 0`：有 coordinator 时由 rank 0 发给 coordinator，没有 coordinator 的 offline SPMD 场景才各 rank 发给自己同机的前端。单请求结束与整个 DP wave 停止仍是不同边界。
 
 > [!contradiction] 文档意图与当前类关系分开读
 > `docs/design/arch_overview.md` 的“V1 Process Architecture”可用于理解职责分离意图，但“LLM Engine / AsyncLLMEngine”仍把异步类描述成同步类的wrapper。当前公开alias分别指向V1 `LLMEngine` 与 `AsyncLLM`，二者各自组合输入输出处理器和CoreClient；不能沿用旧类图，也不能把常见多进程部署图当成固定进程公式。
@@ -262,7 +290,8 @@ DP 时本地没有请求也不一定能停下：其他rank仍执行共同的模�
 | Wire request何时进入waiting | `vllm/v1/engine/core.py::EngineCore.preprocess_add_request/add_request/EngineCoreProc.process_input_sockets/_handle_client_request`；`vllm/v1/request.py::Request.__init__`；`vllm/v1/core/sched/scheduler.py::Scheduler.add_request` |
 | Core调度与同步等待点 | `vllm/v1/engine/core.py::EngineCore.step/post_step/EngineCoreProc._process_engine_step`；`vllm/v1/core/sched/scheduler.py::Scheduler.schedule/_update_after_schedule/update_from_output` |
 | Executor选择与结果物化 | `vllm/v1/executor/abstract.py::Executor.get_class/execute_model/sample_tokens`；`vllm/v1/executor/uniproc_executor.py::UniProcExecutor.collective_rpc/AsyncOutputFuture.result`；`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor.collective_rpc/FutureWrapper.result` |
-| 队列配对、延期sampling与兼容性 | `vllm/v1/engine/core.py::EngineCore.step_with_batch_queue`；`vllm/config/vllm.py::VllmConfig.max_concurrent_batches/__post_init__`的async scheduling配置校验；`tests/v1/engine/test_engine_core.py::test_engine_core_concurrent_batches` |
+| async解析、Scheduler类、容量与step入口 | `vllm/config/vllm.py::VllmConfig.__post_init__/max_concurrent_batches`；`vllm/config/scheduler.py::SchedulerConfig.async_scheduling/get_scheduler_cls`；`vllm/v1/engine/core.py::EngineCore.__init__`；`vllm/v1/executor/abstract.py::Executor.supports_async_scheduling`、`vllm/v1/executor/uniproc_executor.py::UniProcExecutor.supports_async_scheduling`、`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor.supports_async_scheduling`；`tests/test_config.py::test_async_scheduling_with_pipeline_parallelism_is_allowed/test_draft_model_enables_async_scheduling_by_default` |
+| 队列配对、默认R与延期sampling | `vllm/v1/engine/core.py::EngineCore.step_with_batch_queue`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`；`vllm/v1/core/sched/scheduler.py::Scheduler.schedule`；`tests/v1/engine/test_engine_core.py::test_engine_core_concurrent_batches`（显式关闭async并强制容量2，不是默认分支测试） |
 | 普通与drop stale路径 | `vllm/v1/core/sched/scheduler.py::Scheduler._preempt_request/update_from_output`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule/_update_request_with_output`；`tests/v1/core/test_async_scheduler.py::test_kv_pressure_preemption_with_inflight_output/test_reset_prefix_cache_with_inflight_output_under_kv_pressure/test_kv_pressure_preempt_mid_handoff` |
 | 完成集合、内存fence与connector延迟 | `vllm/v1/core/sched/scheduler.py::Scheduler._free_request/_free_request_blocks/_drain_deferred_frees/has_requests`；`vllm/v1/engine/core_client.py::DPLBAsyncMPClient.process_engine_outputs`；`tests/v1/core/test_deferred_block_free.py::test_gate_disabled_without_connector/test_finish_defers_free_until_inflight_step_done` |
 | 序列化、buffer生命周期和首帧tracker | `vllm/v1/serial_utils.py::MsgpackEncoder.encode_into/_encode_tensor/MsgpackDecoder._decode_tensor`；`vllm/v1/engine/core.py::EngineCoreProc.process_output_sockets/_send_msg_tracking_payload`；`tests/v1/test_serial_utils.py::test_payload_buffer_reuse_does_not_corrupt_in_flight_messages/test_zero_copy_frames_survive_without_caller_side_references` |

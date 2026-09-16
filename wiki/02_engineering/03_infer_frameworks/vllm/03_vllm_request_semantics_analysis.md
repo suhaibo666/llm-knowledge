@@ -7,7 +7,7 @@ title: "vLLM 请求语义：消息怎样变成引擎请求，再恢复为用户�
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：跟随一次聊天请求理解模板、tokenization、执行参数和引擎请求的转换，再解释文本停止、流式返回与协议恢复。随后对照 pooling、Render/Derender、文件转录和实时音频的差异。
 > **适用范围**：拥有接口与任务语义、输入输出表示及前端完成边界；采样算法归采样专题，媒体 encoder 执行归多模态专题，进程生命周期归 Serving 专题。
-> **最近更新**：2026-09-08。补充可重建的请求往返与停止示例，并按新基线核验默认解析、能力和错误路径。
+> **最近更新**：2026-09-16。补充结构化响应映射与 token/logprob 返回合同，核验默认解析、能力、错误路径及转录/翻译入口。
 
 ## 1. 一条聊天消息为什么不能直接交给模型？
 
@@ -56,9 +56,23 @@ Render 后才知道真正的 prompt 长度，Chat handler 据此调用 `get_max_
 
 设例子的 render 后 prompt 长度为 20，上下文上限 128，模型默认输出长度 16，没有平台限制。请求显式要求 32，就得到 32，而不是被模型默认 16 截断；若服务显式设置硬上限 24，就得到 24；若请求省略输出长度，则默认 16 生效。这里 20、128 等只是演示值。Render/tokenization 自身也会校验长度，不能把 `get_max_tokens` 的取最小值误读为任意过长请求都会自动成功。
 
-随后 `ChatCompletionRequest.to_sampling_params` 归一 temperature、top-p/top-k/min-p、penalties、seed、stop、logprobs、structured outputs 等字段。普通 chat 的 `stream=true` 对应 `DELTA`，非流式对应 `FINAL_ONLY`；服务默认 `stop_token_ids` 会与请求值合并。`InputProcessor` 再 clone 这份参数；若 `max_tokens` 仍为 `None`，补为剩余上下文，并补 EOS/stop 信息与 bad words 的 token 表示。**这一步不是再次用 generation config 覆盖所有显式采样值。** token 如何从 logits 中选出、grammar 如何约束候选，见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
+随后 `ChatCompletionRequest.to_sampling_params` 归一 temperature、top-p/top-k/min-p、penalties、seed、stop、logprobs、structured outputs 等字段。普通 chat 的 `stream=true` 对应 `DELTA`，非流式对应 `FINAL_ONLY`；协议里有一段“服务默认 `stop_token_ids` 与请求值合并”的分支，但**本基线走不到**：服务默认只能来自 `ModelConfig.get_diff_sampling_param()`，而它只产出 `repetition_penalty`、`temperature`、`top_k`、`top_p`、`min_p` 与 `max_new_tokens`（改名为 `max_tokens`）六个键，没有任何路径写入 `stop_token_ids`。该协议路径新建专属 `SamplingParams` 并设置 `skip_clone=True`，所以 `InputProcessor` 的 `clone()` 返回**浅拷贝**；若 `max_tokens` 仍为 `None`，再补为剩余上下文，并补 EOS/stop 信息与 bad words 的 token 表示。浅拷贝让顶层字段可独立改写，但 `structured_outputs` 等嵌套对象仍共享；安全性来自这份参数只归当前请求，而不是完全深隔离。**这一步也不是再次用 generation config 覆盖所有显式采样值。** token 如何从 logits 中选出、grammar 如何约束候选，见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
 
-### 2.3 InputProcessor 构造 EngineCoreRequest，但尚未取得计算资源
+### 2.3 `response_format` 怎样归一成结构化约束
+
+Chat 与 Completion 都接受 OpenAI 风格 `response_format`，同时保留 vLLM 扩展 `structured_outputs`。两者不是独立送入引擎的两套约束：`extract_structured_outputs` 调用共享的 `structured_outputs_from_response_format`，把它们归一为一个 `StructuredOutputsParams`，再写入 `SamplingParams.structured_outputs`。
+
+| 入站字段 | 归一后的字段 | 校验与冲突边界 |
+|---|---|---|
+| 省略 `response_format`，或 `type="text"` | 原样保留已有 `structured_outputs`；两者都无则为 `None` | 只有两者都无时才不启用结构化约束；`text` 不会清除已有 regex/json 等约束 |
+| `type="json_object"` | `json_object=True` | 要求最终只存在这一类 constraint |
+| `type="json_schema"` | `json=<json_schema.schema>` | 缺少 `json_schema` 在协议校验时直接报请求错误；内层 `schema` 若为 `None`，构造 `StructuredOutputsParams` 时又因没有实际 constraint 被拒绝 |
+| `type="structural_tag"` | 把按 alias 序列化的整个 response-format payload 写入 `structural_tag` 字符串 | 协议层先校验 tag 结构，使 malformed payload 归为 bad request，而不是拖到生成期失败 |
+| vLLM 扩展 `structured_outputs` | `json`、`regex`、`choice`、`grammar`、`json_object`、`structural_tag` 六选一，另带 whitespace 等选项 | `StructuredOutputsParams.__post_init__` 对最终对象执行六类互斥与至少一类约束；直接字段中的 json/regex/choice 与 named tool choice 还会被协议 pre-validator 拒绝 |
+
+如果两个入口同时出现，`response_format` 通过 dataclass `replace` 覆盖**同名**字段；它不会先清空其他 constraint。于是“`structured_outputs.regex` 加 `response_format.json_schema`”会形成两个约束并在 `StructuredOutputsParams` 校验时报错，而同为 `json` 时 response-format schema 覆盖原值。这个规则决定了请求 I/O 的含义；归一之后怎样选择 grammar backend、按状态 mask logits 并推进 grammar，归 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]。
+
+### 2.4 InputProcessor 构造 EngineCoreRequest，但尚未取得计算资源
 
 `InputProcessor.process_inputs` 先检查 generation/pooling capability、参数、LoRA、DP rank 和平台请求约束，然后检查 decoder/encoder 长度、token id 与多模态容量。空 decoder prompt 被拒绝；生成模型的 prompt 不能占满上下文而不给输出留一个位置；有 tokenizer 时，负 token id 以及超出 tokenizer/model 合并可用范围的 id 被拒绝。图像占位展开后的 token 也计入长度，不能只数原始消息文字。
 
@@ -165,6 +179,18 @@ flowchart TB
 | Anthropic Messages | handler 继承 Chat serving，Render 路径也先转换为 Chat request | 在外层恢复 Anthropic 响应；不会另建一套 core generation task |
 | Cohere Chat | 使用相应 renderer/adapter | Chat builder 的 message hook 可由 subclass 替换为 Cohere message |
 
+Chat 的可选 token/logprob 字段属于协议恢复合同，不改变 Scheduler 的资源所有权。固定基线中的请求字段、输出位置与限制如下；表中默认值来自协议 model，而非所有上游 SDK 的默认序列化行为。
+
+| 请求字段（默认） | 进入执行与响应的位置 | 约束与容易混淆处 |
+|---|---|---|
+| `logprobs=false` + `top_logprobs=0` | 启用后，生成 token 的信息写入每个 `choice.logprobs` | `top_logprobs>0` 或 `-1` 必须同时 `logprobs=true`；数量仍受服务 `max_logprobs` 校验，sampled token 可能使返回项比 top-k 多一个 |
+| `prompt_logprobs=null` | 非流式响应顶层 `prompt_logprobs` | 正数或 `-1` 与 `stream=true` 不兼容；Chat `echo=true` 且未显式给值时沿用 `top_logprobs`；Completion 的 prompt embeds 与 prompt logprobs 不兼容 |
+| `logprob_token_ids=null` | 为指定 vocabulary IDs 追加 logprob，仍放在 `choice.logprobs` | 必须 `logprobs=true`，不支持 beam search，并优先于自然 top-k 选择；适合固定 label token，不是 raw token-id 输出开关 |
+| `return_tokens_as_token_ids=null` | 有效值为 true 时，把 logprob 项中的每个 token 字符串都改成 `token_id:<id>`，不以该 token 能否安全显示为条件 | 只在 logprobs formatter 生效；未显式设置时继承 serving 默认值；不会增加 `prompt_token_ids` 或 `choice.token_ids` |
+| `return_token_ids=null` | 非流式：响应顶层 `prompt_token_ids`，每个 choice 的 `token_ids`；流式：首 chunk 顶层 prompt IDs，各 choice chunk 带本次 delta IDs | 这些是 vLLM 扩展；不是把文本重新编码。若配置 parser 且 `include_reasoning=false`，实现同时抑制 logprobs 与 raw output token IDs，避免隐藏 reasoning 经元数据泄漏 |
+
+这解释了“保存文字、raw token IDs 和概率”为什么需要三个不同的请求意图：`return_token_ids` 保留真实 prompt/output id 序列，`logprobs` 控制概率对象，`return_tokens_as_token_ids` 只改变概率对象内 token 的字符串表示。§3.2 的 stop-string 示例还说明 raw output IDs 可以包含最终未公开为正文的 token，不能用 `choice.token_ids` 重新推导客户端已见文本。
+
 对于 SSE，最终 choice、可选 usage chunk 与 `[DONE]` 是协议层收尾。**`[DONE]` 只说明流结束，不独自证明生成成功**：Chat stream generator 捕获异常后也可先发 error payload，再发 `[DONE]`。已经开始的流不能再把 HTTP 200 改写成失败状态，客户端应同时检查 error 与 finish reason。
 
 ## 4. 输入无效、排队拒绝、取消和异步错误怎样结束？
@@ -242,7 +268,7 @@ Derender 需要 `GenerateResponse` 加原始 request context 才能恢复 reason
 
 ### 5.4 文件转录：先把音频变成模型 prompt，再合并回文件级结果
 
-Transcription 的公开输入是音频 bytes、语言和响应格式。其 capability 名为 `transcription`，STT serving 内部 operation 名则是 `transcribe`，后者用于 prompt 与响应类型选择，不是第二种 core task。前端 decode/重采样/切块，可在模型支持时探测语言，然后对每个 chunk 调用模型类 `get_generation_prompt`，经 renderer 得到 encoder-decoder 或 multimodal `EngineInput`。
+Transcription 的公开输入是音频 bytes、语言和响应格式。其 capability 名为 `transcription`，STT serving 内部 operation 则按入口取 `transcribe` 或 `translate`：`/v1/audio/transcriptions` 建立前者，`/v1/audio/translations` 建立后者；两者用于模型 prompt 与响应类型选择，不是两种 core task。翻译路径还把目标语言交给支持该能力的模型类，能力不足时在前端拒绝。前端 decode/重采样/切块，可在模型支持时探测语言，然后对每个 chunk 调用模型类 `get_generation_prompt`，经 renderer 得到 encoder-decoder 或 multimodal `EngineInput`。
 
 每个 chunk 的普通生成路径仍调用 `engine_client.generate`，响应侧按 chunk 索引与时间偏移合并文本/segment，调用模型 post-process，并恢复 text、JSON、verbose 或 diarized 输出。音频前处理使用独立线程池；源码注释记录曾经复用 Renderer executor 吞吐较低，这是已记录的局部依据，不等于本机实测结论。
 
@@ -270,15 +296,17 @@ Transcription 的公开输入是音频 bytes、语言和响应格式。其 capab
 |---|---|
 | 能力名与router如何选择 | `vllm/tasks.py::GenerationTask/PoolingTask/check_removed_pooling_task`；`vllm/entrypoints/launchers/api_server/routers.py::register_api_routers`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.get_supported_generation_tasks` |
 | 一条Chat怎样拆参数并发起生成 | `vllm/entrypoints/openai/chat_completion/serving.py::OpenAIServingChat._create_chat_completion`；`vllm/entrypoints/openai/chat_completion/protocol.py::ChatCompletionRequest.build_chat_params/build_tok_params/to_sampling_params`；`vllm/renderers/online_renderer.py::OnlineRenderer.render_chat/preprocess_chat` |
+| response format 怎样归一成 grammar 输入 | `vllm/entrypoints/generate/base/protocol.py::structured_outputs_from_response_format / validate_structural_tag_response_format`；`vllm/entrypoints/openai/chat_completion/protocol.py::ChatCompletionRequest.extract_structured_outputs / validate_response_format / check_structured_outputs_count / to_sampling_params`；`vllm/sampling_params.py::StructuredOutputsParams.__post_init__` |
 | 模板、编码与模型输入怎样分层 | `vllm/renderers/registry.py::renderer_from_config`；`vllm/renderers/hf.py::resolve_chat_template/safe_apply_chat_template/HfRenderer.render_messages_async`；`vllm/renderers/base.py::BaseRenderer.render_chat_async/render_cmpl_async/process_for_engine_async`；`tests/entrypoints/openai/test_render_parity.py::_assert_parity` |
 | 默认与硬上限区别 | `vllm/config/model.py::ModelConfig.get_diff_sampling_param/try_get_generation_config`；`vllm/entrypoints/serve/utils/api_utils.py::get_max_tokens`；`vllm/sampling_params.py::SamplingParams.update_from_generation_config/update_from_tokenizer`；`tests/entrypoints/serve/utils/test_api_utils.py::TestGetMaxTokens` |
 | 核验、媒体展开与请求字段 | `vllm/v1/engine/input_processor.py::InputProcessor.process_inputs/_validate_params/_validate_model_input/assign_request_id`；`vllm/multimodal/utils.py::argsort_mm_positions`；`vllm/v1/engine/__init__.py::EngineCoreRequest/EngineCoreOutput`；`vllm/v1/engine/core.py::EngineCore.add_request` |
 | 提交、admission、取消与异常 | `vllm/v1/engine/async_llm.py::AsyncLLM._add_request/check_admission/generate/_run_output_handler/abort`；`vllm/entrypoints/generate/base/serving.py::GenerateBaseServing._preflight/_raise_if_error/_with_kv_transfer_rejection_cleanup`；`tests/v1/engine/test_admission_control.py::test_concurrent_single_request_admission_respects_limit`；`tests/entrypoints/openai/chat_completion/test_serving_chat.py::test_admission_rejection_escapes_before_response_starts` |
-| text、stop和完成怎样恢复 | `vllm/v1/engine/output_processor.py::RequestState.make_request_output/OutputProcessor.process_outputs/abort_requests`；`vllm/v1/engine/detokenizer.py::BaseIncrementalDetokenizer.update/get_next_output_text/check_stop_strings`；`tests/v1/engine/test_output_processor.py::test_stop_string/test_request_output_collector` |
+| text、stop和完成怎样恢复 | `vllm/v1/engine/output_processor.py::RequestState.make_request_output / OutputProcessor.process_outputs / OutputProcessor.abort_requests`；`vllm/v1/engine/detokenizer.py::BaseIncrementalDetokenizer.update / BaseIncrementalDetokenizer.get_next_output_text / check_stop_strings`；`tests/v1/engine/test_output_processor.py::test_stop_string / test_request_output_collector` |
 | 各文本协议如何复用与恢复 | `vllm/entrypoints/openai/chat_completion/serving.py::OpenAIServingChat.chat_completion_full_generator/chat_completion_stream_generator`；`vllm/entrypoints/openai/completion/serving.py::OpenAIServingCompletion._create_completion`；`vllm/entrypoints/anthropic/serving.py::AnthropicServingMessages` |
+| token IDs 与 logprobs 怎样进入响应 | `vllm/entrypoints/openai/chat_completion/protocol.py::ChatCompletionRequest.check_logprobs / ChatCompletionResponse / ChatCompletionStreamResponse`；`vllm/entrypoints/openai/chat_completion/serving.py::OpenAIServingChat.chat_completion_full_generator / OpenAIServingChat.chat_completion_stream_generator / OpenAIServingChat._create_chat_logprobs`；Completion 的 embeds 冲突见 `vllm/renderers/online_renderer.py::OnlineRenderer.render_completion` |
 | pooling输入、batch结果与编码 | `vllm/entrypoints/pooling/base/io_processor.py::PoolingIOProcessor.get_request_factory_online`；`vllm/entrypoints/pooling/base/serving.py::PoolingBaseServing._prepare_generators/_collect_batch`；`vllm/entrypoints/pooling/embed/serving.py::ServingEmbedding._build_openai_response`；`vllm/entrypoints/pooling/classify/serving.py::ServingClassification._build_response`；`vllm/entrypoints/pooling/scoring/serving.py::ServingScores._build_response`；`tests/test_pooling_params.py::test_removed_pooling_parameters` |
 | Render与Derender的可搬运边界 | `vllm/entrypoints/scale_out/render/serving.py::ServingRender.render_chat_request/render_messages_request`；`vllm/entrypoints/scale_out/token_in_token_out/serving.py::ServingTokens.serve_tokens`；`vllm/entrypoints/scale_out/token_in_token_out/protocol.py::PlaceholderRangeInfo`；`vllm/entrypoints/scale_out/derender/serving.py::ServingDerender._validate_derender_bounds/derender_chat_response/derender_chat_stream_response` |
-| 文件音频如何进出generation | `vllm/entrypoints/speech_to_text/base/serving.py::SpeechToTextBaseServing._decode_and_chunk_speech/_preprocess_speech_to_text/_create_speech_to_text`；`vllm/entrypoints/speech_to_text/realtime/serving.py::OpenAIServingRealtime.transcribe_realtime`；`vllm/entrypoints/speech_to_text/realtime/connection.py::RealtimeConnection._run_generation` |
+| 文件音频如何进出 generation | `vllm/entrypoints/speech_to_text/base/serving.py::SpeechToTextBaseServing._decode_and_chunk_speech / SpeechToTextBaseServing._preprocess_speech_to_text / SpeechToTextBaseServing._create_speech_to_text`；`vllm/entrypoints/speech_to_text/transcription/serving.py::OpenAIServingTranscription.__init__`；`vllm/entrypoints/speech_to_text/translation/serving.py::OpenAIServingTranslation.__init__`；`vllm/entrypoints/speech_to_text/realtime/serving.py::OpenAIServingRealtime.transcribe_realtime`；`vllm/entrypoints/speech_to_text/realtime/connection.py::RealtimeConnection._run_generation` |
 | 增长的输入与最终完成 | `vllm/v1/engine/async_llm.py::AsyncLLM._add_streaming_input_request/_validate_streaming_input_sampling_params`；`vllm/v1/engine/output_processor.py::OutputProcessor._update_streaming_request_state`；`tests/v1/e2e/general/test_streaming_input.py::test_streaming_input_error_propagation/test_streaming_input_validation_errors`；`tests/entrypoints/speech_to_text/realtime/test_realtime_validation.py::test_commit_without_session_update_returns_error` |
 
 ## Related Pages

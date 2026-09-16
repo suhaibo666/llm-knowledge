@@ -7,7 +7,7 @@ title: "vLLM 性能调优指南：用测量、单变量实验和回滚验证收�
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：先冻结负载和质量要求，再选择基准工具，理解延迟、吞吐与缓存状态的测量边界。随后从限制资源提出单变量假设，用完整案例说明验收、代价和回滚。
 > **适用范围**：以普通文本生成和 Python benchmark 为主；最小使用入口见使用指南，异常定位见排障指南，调度、KV、执行与算子机制由各专题解释。
-> **最近更新**：2026-09-08。承接使用页的调优闭环，按新基线核对工具行为并补充完整实验案例。
+> **最近更新**：2026-09-16。承接使用页的调优闭环，保留工具行为与完整实验案例，修正生成配置的采样缺省与 EOS 读取边界。
 
 ## 1. 先明确：这次要让谁更快？
 
@@ -42,7 +42,7 @@ title: "vLLM 性能调优指南：用测量、单变量实验和回滚验证收�
 - 如果业务要求严格复现，把逐 token/停止原因一致设为**本次验收门**，候选不满足就拒绝；这不等于其他配置有通用保证。
 - 若业务允许数值或采样变化，预先指定任务分数下限、结构合法性、token/logprob 容差或统计检验，不能看完结果再放宽。
 - 每轮检查空输出、意外截断、NaN/Inf、新错误类型、成功请求集合与失败率。随机 token 压测数据只能验证形状和运行行为，不能证明回答质量。
-- 模板与缺省采样必须冻结：`generation_config="vllm"` 可避免采用模型仓库的生成配置，但具体请求参数仍应显式记录；聊天与纯文本输入的差别见 [[03_vllm_request_semantics_analysis|请求语义]]。采样和量化的适用边界分别见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[17_vllm_quantization_analysis|量化]]。
+- 模板与缺省采样必须冻结：`generation_config="vllm"` 仅避免采用模型仓库的采样缺省，之后仍应用显式 `override_generation_config`；这不关闭特殊 token 信息的读取，EOS 信息仍可能从模型的 `generation_config.json` 读取，并在未启用 `ignore_eos` 时补充停止 token。因此具体请求参数与停止语义仍应显式记录；默认解析、停止语义及聊天与纯文本输入的差别见 [[03_vllm_request_semantics_analysis|请求语义]]。采样和量化的适用边界分别见 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]]、[[17_vllm_quantization_analysis|量化]]。
 
 ## 3. 选择能回答问题的工具
 
@@ -111,7 +111,7 @@ VLLM_USE_RUST_BENCH=0 vllm bench serve \
 
 **到达过程。** `request-rate` 默认 `inf`，表示不加到达间隔地发起请求；有限 rate 才构造间隔。`burstiness=1` 使用指数间隔，即文档所称 Poisson 到达；小于 1 更突发，大于 1 更均匀，且源码要求它为正。当前固定 rate、非 trace 路径还会缩放整组间隔，使末次计划发送时间对齐“请求数除以 rate”，所以不能把这一有限样本称为未经修正的生产 Poisson 轨迹。`max-concurrency` 控制客户端同时执行的请求数，排队后实际发送可能落后计划。记录发送时间、客户端 queue 和服务器 queue，不能只抄命令里的目标 rate。
 
-**预热不等于独立数据。** 在线工具先用第一条主请求做 ready check，指定 warmup 后又重复同一个请求，等全部 warmup 完成才开始主计时。它不会覆盖所有请求 shape，也不会清除这些请求留下的缓存；不能把在线 warmup 描述为独立随机语料。需要覆盖的 shape/编译路径应由实验者补充预热，并把冷启动、compile/capture 和恢复耗时单列。
+**预热不等于独立数据。** 在线工具的 ready check **默认不跑**：CLI 的 `--ready-check-timeout-sec` 默认为 `0`，`benchmark()` 里是 `if ready_check_timeout_sec > 0:`，帮助文本也写明「Ready check will be skipped by default」；只有显式给正值（例如文档常用的 600）才会先用第一条主请求探活。指定 warmup 后又重复同一个请求，等全部 warmup 完成才开始主计时。它不会覆盖所有请求 shape，也不会清除这些请求留下的缓存；不能把在线 warmup 描述为独立随机语料。需要覆盖的 shape/编译路径应由实验者补充预热，并把冷启动、compile/capture 和恢复耗时单列。
 
 **固定 seed 不等于公平缓存状态。** 同一 server 重跑同一 seed 会重用 prompts；同轮共享前缀也可能命中。若目标不是缓存复用，可像示例一样在两边关闭 prefix cache；也可在相同重启/清缓存协议下成对复用语料。仅更换 seed 不能消除固定 system prompt 或真实语料的共享前缀。若目标就是缓存复用，应保留它并固定共享比例、预热和保留策略。官方文档还说明 `bench sweep serve` 在轮次间重置 server caches；本页未验证 sweep 的完整执行路径。
 
@@ -147,7 +147,7 @@ GPU 利用率低可能意味着输入供给不足、batch 太小、collective �
 | frontend CPU 饱和，GPU 间歇空闲 | 输入供给不足；只改 API/input-processing capacity 的一个因素 | CPU queue 不变或 GPU 空闲未减少，语义/TTFT 反而恶化 | [[13_vllm_serving_control_plane_analysis|Serving 控制面]]、[[15_vllm_multimodal_execution_analysis|多模态]] |
 | TTFT 随 load 上升，decode 尚稳定 | 排队或 prefill 竞争；token budget、sequence budget、arrival/concurrency 中只选一个 | queue/prefill 时间不按预期变，或 decode 尾延迟越界 | [[07_vllm_scheduler_analysis|Scheduler]] |
 | preemption、KV 余量低、OOM | 权重/KV/graph/临时 buffer 某项占用过高；先选 KV、上下文、量化、并行或 graph memory 一个族 | 对应占用不降，或质量/延迟代价越界 | [[08_vllm_kv_cache_management_analysis|KV Cache]]、[[17_vllm_quantization_analysis|量化]] |
-| 小 batch 的 host launch gap 大 | 主机发起计算开销突出；只改一个 compile/graph 候选 | timeline gap 未收缩，或 startup/memory 超预算 | [[12_vllm_model_runner_v2_analysis|Model Runner V2]]、[[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
+| 小 batch 的 host launch gap 大 | 主机发起计算开销突出；**先从启动日志确认本次实际用的是 MRV1 还是 MRV2**（两代的 graph 派发与 workspace 规则不同，照错代际调是白调），再只改一个 compile/graph 候选 | timeline gap 未收缩，或 startup/memory 超预算 | [[12_vllm_model_runner_v2_analysis|Model Runner V2]]、[[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
 | attention/GEMM/MoE/格式转换占主要计算时间 | shape/dtype 与后端不合适；backend、kernel、量化格式中只选一个 | 实际仍 fallback，或 kernel 加速未传递到 E2E | [[10_vllm_attention_backends_analysis|Attention Backend]]、[[20_vllm_fused_ops_and_kernels_analysis|融合 Kernel]] |
 | decode 串行时间突出 | draft 成本可能小于节省的 target 计算；一个 speculative 候选 | acceptance、draft+verify 成本和 E2E 不支持收益 | [[16_vllm_speculative_decoding_analysis|投机解码]] |
 | collective 时间高或单卡装不下 | rank layout 限制当前负载；一次 TP/PP/DP/EP/CP 布局变化 | 每 rank 容量/计算或通信没有预期变化 | [[18_vllm_distributed_inference_analysis|分布式推理]] |
@@ -178,7 +178,7 @@ GPU 利用率低可能意味着输入供给不足、batch 太小、collective �
 
 工作负载为单模型、普通文本、无投机解码；合成诊断输入 4096 tokens、输出 128 tokens，8 req/s、burstiness 1、client concurrency 64。生产任务另有冻结 canary corpus，使用生产模板、采样和 stop 规则。
 
-预先写下验收门：成功率 100%，P99 TTFT 不超过 1000 ms，P99 TPOT 不超过 35 ms，P99 ITL 不超过 60 ms，P99 含客户端排队的 E2E 不超过 6000 ms，goodput 至少 7.5 req/s。GPU 余量至少 2 GiB，无持续 preemption，冷启动可接受上限 120 s。100 条带标准答案的 canary 至少答对 90 条，且较基线下降不超过 1 条；不出现新增结构错误、空输出或异常停止。这些门是案例协议，不是框架保证。
+预先写下验收门：成功率 100%，P99 TTFT 不超过 1000 ms，P99 TPOT 不超过 35 ms，P99 ITL 不超过 60 ms，P99 E2E 不超过 6000 ms（对齐下面命令里的 `e2el:6000`，即**不含**客户端侧排队；若要把客户端排队算进来，需另用含排队的口径重新定义这道门），goodput 至少 7.5 req/s。GPU 余量至少 2 GiB，无持续 preemption，冷启动可接受上限 120 s。100 条带标准答案的 canary 至少答对 90 条，且较基线下降不超过 1 条；不出现新增结构错误、空输出或异常停止。这些门是案例协议，不是框架保证。
 
 baseline 启动命令如下；这里固定 sequence budget，避免第二个 budget 随默认模式改变：
 
@@ -254,6 +254,7 @@ vllm serve "$MODEL" --generation-config vllm \
 | 固定 batch 延迟 | `vllm/benchmarks/latency.py::add_cli_args`、`main`；`tests/benchmarks/test_latency_cli.py::test_bench_latency`：缓存缺省、长度检查、warmup 与整批计时 |
 | 在线 CLI 契约 | `tests/benchmarks/test_serve_cli.py::test_bench_serve`、`test_bench_serve_chat`：输入输出长度、基础请求与 chat backend/endpoint 配对 |
 | seed 的证据范围 | `tests/benchmarks/test_random_dataset.py::test_random_dataset_same_seed`、`test_random_dataset_different_seeds`：数据采样确定性；`docs/benchmarking/cli.md` 的缓存警告和延迟定义提供文档边界 |
+| 采样缺省与 EOS 读取为何要分开冻结 | `vllm/config/model.py::ModelConfig.get_diff_sampling_param` / `try_get_generation_config`；`vllm/v1/engine/input_processor.py::InputProcessor.__init__` / `process_inputs`；`vllm/sampling_params.py::SamplingParams.update_from_generation_config`：跳过模型采样缺省不等于跳过特殊 token 信息 |
 | 为什么保留解析配置 | `vllm/config/vllm.py::VllmConfig.optimization_level`、`VllmConfig.performance_mode`；`vllm/engine/arg_utils.py::EngineArgs._set_default_max_num_seqs_and_batched_tokens_args`：显式值、使用上下文和模型约束 |
 | 案例变量确实影响什么 | `vllm/v1/core/sched/scheduler.py::Scheduler.__init__`、`Scheduler.schedule`：scheduled/input budget 和 chunked-prefill 分支；算法完整解释由 Scheduler 页拥有 |
 

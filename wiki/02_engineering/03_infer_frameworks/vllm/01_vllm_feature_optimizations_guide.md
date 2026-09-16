@@ -7,7 +7,7 @@ title: "vLLM 使用指南：从安装到离线推理与流式服务"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：准备运行环境，用一个小型聊天模型完成离线推理，再启动服务、发送客户端请求并消费流式输出。最后解释返回字段、常用配置和默认值的解析边界。
 > **适用范围**：以 Linux、单张 NVIDIA GPU、普通文本生成和 Python HTTP 前端为主线；性能实验见调优指南，故障定位见排障指南，内部机制见对应专题。
-> **最近更新**：2026-09-08。重构为新读者使用入口，按固定源码与仓库内官方文档核验示例。
+> **最近更新**：2026-09-16。修正生成配置的采样缺省与 EOS 边界，并标明 CUDA 默认变体的文档/构建冲突及安装选择。
 
 ## 1. 先选调用方式：一段 Python，还是一个服务？
 
@@ -39,6 +39,8 @@ source .venv/bin/activate
 
 `nvidia-smi` 应能列出目标 GPU；它展示的驱动 CUDA 能力不等于本地 CUDA Toolkit 的安装版本。预编译包还依赖匹配的 PyTorch/CUDA 二进制组合，因此官方文档建议使用干净环境。不要直接把现有训练环境的 PyTorch 和另一套 vLLM wheel 拼起来。
 
+本文普通 wheel 安装路径若选到 CUDA 13，需要 R580 或更新的 NVIDIA 驱动；先核对 `nvidia-smi` 的驱动版本，再核对安装后的 `torch.version.cuda`。驱动不满足 CUDA 13 要求时，按下一节同时选择 vLLM 的 `cu129` wheel 变体与匹配的 PyTorch backend，并继续核对该组合的实际兼容性。
+
 这不是当前 macOS 工作区的直接运行命令。固定文档另外列出 ROCm、XPU、TPU、Ascend 和 Apple Silicon 路线；后两者分别依赖 vLLM Ascend、vLLM-Metal 等独立插件，不能照搬本节 CUDA 安装命令。本页没有核验这些外部插件的安装或执行合同。
 
 ### 2.2 固定到本文源码对应的安装
@@ -55,7 +57,21 @@ python -c 'import vllm, torch; print("vLLM:", vllm.__version__); print("PyTorch:
 vllm serve --help=max-model-len
 ```
 
-保留安装输出、包版本和 wheel 来源，并确认 `CUDA available` 为 `True`。固定基线文档的默认 CUDA wheel 变体是 12.9；`--torch-backend=auto` 是交给 `uv` 选择 PyTorch 索引的参数，不能据此保证所有驱动、平台和包版本都兼容。若索引没有目标 wheel，或装出的版本与预期不符，转到 [[05_vllm_debugging_troubleshooting_guide|排障指南]] 检查安装证据，不要悄悄换成 nightly 后仍宣称使用本文基线。
+保留安装输出、包版本和 wheel 来源，并确认 `CUDA available` 为 `True`。`--torch-backend=auto` 是交给 `uv` 选择 PyTorch 索引的参数，不能据此保证默认 vLLM wheel 与所有驱动、平台和包版本都兼容。
+
+> [!contradiction] 安装文档写 CUDA 12.9，冻结基线构建默认已指向 CUDA 13
+> `gpu.cuda.inc.md` 仍称默认 wheel 为 12.9；但 `VLLM_MAIN_CUDA_VERSION` 默认是 13.0，release pipeline 的主构建为 CUDA 13.0、12.9 列在 additional wheels，CUDA requirements 使用 `cu13` 依赖，Dockerfile 默认 `CUDA_VERSION=13.0.3`。因此不能把文档的 12.9 当作上述 commit 索引实际返回变体的保证；远程索引提供哪些 wheel 本轮未核验，应以安装来源和 `torch.version.cuda` 为准。
+
+需要 CUDA 12.9 时，在前面创建的干净环境中，将安装 vLLM 的命令替换为下面这条；`/cu129` 选择 vLLM wheel 变体，`--torch-backend=cu129` 选择匹配的 PyTorch backend，两处要一起核对：
+
+```bash
+VLLM_GUIDE_COMMIT=199cb9b964822e59ab9b58d88e7be31eb419a2ae
+uv pip install vllm \
+  --torch-backend=cu129 \
+  --extra-index-url "https://wheels.vllm.ai/${VLLM_GUIDE_COMMIT}/cu129"
+```
+
+随后继续安装客户端并执行上面的版本、CUDA 与帮助检查。若索引没有目标 wheel，或装出的版本与预期不符，转到 [[05_vllm_debugging_troubleshooting_guide|排障指南]] 检查安装证据，不要悄悄换成 nightly 后仍宣称使用本文基线。
 
 只想试发行版时，官方 quickstart 的简化命令是 `uv pip install vllm --torch-backend=auto`；它**不固定本文 commit**，应以实际安装版的帮助与文档为准。若要修改 C++/CUDA、使用不同二进制组合或既有 PyTorch，仓库文档另有 full build 路线，要求 GCC/G++ 至少 11.3；需要按那条路线配置工具链，本页不把源码构建混进最小使用步骤。
 
@@ -111,7 +127,7 @@ if __name__ == "__main__":
 | `result.outputs` | 该请求的候选输出列表；默认 `n=1` | `outputs[0]` 是第一个候选，不是第一个生成 token |
 | `answer.text` / `token_ids` | 生成文本及输出 token ID | 回答文本与 token ID 不存在逐字符一一对应关系 |
 | `result.finished` | 整个请求是否已完成 | `answer.finish_reason` 描述一个候选为何结束 |
-| `answer.finish_reason` / `stop_reason` | 前者给出结束类别；后者可给出命中的停止字符串或 token ID | 普通生成中 `stop` 包括 EOS 或停止条件；`length` 表示长度限制，不代表答案完整；EOS 的 `stop_reason` 可以是 `None` |
+| `answer.finish_reason` / `stop_reason` | 前者给出结束类别；后者可给出命中的停止字符串或 token ID | `FinishReason` 共 **5** 个取值，不止两个：`stop`（含 EOS 或停止条件）、`length`（长度限制，不代表答案完整）、`abort`（客户端中止）、`error`（请求级可重试内部错误，例如 KV load 失败，固定转成 500）、`repetition`（检测到重复 token 模式）。写监控或重试逻辑时按这 5 个分支，别只判 stop/length；EOS 的 `stop_reason` 可以是 `None` |
 | `answer.logprobs` / `cumulative_logprob` | 可选的 token 概率信息及累计值 | 未请求时可为 `None`，不应当作每次必有的评分 |
 
 如果需要纯文本续写，在同一个 `llm` 实例中改为：
@@ -179,7 +195,7 @@ print("finish_reason:", choice.finish_reason)
 print("usage:", response.usage)
 ```
 
-这里 `EMPTY` 是未启用服务鉴权时交给 SDK 的占位字符串。本地示例没有配置服务 API key；若启动时设置 `--api-key` 或 `VLLM_API_KEY`，客户端需要传匹配的 key，curl 需要相应的 `Authorization: Bearer ...`。本文服务只监听本机，跨机器访问还需明确监听地址与部署边界。
+这里 `EMPTY` 是未启用服务鉴权时交给 SDK 的占位字符串。本地示例没有配置服务 API key；若启动时设置 `--api-key` 或 `VLLM_API_KEY`，客户端需要传匹配的 key，curl 需要相应的 `Authorization: Bearer ...`。**注意它只保护固定前缀**：鉴权中间件按 `GUARDED_PREFIX = ("/v1", "/v2", "/inference", "/cohere")` 判断，`/health`、`/metrics` 以及插件注册到其他前缀下的路由都不在其中；把 API key 当作整个进程的访问控制会高估它的覆盖面。本文服务只监听本机，跨机器访问还需明确监听地址与部署边界。
 
 在线返回对象不是离线 `RequestOutput`。完整聊天响应里，`choices[i].message.content` 是候选回答，`choices[i].finish_reason` 是结束类别；`id` 用于关联本次响应，`model` 是服务公开名称。`usage.prompt_tokens` 统计模板处理后的输入，`completion_tokens` 统计生成 token，`total_tokens` 为二者之和。它们是 token 用量，不是延迟或 GPU 利用率；想保存输入/输出 token ID 或 logprobs，需要使用相应扩展字段，见请求语义专页。
 
@@ -233,12 +249,17 @@ answer = "".join(parts)
 
 `model` 可以是仓库 ID 或本地目录；`revision`、`tokenizer`、`tokenizer_revision` 用于明确权重和 tokenizer 来源。需要复现实验时，连模型 revision、模板和依赖环境一起记录。`dtype` 默认 `auto`，按模型配置解析；`quantization` 还会参考 checkpoint 的量化配置，因此“没有写量化参数”不等于证明加载的是非量化权重。支持矩阵与数值边界见 [[17_vllm_quantization_analysis|量化]]。
 
-聊天路径需要解析出与模型匹配的模板。当前 HF renderer 先检查显式模板，再在适用条件下检查 AutoProcessor、tokenizer，最后尝试内建 fallback；所以 tokenizer 中没有模板，不等于一定报错。所有来源都未解析出模板时，`safe_apply_chat_template` 才抛出 `ChatTemplateResolutionError`，此时应提供与该模型匹配的 `--chat-template` 文件或模板字符串。模板如何处理角色、特殊 token、工具和媒体，由 [[03_vllm_request_semantics_analysis|请求语义]] 负责。
+聊天路径需要解析出与模型匹配的模板。**使用上只需记住一句：tokenizer 里没有模板不等于一定报错**——renderer 还会依次尝试其他来源，全都拿不到时才报错。四级选择链的顺序、每级的适用条件与 `safe_apply_chat_template` 的异常细节归 [[03_vllm_request_semantics_analysis|请求语义]]，本页不重述。排查模板问题时按那一页的顺序逐级确认。
 
-`generation_config` 默认 `auto`，读取模型的 `generation_config.json`；也可指定目录，或用 `vllm` 不加载该文件。`override_generation_config` 再覆盖这一层的配置。常见采样字段需要区分两条路径：
+`generation_config` 默认 `auto`，从模型的 `generation_config.json` 取采样缺省；也可指定目录。设为 `vllm` 时，`temperature`、`top_p`、`top_k`、`min_p`、`repetition_penalty`、`max_new_tokens` 这些采样缺省不再取自模型文件，随后仍应用 `override_generation_config`。这不关闭特殊 token 信息的读取：模型文件中的 EOS 配置仍会被读取，在未启用 `ignore_eos` 时用于补充停止 token。
+
+> [!contradiction] “不加载 generation config”只适用于采样缺省路径
+> `ModelConfig.generation_config` 的字段说明写着 “no generation config is loaded”，旧稿据此把 `vllm` 解释为完全不读文件；实际 `get_diff_sampling_param` 才跳过模型采样缺省，`InputProcessor` 仍经 `try_get_generation_config` 读取模型配置，供 `SamplingParams.update_from_generation_config` 补充 EOS 信息。选择 `vllm` 不表示忽略模型的 EOS；采样缺省与特殊 token 的精确边界见 [[03_vllm_request_semantics_analysis#2.2 输出上限：先选择缺省值，再应用硬上限|请求语义 §2.2]]。
+
+常见采样字段需要区分两条路径：
 
 - 离线不传 `sampling_params` 时，`LLM.get_default_sampling_params()` 从模型配置建立默认值。显式构造 `SamplingParams(temperature=0, max_tokens=128)` 时，未填写字段来自 `SamplingParams` 自身默认值，不能当作“自动继承模型推荐值”。例如其 `max_tokens` 自身默认是 16。
-- 在线 `ChatCompletionRequest.to_sampling_params()` 对未填写的 `temperature`、`top_p`、`top_k` 等字段，先查服务默认，再使用协议默认；显式请求值通常优先。`stop_token_ids` 还会合并服务默认停止 token，不能用“所有请求字段简单覆盖”概括。
+- 在线 `ChatCompletionRequest.to_sampling_params()` 对未填写的 `temperature`、`top_p`、`top_k` 等字段，先查服务默认，再使用协议默认；显式请求值通常优先。协议里确有一段“合并服务默认 `stop_token_ids`”的分支，但**在本基线它不可达**：服务默认来自 `ModelConfig.get_diff_sampling_param()`，该函数只会产出 `repetition_penalty`、`temperature`、`top_k`、`top_p`、`min_p`、`max_new_tokens`（后者改名为 `max_tokens`）六个键，没有任何路径写入 `stop_token_ids`。所以实际生效的仍是“请求字段优先、未填才取上述六个服务默认”。
 
 本文显式选择 `generation_config=vllm` 并固定输出上限和 temperature，目的是减少入门样例的隐含差异。准备真实应用时可以保留模型作者的推荐配置，但应知道实际生效值从哪里来。
 
@@ -292,11 +313,13 @@ vllm serve --help=all
 | 要核对的问题 | 阅读入口与关键边界 |
 |---|---|
 | 环境、固定 commit wheel 和官方小模型例子 | `docs/getting_started/quickstart.md` 的 Prerequisites、Installation、Offline Batched Inference、Online Serving；`docs/getting_started/installation/gpu.cuda.inc.md` 的 requirements、Install specific revisions、Full build；`docs/cli/README.md` 的 help 查询 |
+| CUDA 默认变体与驱动边界 | `vllm/envs.py::VLLM_MAIN_CUDA_VERSION`；`.buildkite/release-pipeline.yaml` 的 `Build wheel - x86_64 - CUDA 13.0` 与 `build-additional-wheels`；`requirements/cuda.txt` 的 `nvidia-cutlass-dsl[cu13]` / `humming-kernels[cu13]`；`docker/Dockerfile` 的 `ARG CUDA_VERSION`；`docs/getting_started/installation/gpu.cuda.inc.md` 的 Install the latest code、Install specific revisions、Running on Systems with Older CUDA Drivers |
 | 离线输入到最终结果 | `vllm/entrypoints/llm.py::LLM.generate` / `LLM.chat` → `vllm/entrypoints/offline_utils.py::OfflineInferenceMixin._run_completion` / `_run_chat` → `_run_engine`；`vllm/outputs.py::RequestOutput` / `CompletionOutput` |
 | 离线普通与负向验证 | `tests/entrypoints/llm/test_chat.py::test_chat` / `test_multi_chat` / `test_llm_chat_tokenization_no_double_bos`；`tests/entrypoints/llm/test_generate.py::test_multiple_sampling_params` / `test_max_model_len` |
 | HTTP 聊天与 SSE 交付 | `vllm/entrypoints/openai/chat_completion/api_router.py::create_chat_completion` → `vllm/entrypoints/openai/chat_completion/serving.py::OpenAIServingChat.create_chat_completion` / `chat_completion_stream_generator` / `chat_completion_full_generator`；`vllm/entrypoints/openai/chat_completion/protocol.py::ChatCompletionResponse` / `ChatCompletionStreamResponse` |
 | 流式完成、用量与多轮 | `tests/entrypoints/openai/chat_completion/test_chat.py::test_single_chat_session` / `test_chat_streaming` / `test_chat_completion_stream_options`；`vllm/entrypoints/generate/base/protocol.py::StreamOptions`；`vllm/entrypoints/serve/engine/protocol.py::UsageInfo` |
 | 采样默认与长度优先级 | `vllm/config/model.py::ModelConfig.get_diff_sampling_param`；`vllm/entrypoints/llm.py::LLM.get_default_sampling_params`；`vllm/entrypoints/openai/chat_completion/protocol.py::ChatCompletionRequest.build_tok_params` / `to_sampling_params`；`vllm/entrypoints/serve/utils/api_utils.py::get_max_tokens`；`vllm/renderers/params.py::TokenizeParams._token_len_check` |
+| `generation_config=vllm` 与 EOS | `vllm/config/model.py::ModelConfig.generation_config` / `try_get_generation_config` / `get_diff_sampling_param`；`vllm/v1/engine/input_processor.py::InputProcessor.__init__` / `process_inputs`；`vllm/sampling_params.py::SamplingParams.update_from_generation_config` |
 | 默认与硬上限的反例 | `tests/entrypoints/serve/utils/test_api_utils.py::TestGetMaxTokens`；`tests/entrypoints/openai/chat_completion/test_serving_chat.py::test_serving_chat_should_set_correct_max_tokens` |
 | 显存与最终配置 | `vllm/config/cache.py::CacheConfig.gpu_memory_utilization` / `kv_cache_memory_bytes`；`vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory`；`vllm/engine/arg_utils.py::EngineArgs.get_batch_defaults` / `_set_default_max_num_seqs_and_batched_tokens_args` / `_set_default_chunked_prefill_and_prefix_caching_args`；`vllm/config/vllm.py::VllmConfig._apply_optimization_level_defaults` |
 | 模板与健康边界 | `docs/serving/online_serving/README.md` 的 Chat Template（概括性说明）；`vllm/renderers/hf.py::resolve_chat_template` / `safe_apply_chat_template`（当前选择及失败边界）；`vllm/entrypoints/serve/instrumentator/health.py::health`；`vllm/v1/request.py::RequestStatus.get_finished_reason` |

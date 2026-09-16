@@ -4,21 +4,21 @@ title: "vLLM 量化执行：一个低精度数怎样穿过 Pack、Scale、TP 与
 
 # vLLM 量化执行：一个低精度数怎样穿过 Pack、Scale、TP 与 Kernel
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（只读 main 快照，2026-09-07 UTC）。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：低精度整数或浮点编码怎样恢复参与矩阵乘法的数；配置、分片、加载转换与 Kernel 选择怎样保持同一解释。
-> **适用范围**：本页展开量化数值、config → per-layer method → pack/scale 参数 → post-load → dispatch/fallback，并拥有 MoE 量化权重 ABI 与 KV scale **参数的生命周期**；通用模型构造与 checkpoint 写入接 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]，Kernel 内部 tile/provider 接 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]，KV cache 物理布局接 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]，`kv_cache_dtype` 与 backend 的能力协商及 attention kernel 内 scale 的实际使用接 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]，在线换权重的 pause 与版本可见性协议接 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]]，CUDA Graph 地址合同接 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]]。
-> **最近更新**：2026-09-13。补齐定位段、闭环位置图、核心流程清单、逐流程阶段表、所有权与配置契约、调用树与成本账；新增 MoE 量化 ABI 与 KV scale 参数生命周期两节。
+> **适用范围**：本页展开量化数值、config → per-layer method → pack/scale 参数及写入 → post-load → dispatch/fallback，并拥有 MoE 量化权重 ABI、KV scale **参数的生命周期**及 Marlin reload 辅助 storage 的地址稳定合同；通用模型构造与 checkpoint 写入入口接 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]，Kernel 内部 tile/provider 接 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]，KV cache 物理布局接 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]，`kv_cache_dtype` 与 backend 的能力协商及 attention kernel 内 scale 的实际使用接 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]，在线换权重的 pause 与版本可见性协议接 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]]，通用 CUDA Graph 合同与 `WorkspaceManager` 接 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]]。
+> **最近更新**：2026-09-16。补齐 packed 参数写入与 loader 选择、QKV 偏移实算及 Marlin reload 辅助 storage 的地址稳定边界。
 
 ## 1. 量化执行层的定位：同一批字节，五处同一个解释
 
 一个 W4A16 checkpoint 交给引擎时，磁盘上只有 int32 容器、若干 scale 表和可选的 zero/g_idx。**量化执行层是把这堆字节变成"可以放进 GEMM 的数"的那条链的所有者**：解析 config 决定这一层到底解释哪种数，为每个 layer 绑定一个 `QuantizeMethodBase`，用带维度属性的 Parameter 给 checkpoint tensor 划出落点，在 post-load 把它们重排成选定 Kernel 的可执行布局，最后在 `apply` 里执行。这条链要保证的不变量只有一条：**同一批低精度字节在配置解析、TP 切分、加载写入、post-load 重排和 kernel 执行五处得到同一个数值解释**。任何一处换了 pack 顺序、scale 粒度或 zero-point 约定，shape 和 dtype 仍然合法，GEMM 仍然能跑，输出却已经不是这个 checkpoint 表达的模型。
 
-反过来，这一层刻意不拥有几样东西，每一样都有真正的 owner。它**不是** checkpoint 文件枚举、loaded-name 追踪与 packed/fused shard 的 TP slice 写入（归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]）；**不是** Kernel 内部的 warp/tile 布局、provider 选择与融合收益（归 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]）；**不是** TP/EP 的 rank 拓扑与 collective 实现（归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|18]]，本页只判断"要不要归约"）；**不是** KV cache 的物理分页与容量（归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]），也不是 `kv_cache_dtype` 与 attention backend 的能力协商、kernel 内 scale 的实际使用（归 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]）——本页只收 KV scale **参数**从建立到消费的生命周期；**不是** 在线换权重的 pause window 与版本可见性协议（归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]]）；**不是** "地址稳定不等于值静止"的 CUDA Graph 合同本身（归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]]，本页只负责在 reload 时把处理结果写回原 storage）；**不是** IR 层的融合 pass（归 [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|21]]）。
+反过来，这一层刻意不拥有几样东西，每一样都有真正的 owner。它**不是** checkpoint 文件枚举、loaded-name 追踪、融合名称到 shard ID 的映射与通用 TP 写入入口（归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]；packed/block-scale 参数怎样换算写入坐标则由本页 §5.1.1 拥有）；**不是** Kernel 内部的 warp/tile 布局、provider 选择与融合收益（归 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]）；**不是** TP/EP 的 rank 拓扑与 collective 实现（归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|18]]，本页只判断"要不要归约"）；**不是** KV cache 的物理分页与容量（归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]），也不是 `kv_cache_dtype` 与 attention backend 的能力协商、kernel 内 scale 的实际使用（归 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]）——本页只收 KV scale **参数**从建立到消费的生命周期；**不是** 在线换权重的 pause window 与版本可见性协议（归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]]）；**不是** 通用 CUDA Graph 捕获/重放与 `WorkspaceManager`（归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]]；Marlin 的 workspace/sort-index reload 地址合同归本页 §6.2）；**不是** IR 层的融合 pass（归 [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|21]]）。
 
-<!-- 图1 spec：闭环位置图。输入是 HF quant config 与 CLI 在线参数；沿 config 解析 → 名称映射 → per-layer method 绑定 → create_weights → load_weights（归 09）→ post-load → apply 走主链；在线量化与 reload 从 load_weights 分出 layerwise 支线并回流到 post-load；apply 经 CUDA Graph 地址合同回到 reload 形成闭环。每条边标注跨越边界的真实对象名，不用"调用/返回"空词；不画设备行布局与 kernel tile。 -->
+<!-- 图1 spec：闭环位置图。输入是 HF quant config 与 CLI 在线参数；config 节点分别点名 EngineArgs 解析在线参数、ModelConfig 验证身份、VllmConfig 经 get_quant_config 组合配置；沿名称映射 → per-layer method 绑定 → create_weights → load_weights（归 09）→ post-load → apply 走主链；在线量化与 reload 从 load_weights 分出 layerwise 支线并回流到 post-load；apply 经 CUDA Graph 地址合同回到 reload 形成闭环。每条边标注跨越边界的真实对象名，不用"调用/返回"空词；不画设备行布局与 kernel tile。 -->
 ```mermaid
 flowchart TB
-  H["HF quant config 与 CLI 的 quantization / quantization_config"] -->|HF quantization_config dict 与 --quantization / --quantization-config 原始值| RC["config 解析<br/>_verify_quantization + resolve_quantization_config"]
+  H["HF quant config 与 CLI 的 quantization / quantization_config"] -->|HF quantization_config dict 与 --quantization / --quantization-config 原始值| RC["EngineArgs 解析在线参数 · ModelConfig 验证身份<br/>VllmConfig 经 get_quant_config 组合主配置与 overlay"]
   RC -->|QuantizationConfig 主配置 挂 online_quantization_config| CM["configure_quant_config<br/>packed_modules_mapping 与 rename mapper 进入 config"]
   CM -->|vLLM 命名空间下的 ignore / targets / modules_to_not_convert| RM["逐层构造<br/>LinearBase.__init__ · RoutedExperts · _init_kv_cache_quant"]
   RM -->|绑定到 layer.quant_method 的 QuantizeMethodBase 实例| CW["create_weights<br/>MPLinearLayerConfig → choose_mp_linear_kernel"]
@@ -35,7 +35,7 @@ flowchart TB
   class LW,RL acc2;
 ```
 
-图的闭环点在最后两条边：`apply` 消费的 storage 地址被 CUDA Graph 捕获，于是 reload 不能重新分配，只能把 `LayerReloadingInfo.kernel_tensors` 里的旧 Parameter 交回 `_layerwise_process`，让它把重新量化的值 `copy_` 回去。这条回流是本页与 19/25 的真实交接，第 6.2 节展开。
+图的闭环点在最后两条边：`apply` 消费的 storage 地址被 CUDA Graph 捕获，于是 reload 的最终消费地址不能被新分配替换；`_layerwise_process` 把重新量化的值 `copy_` 回 `LayerReloadingInfo.kernel_tensors` 里的旧 Parameter/buffer。kernel 对象自持的 Marlin workspace 不在这份快照里，另由 post-load helper 直接复用。这条回流是本页与 19/25 的真实交接，第 6.2 节展开。
 
 ### 1.1 本页拥有的核心流程
 
@@ -43,20 +43,20 @@ flowchart TB
 
 | 功能 | 要解决的问题 | 设计与实现入口 | 产出的可观察变化 |
 |---|---|---|---|
-| 1 checkpoint 身份解析 | 磁盘上的 `quant_method` 名字该用哪个 parser/实现解释 | `VllmConfig.__post_init__` → `ModelConfig._verify_quantization()` 的有序 override 探测 | `ModelConfig.quantization` 成为一个已解析的 `QuantizationMethods` 名；不兼容组合抛 `ValueError` |
-| 2 在线 overlay 配置解析 | 用户给的 shorthand / `quantization_config` 怎样变成逐层可判定的目标 | `VllmConfig._get_quantization_config` → `resolve_quantization_config` | 返回 `QuantizationConfigArgs` 或 None（`mxfp4`/`mxfp8` 走 deferred 分支），挂到 `quant_config.online_quantization_config` |
+| 1 checkpoint 身份解析 | 磁盘上的 `quant_method` 名字该用哪个 parser/实现解释 | `ModelConfig.__post_init__` → `ModelConfig._verify_quantization()` 的有序 override 探测 | `ModelConfig.quantization` 成为一个已解析的 `QuantizationMethods` 名；不兼容组合抛 `ValueError` |
+| 2 在线 overlay 配置解析 | 用户给的 shorthand / `quantization_config` 怎样变成逐层可判定的目标 | `EngineArgs.__post_init__` → `resolve_quantization_config`；稍后 `VllmConfig._get_quantization_config` → `get_quant_config` 组合配置 | 前者返回 `QuantizationConfigArgs` 或 None，存入 `EngineArgs.quantization_config`（`mxfp4`/`mxfp8` 可 deferred）；后者在 checkpoint 组合分支把非空 args 包成 `OnlineQuantizationConfig` 挂到主配置（overlay 形态）；**还有三条不经 overlay 的返回**——checkpoint 本身没有量化配置时，`get_quant_config` 直接把 `OnlineQuantizationConfig` 当主配置返回，此时它不是叠加在谁之上，而就是那一份配置 |
 | 3 名称映射与 fused 一致性 | HF 名与 vLLM 名不同、一个 fused Kernel 不能有两种方案 | 构造前 `configure_quant_config()`；`SupportsQuant.__new__` | ignore/targets/`modules_to_not_convert` 已在 vLLM 命名空间；每个 fused layer 解析到恰好一个方案，否则 raise |
 | 4 per-layer method 绑定 | 这一层到底由谁解释它的字节 | `LinearBase.__init__` / `RoutedExperts` 构造 / `_init_kv_cache_quant` 里的 `resolve_quant_method` | `layer.quant_method` 是一个已实例化的 `QuantizeMethodBase`；Linear 拿不到则 `ValueError("All linear layers should support quant method.")` |
 | 5 Kernel 预选 | 参数还没分配就要知道最终由谁执行 | `create_weights` 内 `choose_mp_linear_kernel` / `init_fp8_linear_kernel` | 返回一个 kernel 类并实例化；全部失败则 `ValueError` 逐条列出每个候选的拒绝原因——发生在第一个请求到达之前 |
-| 6 参数分配（ABI 建立） | checkpoint tensor 往哪里落、按哪根轴切 | 紧随 #5 的同一次 `create_weights` | layer 上出现带 `input_dim/output_dim/packed_dim/packed_factor` 的具名 Parameter |
+| 6 参数分配与 packed 写入（ABI 建立与履行） | checkpoint tensor 往哪里落、按哪根轴切 | Linear 构造按 `WEIGHT_LOADER_V2_SUPPORTED` 选 loader，`create_weights` 建 Parameter，加载时调用其 loader | 带 `input_dim/output_dim/packed_dim/packed_factor` 的 Parameter 按 block/packed 段坐标完成 shape 校验与 `copy_`（§5.1.1） |
 | 7 post-load kernel 专属 repack | 标准 pack 不是任何一个 Kernel 的可执行布局 | 全模型 `process_weights_after_loading(model, model_config, target_device)` 遍历 | `qweight/scales/(zeros)/(g_idx)` 变成选定 kernel 的布局，`workspace`/`g_idx_sort_indices` 就位，`update_param_tp_status()` 已重对齐 |
 | 8 在线 layerwise materialize / replay / quantize | 不想为在线量化付出全模型双表示峰值 | 首个被 wrap 的 `weight_loader` 调用（`uses_meta_device=True`） | `info.load_numel >= info.load_numel_total` 触发 `_layerwise_process` 直到 `info.reset()`；reload 时 `_copy_and_restore_kernel_tensors` 已把值写回原 storage |
 | 9 finalize 收尾 | 有的层永远等不到"元素齐了" | `BaseModelLoader.load_model` 中 `if _has_online_quant(model)` | `finalize_layerwise_processing` 返回、`LOADING_LAYERS.clear()`；每层要么已处理，要么已恢复旧 kernel tensors |
-| 10 apply 执行与 batch-invariant 退路 | 确定性执行目标与低精度 GEMM 冲突时怎么办 | 每次 `LinearBase.forward` → `quant_method.apply` | 返回 `out_dtype` 输出张量；`VLLM_BATCH_INVARIANT` 下走 BF16 dequant + `F.linear` |
+| 10 apply 执行与 batch-invariant 退路 | 确定性执行目标与低精度 GEMM 冲突时怎么办 | 每次 `ReplicatedLinear` / `ColumnParallelLinear` / `RowParallelLinear` 的 `forward` → `quant_method.apply`（`LinearBase` 只有 `__init__` 与 `update_param_tp_status`，`forward` 定义在这三个具体子类上） | 返回 `out_dtype` 输出张量；`VLLM_BATCH_INVARIANT` 的 BF16 dequant + `F.linear` 退路**只在在线 FP8 的 `apply` 上存在（且 Cutlass 除外）**，不是所有 quant method 的通用行为 |
 | 11 MoE 量化权重 ABI 与 post-load | 专家权重是三维的，linear 那套维度属性不适用 | `RoutedExperts` 构造 → `OnlineMoEMethodBase.create_weights` / `AutoGPTQMoEMethod.create_weights` | `w13_weight`/`w2_weight`（或 `w13_qweight`/`w2_qweight`）注册；post-load 后 per-expert scale 与 shuffle 后的 kernel 格式就位 |
-| 12 KV scale 参数生命周期 | `get_cache_scale_mapper()` 造出的名字要有人接住 | `_init_kv_cache_quant` → `BaseKVCacheMethod.create_weights` | 四个哨兵 Parameter 被 `del`，值落在 `_k_scale/_v_scale/_q_scale/_prob_scale` device buffer 与 host 镜像上 |
+| 12 KV scale 参数生命周期 | `get_cache_scale_mapper()` 造出的名字要有人接住 | `_init_kv_cache_quant` → 选中 method 的 `create_weights` | 基类路径复制值并删四个哨兵；compressed-tensors 将三个 scale Parameter 接到 `_k/_v/_q_scale`，删原名字和 zero-point，占位与 host 镜像语义见 §4.3 |
 
-（checkpoint 字节写入本身归 09，不是本页流程，但在第 8.1 节的所有权表里点名。）
+（checkpoint 枚举、模型名称映射与通用写入入口归 09；量化参数怎样把逻辑 shard 换成 packed/block-scale 存储坐标归本页 #6，交接见 §8.1。）
 
 ### 1.2 哪些每次都走，哪些要开开关
 
@@ -67,7 +67,7 @@ flowchart TB
 | 3 | 基础；其中 fused 展开为条件 | fused 展开仅对有 `packed_modules_mapping` 的模型 | §4.2 |
 | 4 | 基础 | 每个 `LinearBase`/`RoutedExperts`/`Attention` 构造 | §4.1、§5 首段 |
 | 5 | 基础 | 每个量化 linear 的 `create_weights` | §5.1、§7.1 |
-| 6 | 基础 | 同上 | §5.1 |
+| 6 | 基础 | 构造时选 loader/建 Parameter；checkpoint 到达时执行写入 | §5.1、§5.1.1 |
 | 7 | 基础 | 每次 `load_model` | §5.2 |
 | 8 | 条件 | 仅 `uses_meta_device=True` 的 online method 或 reload | §6.1 |
 | 9 | 条件 | 仅 `_has_online_quant(model)` 为真 | §6.1 |
@@ -188,15 +188,17 @@ MoE 不能直接套“所有 TP group 都 MAX”：`amax_for_moe_weight_quant` �
 
 把 §3.2 的教学行放进 `w2` 的一个输出通道：$w=(0.546875,1.09375,2.1875,224)$ 沿 $I_r$ 切给两个 rank，局部 amax 分别是 1.09375 与 224，不归约就会让 rank 0 把 1.09375 编码成 448；归约后共享 $s=0.5$，两片的编码正好是未分片结果的对应 slice。同一行如果放进 `w13` 的一个输出通道，$H$ 没有被切开，局部 amax 就已经是全局 amax，多做一次 collective 只是浪费。**"MoE 要不要归约"从来不是"是不是 MoE"决定的，还是那句：看 amax 归约的那根轴有没有被切开。** collective 的组也不是 TP group 而是 EP group 的设备组——因为专家内分片被展平在 DP×PCP×TP 上，恰好是 EP group 的跨度；启用 EP 后 `moe_tp_size=1`，这次归约整个消失。
 
-**完成点。** 三条 lane 最后都汇到 `_Fp8OnlineMoEBase._setup_kernel`：`convert_to_fp8_moe_kernel_format` 按选定的 `Fp8MoeBackend` shuffle 权重与 scale，`replace_parameter` 把 `w13_weight`/`w2_weight`/`w13_{weight_scale|weight_scale_inv}`/`w2_{…}` 换成新表示（这个 helper 就是保证 RL reload 兼容的那个，见 §6.2），最后 `make_fp8_moe_kernel` 造出 `self.moe_kernel`，`layer._already_called_process_weights_after_loading = True`。可观察变化是：`layer.quant_method.moe_kernel`（属主是 **method 对象**，layer 上没有这个属性）非空且 `apply` 能被调用——而这一步只在 `self.moe_quant_config` 为真时才执行。PTPC 还在**构造时**就拒绝会悄悄丢掉 per-channel/per-token 语义的 backend（MARLIN、CPU、FLASHINFER_CUTLASS、FLASHINFER_TRTLLM），与 §7.2 linear 侧那条拒绝同源。
+**完成点。** 三条 lane 最后都汇到 `_Fp8OnlineMoEBase._setup_kernel`：`convert_to_fp8_moe_kernel_format` 按选定的 `Fp8MoeBackend` shuffle 权重与 scale，`replace_parameter` 把 `w13_weight`/`w2_weight`/`w13_{weight_scale|weight_scale_inv}`/`w2_{…}` 换成新表示（这个 helper 就是保证 RL reload 兼容的那个，见 §6.2），最后 `make_fp8_moe_kernel` 造出 `self.moe_kernel`。**`layer._already_called_process_weights_after_loading = True` 不在 `_setup_kernel` 里**——它由三个子类各自在 `_setup_kernel` **返回之后**才设，所以“kernel 已就位”与“已标记处理完”是两个先后动作，reload 路径（§6.2）正是靠 `delattr` 这个标志把后者撤回来重跑前者。可观察变化是：`layer.quant_method.moe_kernel`（属主是 **method 对象**，layer 上没有这个属性）非空且 `apply` 能被调用——而这一步只在 `self.moe_quant_config` 为真时才执行。PTPC 还在**构造时**就拒绝会悄悄丢掉 per-channel/per-token 语义的 backend（MARLIN、CPU、FLASHINFER_CUTLASS、FLASHINFER_TRTLLM），与 §7.2 linear 侧那条拒绝同源。
 
-Kernel 内部的 shuffle 布局、backend 选择的性能理由归 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]（§8.3 八条布局分支、§8.4 两条带注释的重排理由）；EP/EPLB 的专家放置与 rank 拓扑归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|18]]。本节只到"哪些字节、按哪根轴、用谁的 scale"为止。
+Kernel 内部的 shuffle 布局、backend 选择的性能理由归 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]]（§8.3 八条布局分支、§8.4 两条带注释的重排理由）；checkpoint 的逻辑专家/shard 名怎样落到本 rank 的本地 expert slot 归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis#2.6 融合前分别分片，融合后仍能拆回各投影|模型库 §2.6 的 2.6.1]]；EP/EPLB 的运行期专家放置与 rank 拓扑归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|18]]。本节只到"哪些字节、按哪根轴、用谁的 scale"为止。
 
 源码收束：`vllm/model_executor/layers/quantization/online/moe_base.py::OnlineMoEMethodBase.create_weights`、`OnlineMoEMethodBase._zero_padding`；`vllm/model_executor/layers/quantization/online/fp8.py::_Fp8OnlineMoEBase._setup_kernel`、`Fp8PerTensorOnlineMoEMethod.process_weights_after_loading`、`Fp8PerBlockOnlineMoEMethod.maybe_roundup_sizes`、`Fp8PtpcOnlineMoEMethod.__init__`、`Fp8PtpcOnlineMoEMethod.process_weights_after_loading`；`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQMoEMethod.create_weights`、`get_moe_quant_method`；`vllm/model_executor/model_loader/reload/meta.py::materialize_meta_tensor`。
 
 ## 4. 配置如何决定这一层到底解释哪种数
 
 ### 4.1 checkpoint 身份、在线目标与 activation 选择
+
+这三个阶段有不同调用者：`EngineArgs.__post_init__` 调 `resolve_quantization_config`，把 shorthand / 显式字段解析成 `self.quantization_config`；随后构造的 `ModelConfig` 在自己的 `__post_init__` 里调 `_verify_quantization` 验证 checkpoint 身份；`VllmConfig.__post_init__` 再经 `_get_quantization_config` 调 `get_quant_config` 构造实际 method config。checkpoint 与在线目标并用时，最后这个函数的内部 helper `maybe_compose_online_quantization` 才把非空 `model_config.quantization_config` 包成 `OnlineQuantizationConfig` 并挂到主配置，不能把“解析 args”和“挂载 overlay”画成同一次调用。
 
 预量化路径先从 HF quant config 读取 `quant_method`，按有序 override 探测兼容 parser/实现，之后检查用户名字是否与解析结果一致。GPTQ override 只接受 checkpoint 声明 `gptq`，且用户为未指定或 `gptq/gptq_marlin/auto_gptq/marlin` 兼容集合；不匹配不能强行用另一种字节布局解释。注册表校验、平台非空支持集合、config 最低 capability 与模型 activation dtype 是后续门槛。平台集合为空仅代表这道过滤不限制，不代表每个 Kernel 可用；deprecated 方法还受显式允许开关限制。
 
@@ -217,7 +219,7 @@ Kernel 内部的 shuffle 布局、backend 选择的性能理由归 [[02_engineer
 
 `ignore`/`targets` 之外还有一根**同级的 per-layer 选择轴**：GPTQModel 的 `dynamic` 字段。它是 `dict[regex, dict]`，`-:` 前缀为负匹配（`get_dynamic_override` 返回 `False`，该层直接拿 `UnquantizedLinearMethod` / `UnquantizedFusedMoEMethod`），`+:` 或无前缀为正匹配，`override_config` 在 config 的 deepcopy 上覆写 `bits`/`group_size`/`desc_act`/`sym` 并重算 `pack_factor` 与 `quant_type`，覆写后仍不在 `TYPE_MAP` 里就 raise。本页只登记它的存在与判定顺序（见 §8.2 配置契约表），逐字段行为由 `gptq_utils` 自己拥有。
 
-源码收束：`vllm/config/model.py::ModelConfig._verify_quantization`；`vllm/config/vllm.py::VllmConfig._get_quantization_config`；`vllm/platforms/interface.py::Platform.verify_quantization`；`vllm/config/quantization.py::resolve_quantization_config`、`QuantizationConfigArgs._validate_targets_exclusivity`；`vllm/model_executor/model_loader/weight_utils.py::get_quant_config`；`vllm/model_executor/layers/quantization/base_config.py::resolve_quant_method`；`vllm/model_executor/layers/quantization/online/base.py::OnlineQuantizationConfig._get_method_cls`、`_find_matching_targets`、`OnlineQuantizationConfig._resolve_targets_quant_method_metadata`；`vllm/model_executor/layers/quantization/utils/gptq_utils.py::get_dynamic_override`、`override_config`、`get_linear_quant_method`。
+源码收束：`vllm/engine/arg_utils.py::EngineArgs.__post_init__`、`EngineArgs.create_model_config`；`vllm/config/model.py::ModelConfig.__post_init__`、`ModelConfig._verify_quantization`；`vllm/config/vllm.py::VllmConfig.__post_init__`、`VllmConfig._get_quantization_config`；`vllm/platforms/interface.py::Platform.verify_quantization`；`vllm/config/quantization.py::resolve_quantization_config`、`QuantizationConfigArgs._validate_targets_exclusivity`；`vllm/model_executor/model_loader/weight_utils.py::get_quant_config`（含内部 `maybe_compose_online_quantization`）；`vllm/model_executor/layers/quantization/base_config.py::resolve_quant_method`；`vllm/model_executor/layers/quantization/online/base.py::OnlineQuantizationConfig._get_method_cls`、`_find_matching_targets`、`OnlineQuantizationConfig._resolve_targets_quant_method_metadata`；`vllm/model_executor/layers/quantization/utils/gptq_utils.py::get_dynamic_override`、`override_config`、`get_linear_quant_method`；`tests/quantization/test_quantization_config_args.py::test_resolve_colliding_shorthand_is_deferred`、`test_resolve_merges_explicit_over_shorthand`。
 
 ### 4.2 名称映射之后，融合投影必须能用同一方案执行
 
@@ -225,19 +227,28 @@ Kernel 内部的 shuffle 布局、backend 选择的性能理由归 [[02_engineer
 
 skip matcher 会展开 fused prefix 检查 constituent shards；部分 skip 直接报错。当前还先检查 checkpoint 是否直接列了 fused 名字，如 `self_attn.qkv_proj`，若直接匹配就整体 skip，避免明明配置了 fused 名却因展开而漏过。online targets 的一致性是同一原则的另一实现，并非所有 config 都共享一个 matcher。
 
-KV scale 的名称在这里归一：base mapper 把旧 `.kv_scale` 映到 `.attn.k_scale`，ModelOpt 的 k/v projection scale、fused QKV 与常规 q/k/v scale/zero-point 名也映到 attention 参数。旧 fused 名只直接映 k，不能说这一行同时创造独立 k/v scale。这些名字的**唯一消费者**是下一节的 `BaseKVCacheMethod`；backend 对 scale 的最终使用与 `kv_cache_dtype` 能力协商接 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]。通用名称遍历、packed shard copy 和 TP slice 接 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]。
+KV scale 的名称在这里归一：base mapper 把旧 `.kv_scale` 映到 `.attn.k_scale`，ModelOpt 的 k/v projection scale、fused QKV 与常规 q/k/v scale/zero-point 名也映到 attention 参数。旧 fused 名只直接映 k，不能说这一行同时创造独立 k/v scale。接住这些名字的是所选 **KV-cache quant method**，不能只看基类实现。枚举依据是各 config 的 `get_quant_method` 对 attention 层的选择，以及基线中 `BaseKVCacheMethod` 的四个直接子类：
+
+| config 的选择点 | 选中的 method | create / post-load 语义 |
+|---|---|---|
+| `Fp8Config.get_quant_method` 的 `Attention` 分支 | `Fp8KVCacheMethod` | 继承基类 create 与 post-load |
+| `ModelOptQuantConfigBase.get_quant_method` 的 `Attention/MLAAttention` 分支，通过 `KVCacheMethodCls`；`ModelOptMixedPrecisionConfig` 的 `Attention` 分支另要求 `kv_cache_quant_method` 非空 | `ModelOptKVCacheMethod`（基础类槽位默认 `BaseKVCacheMethod`） | 两者均使用基类 create 与 post-load |
+| `QuarkConfig.get_quant_method_target` 选中 attention，随后 `get_quant_method` 实例化；被 exclude 的层可先返回 None | `QuarkKVCacheMethod` | 先验证 Quark KV config，继承基类 create 与 post-load |
+| `CompressedTensorsConfig.get_quant_method` 的 `Attention` 分支 | `CompressedTensorsKVCacheMethod` | **完全覆写 create 与 post-load**，不调用基类后处理；见 §4.3 |
+
+backend 对 scale 的最终使用与 `kv_cache_dtype` 能力协商接 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]。通用名称遍历、模型融合名到 shard ID 的映射与普通 TP 写入入口接 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]；量化 Parameter 的 packed/block-scale 坐标转换及 loader v1/v2 选择由本页 §5.1.1 闭合。
 
 源码收束：`vllm/model_executor/model_loader/utils.py::configure_quant_config`；`vllm/model_executor/models/interfaces.py::SupportsQuant._maybe_apply_model_mapping`；`vllm/model_executor/models/llama.py::LlamaForCausalLM.packed_modules_mapping`；`vllm/model_executor/layers/quantization/utils/quant_utils.py::is_layer_skipped`；`vllm/model_executor/layers/quantization/base_config.py::QuantizationConfig.get_cache_scale_mapper`。
 
 ### 4.3 KV scale 参数从哨兵到消费
 
-上一节造出了 `.attn.{q,k,v}_scale` 这些名字。接住它们的是一个同样继承 `QuantizeMethodBase` 的方法类，所以它的参数生命周期与本页其它 method 是同一套语义，只是"权重"退化成四个标量。
+上一节造出了 `.attn.{q,k,v}_scale` 这些名字。接住它们的是同样继承 `QuantizeMethodBase` 的方法类，但参数表示有两条路径：基类的四个标量哨兵，以及 compressed-tensors 的 tensor / attn-head scale 与 zero-point 占位。先追踪基类路径，再对照覆写分支。
 
-**建立。** `Attention` / `MLAAttention` 构造时调 `_init_kv_cache_quant`：先 `set_default_quant_scales(layer, register_buffer=True)` 注册四个 float32 buffer `_k_scale/_v_scale/_q_scale/_prob_scale`（全 1.0）以及 host 镜像 `_k_scale_float`/`_v_scale_float`/`_q_scale_float`/`_k_scale_cpu`/`_v_scale_cpu`——注册进 state dict 是为了 `model.to(device)` 能搬走它们，否则 CUDA kernel 会读到 CPU 张量。随后 `resolve_quant_method` 走 §4.1 那条同一解析；只有 `should_load_quant_weights(quant_method)` 为真（非 None 且不是 `UnquantizedLinearMethod`）才 `layer.quant_method.create_weights(layer)`，建立四个**哨兵 Parameter** `q_scale/k_scale/v_scale/prob_scale`，每个都是 `KVCacheScaleParameter()`，值 $-1.0$。
+**建立。** `Attention` / `MLAAttention` 构造时调 `_init_kv_cache_quant`：先 `set_default_quant_scales(layer, register_buffer=True)` 注册四个 float32 buffer `_k_scale/_v_scale/_q_scale/_prob_scale`（全 1.0）以及 **6 个** host 镜像 `_k_scale_float`/`_v_scale_float`/`_q_scale_float`/`_prob_scale_float`/`_k_scale_cpu`/`_v_scale_cpu`——注册进 state dict 是为了 `model.to(device)` 能搬走它们，否则 CUDA kernel 会读到 CPU 张量。随后 `resolve_quant_method` 走 §4.1 那条同一解析；只有 `should_load_quant_weights(quant_method)` 为真（非 None 且不是 `UnquantizedLinearMethod`）才调用 `layer.quant_method.create_weights(layer)`。**这一步还有本节唯一的硬失败**：`should_load_quant_weights` 为真之后，若 `layer.kv_cache_dtype == "fp8_e5m2"`，则除非 quant method 恰是 `CompressedTensorsKVCacheMethod` **且**其 `kv_cache_scheme` 为 `None`，否则抛 `ValueError("fp8_e5m2 kv-cache is not supported with fp8 checkpoints.")`。源码注释给了理由：CT checkpoint 只在声明了 `kv_cache_scheme` 时才存 fp8 KV scale；weight-only 的 CT checkpoint 不声明它，因而必须保留 `fp8_e5m2`——那是 Ampere 上唯一可用的 fp8 KV dtype。使用基类 create 的路径建立四个**哨兵 Parameter** `q_scale/k_scale/v_scale/prob_scale`，每个都是 `KVCacheScaleParameter()`，值 $-1.0$。
 
-**为什么是哨兵而不是 1.0。** 1.0 是一个合法 scale，用它做默认值就无法区分"checkpoint 给了 1.0"和"checkpoint 没给"。$-1.0$ 落在合法 scale 之外，于是 post-load 可以只靠符号判断。这也是 `KVCacheScaleParameter.weight_loader` 只接受 `numel() == 1` 的原因：per-head scale 是另一种数据面，走 compressed-tensors 的 `_tp_aware_loader`（实例属性赋值遮蔽类级 loader），不能混进这条 scalar-only 通道；形状不对直接 `ValueError`。
+**为什么是哨兵而不是 1.0。** 1.0 是一个合法 scale，用它做默认值就无法区分"checkpoint 给了 1.0"和"checkpoint 没给"。$-1.0$ 落在合法 scale 之外，于是 post-load 可以只靠符号判断。这也是 `KVCacheScaleParameter.weight_loader` 只接受 `numel() == 1` 的原因：括注里“实例属性赋值遮蔽类级 loader”说的是 `KVCacheScaleParameter` 自己 docstring 对**基类哨兵参数**的描述，不要套到 CT 身上：per-head scale 是另一种数据面，走 compressed-tensors 的 `_tp_aware_loader`，而 CT 的 `create_weights` 建的是普通 `torch.nn.Parameter`，其上本就没有类级 `weight_loader` 可遮蔽，`layer.q_scale.weight_loader = partial(...)` 只是一次普通实例赋值。总之 per-head 不能混进这条 scalar-only 通道；形状不对直接 `ValueError`。
 
-**消费。** `BaseKVCacheMethod.process_weights_after_loading` 是**三条早返回 + 一个条件块 + 一段无条件尾巴**，不是四条互斥出口——这个区别决定了最常见的那条路径长什么样：
+**基类消费。** `BaseKVCacheMethod.process_weights_after_loading` 是**三条早返回 + 一个条件块 + 一段无条件尾巴**，不是四条互斥出口——这个区别决定了最常见的那条路径长什么样：
 
 | 分支 | 触发 | 做什么 |
 |---|---|---|
@@ -249,15 +260,26 @@ KV scale 的名称在这里归一：base mapper 把旧 `.kv_scale` 映到 `.attn
 
 前三条都以 `return` 结束，第四条没有。所以**最常见的那条路径恰恰是表里看不出的**：`kv_cache_dtype="auto"`（KV cache 未量化）配上一个量化 linear 模型时，前三条都不触发、第四条条件为假，函数仍然执行尾巴——设置 q/prob scale 并删掉四个占位。也就是说"没有量化 KV cache"不等于"这个 method 什么都没做"。
 
-第四条的三态判定正是哨兵的用处：`k_scale > 0 and v_scale > 0` 取各自值；两个都 `< 0` 说明 checkpoint 一个都没给，取 1.0（并在非 e5m2 时 `warning_once`）；恰好一个 `> 0` 说明 checkpoint 只有一个旧式 `kv_scale`、被 §4.2 的 mapper 映到了 k，此时把它复制给 v。**fnuz 平台只有前两态再 `×2`**——"两个都 `< 0`"那条直接取常量 1.0，不加倍，因为它本来就不是从 checkpoint 读来的数。结果不是 python float 就 `ValueError`（"Only support per-tensor scaling factor for fp8 KV cache"）。`q_scale < 0` 时另有一条 `warning_once` 并取 k_scale。
+第四条的三态判定正是哨兵的用处：`k_scale > 0 and v_scale > 0` 取各自值；两个都 `< 0` 说明 checkpoint 一个都没给，取 1.0；否则进入兼容旧式单 `kv_scale` 的分支，要求 `k_scale > 0`（有 assert），取 k/v 的最大值并复制给两者。只有从 checkpoint 取值的两条分支在 fnuz 平台再 `×2`；缺失两者时的常量 1.0 不加倍。结果不是 python float 就 `ValueError`（"Only support per-tensor scaling factor for fp8 KV cache"）；最终 k/v 都为 1.0 且 dtype 名不含 e5m2 时发出对应 `warning_once`。`q_scale < 0` 时先 warning，并执行 `_q_scale.copy_(k_scale)` 与 `_q_scale_float = k_scale`，但这只是中间值：尾巴仍检查未被修改的 `layer.q_scale`，走 `else: q_scale = 1.0`，再次复制并把 host float 覆盖为 **1.0**。
 
-**完成点是一个删除动作**：四个占位 Parameter 被 `del`，值落在 `_q_scale/_k_scale/_v_scale/_prob_scale` 这四个 device buffer 加 `_k_scale_float`/`_k_scale_cpu` 等 host 镜像上。此后 `hasattr(layer, "q_scale")` 为假，正是第二条分支下次 reload 时的判据。
+> [!contradiction] 缺失 q_scale：warning 的承诺与最终行为不一致
+> 源码 warning 写着 “Setting it to k_scale”，旧稿也据此说 q_scale 取 k_scale；冻结基线实际先复制 k_scale，再由无条件尾巴覆盖为 1.0。例如非 fnuz 平台载入 k/v=0.3、q 保持 -1.0 时，`_q_scale` 的轨迹是 1.0 → 0.3 → 1.0，最终 `_q_scale_float` 也是 1.0。这里保留 warning 文案与实现的矛盾，不能用文案替代最终值。
+
+**基类完成点是一个删除动作**：四个占位 Parameter 被 `del`，值落在 `_q_scale/_k_scale/_v_scale/_prob_scale` 这四个 device buffer 加 `_k_scale_float`/`_k_scale_cpu` 等 host 镜像上。此后 `hasattr(layer, "q_scale")` 为假，正是第二条分支下次 reload 时的判据。
+
+**compressed-tensors 的完整覆写。** `CompressedTensorsKVCacheMethod` 不执行上面的三态判定、fnuz 倍增或缺 q 的 warning。它的 `create_weights` 建立默认全 1 的 q/k/v scale 和默认全 0 的 q/k/v zero-point，不建立 `prob_scale`；TENSOR（或未给 scheme 的兼容路径）每个 scale 一个元素，ATTN_HEAD 则每个本地 KV head 一个元素。`validate_kv_cache_scheme` 对显式 scheme 只接受 8-bit float、TENSOR/ATTN_HEAD、symmetric，否则拒绝。zero-point 占位只是接收 checkpoint 名字，当前对称量化不使用它们。
+
+ATTN_HEAD 的 `_tp_aware_loader` 把 checkpoint scale 展平，q scale 先按 query heads 对 KV head 的分组取 max，再按 TP 的 head 切分或复制规则写入本地 Parameter。post-load **直接赋值** `layer._k_scale = layer.k_scale`（v/q 同理），所以 `_k/_v/_q_scale` 接管的是 Parameter 对象，保留完整本地向量，并非把值复制进旧标量 buffer。`_*_float` 对多元素取 `max().item()`，单元素取 `item()`，k/v 的 CPU 镜像用该标量 `fill_`。例如本地 k scale 为 `[0.2, 0.3]`，`_k_scale` 仍为这两个元素，`_k_scale_float` 和 `_k_scale_cpu` 却都代表 0.3；不能把 host 标量说成逐 head scale 的无损镜像。
+
+最后它删掉原 q/k/v scale 名和三个 zero-point 名，scale Parameter 仍以带下划线的属性存在；`_prob_scale` 保持初始化值。该覆写没有基类的“已消费”或 pre-processed 早返回，因此基类的删除判据与重载幂等性不能直接套用到 CT；若未先重建原 scale 属性就再次调用这个 hook，会在访问 `layer.k_scale` 时失败。本节只描述该 hook 的前置条件，不据此推断所有加载器的 reload 结果。
 
 两个容易混淆的边界。其一，`BaseKVCacheMethod` 声明 `supports_pre_processed_weights = True`，所以它是 §5.2 那条 `weights_already_processed` 规则的**正例**：不是被跳过，而是自己走了第一条分支；未声明的 method 在同一模式下会 `RuntimeError`。其二，attention 层在全模型 post-load 里被走了两遍——第一遍是通用循环调 `quant_method.process_weights_after_loading(module)`，也就是本节这个；第二遍是 `is_deferred_attention_layer` 的专门循环调 `Attention.process_weights_after_loading(act_dtype)`，那是 backend impl 自己的钩子。两者签名与职责都不同，不能当成一件事。
 
 KV cache 的物理 layout 与容量归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]]；`kv_cache_dtype` 与 backend 的能力协商、attention kernel 里 scale 的实际使用归 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]]。
 
-源码收束：`vllm/model_executor/layers/quantization/kv_cache.py::KVCacheScaleParameter`、`BaseKVCacheMethod.create_weights`、`BaseKVCacheMethod.process_weights_after_loading`；`vllm/model_executor/layers/attention/attention.py::_init_kv_cache_quant`、`set_default_quant_scales`、`should_load_quant_weights`、`Attention.process_weights_after_loading`；`vllm/model_executor/layers/attention/__init__.py::is_deferred_attention_layer`。
+源码收束：`vllm/model_executor/layers/quantization/kv_cache.py::KVCacheScaleParameter`、`BaseKVCacheMethod.create_weights`、`BaseKVCacheMethod.process_weights_after_loading`；`vllm/model_executor/layers/quantization/fp8.py::Fp8Config.get_quant_method`；`vllm/model_executor/layers/quantization/modelopt.py::ModelOptQuantConfigBase.get_quant_method`、`ModelOptMixedPrecisionConfig.get_quant_method`；`vllm/model_executor/layers/quantization/quark/quark.py::QuarkConfig.get_quant_method_target`；`vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py::CompressedTensorsConfig.get_quant_method`、`CompressedTensorsKVCacheMethod.validate_kv_cache_scheme`、`CompressedTensorsKVCacheMethod.create_weights`、`CompressedTensorsKVCacheMethod.process_weights_after_loading`；`vllm/model_executor/layers/attention/attention.py::_init_kv_cache_quant`、`set_default_quant_scales`、`should_load_quant_weights`、`Attention.process_weights_after_loading`；`vllm/model_executor/layers/attention/__init__.py::is_deferred_attention_layer`。
+
+测试边界：`tests/quantization/test_fp8.py::test_kv_cache_scale_sync_to_host_copies` 只断言 k/v 的 host/device 一致，不断言缺 q 时的最终值；`tests/quantization/test_per_token_kv_cache.py::test_process_weights_sets_placeholder_scales` 覆盖基类 per-token-head 早返回；`tests/quantization/test_compressed_tensors.py::test_compressed_tensors_kv_cache_fp8_per_attn_head` 走真实模型生成 smoke test。这些测试已静态阅读，本轮未运行 GPU 测试；上面的 q 覆盖与 CT 对象接管来自冻结实现逐句追踪。
 
 ## 5. 一个 AutoGPTQ layer 从字节容器变成可执行参数
 
@@ -291,6 +313,36 @@ AutoGPTQ 用 `MPLinearLayerConfig` 保存 full/local `[K,N]`、weight/activation
 方法在分配前让 `choose_mp_linear_kernel` 筛选兼容候选，然后创建上述 Parameter 与选定 Kernel 实例；Parameter 的 input/output/packed 维度、pack factor 与 loader 使 checkpoint copy 有明确目标。流式文件枚举与名字分片归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]]，本页不把“copy 成功”当成已经可执行。
 
 源码收束：`vllm/model_executor/layers/linear.py::LinearBase.__init__`、`ReplicatedLinear.__init__`、`ReplicatedLinear.forward`；`vllm/model_executor/layers/quantization/auto_gptq.py::AutoGPTQLinearMethod.create_weights`、`AutoGPTQConfig.__init__`；`vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py::MPLinearLayerConfig`；`vllm/model_executor/layers/quantization/utils/marlin_utils.py::marlin_repeat_scales_on_all_ranks`。
+
+#### 5.1.1 写入时换算的是存储坐标，不是把 INT4 解开
+
+**谁选 loader。** `ColumnParallelLinear.__init__`（Merged/QKV 也继承这条构造路径）与 `RowParallelLinear.__init__` 按 `quant_method.__class__.__name__ in WEIGHT_LOADER_V2_SUPPORTED`，把 `self.weight_loader_v2` 或 `self.weight_loader` 传给 `create_weights`。因此不是由 checkpoint 名字、所选 GPU Kernel 或 `PackedvLLMParameter` 类型临时猜接口。这里的 v1/v2 指 **Linear 权重加载接口**，与 Model Runner V1/V2 无关。
+
+冻结基线表内是 `UnquantizedLinearMethod`、`CompressedTensorsLinearMethod`、`CompressedTensorsLinearTransformMethod`、`QutlassNvFP4LinearMethod`、`AutoAWQMarlinLinearMethod`、`AutoAWQLinearMethod`、`AutoGPTQLinearMethod`、`Fp8LinearMethod`、`FBGEMMFp8LinearMethod`、`QuarkLinearMethod`、`HummingLinearMethod`；`ModelOptLinearMethod` 通过 `register_weight_loader_v2_supported_method` 装饰器追加。未登记类走旧 loader；它仍是活路径，不是“V1 引擎已移除所以不用看”。普通 bias 另挂旧 `weight_loader`，不因此改成量化 Parameter。
+
+**两套入口履行同一坐标合同。** 旧 loader 在 Linear 内用 `getattr(param, ...)` 解释维度属性；v2 把通用切片下放给 Parameter 的 `load_column_parallel_weight`、`load_row_parallel_weight`、`load_merged_column_weight`、`load_qkv_weight`。Merged/QKV 层仍负责先算逻辑段 offset/size、处理 block scale、分解磁盘上已融合的张量；最后两者都做 shape assert 和 `copy_`，不是数值反量化。
+
+| 输入参数 / 条件 | 从逻辑 shard 到存储 shard 的规则 | 不能漏掉的边界 |
+|---|---|---|
+| `BlockQuantScaleParameter` | `adjust_block_scale_shard` 用 `weight_block_size[0]`（output block 大小）分别向上整除 offset 与 size | `weight_block_size` 必须非 None；这是 scale grid 单位，不是 pack factor，也不是按向下取整修复任意不对齐分片 |
+| 输出轴被打包的 `PackedColumnParameter` / `PackedvLLMParameter` | 仅 `packed_dim == output_dim` 时，v2 的 `adjust_shard_indexes_for_packing` 将 size 与 offset 各自执行 `round(value // packed_factor)` | 输入轴打包的 qweight 不得把 QKV 输出段再除一次；helper 不解包、不提供任意位偏移写入 |
+| 带 `marlin_tile_size` 的 packed 参数 | 旧 loader 在上述除 pack 后调用 `adjust_marlin_shard`，把 size/offset 乘 tile；v2 helper 内的 `_adjust_shard_indexes_for_marlin` 做相同乘法 | 无 tile 属性则不变；这是输入参数存储元数据，不能因为最终选了 Marlin 就强行乘 tile，标准 AutoGPTQ create 没有设置它 |
+| Row TP 的 input shard | `RowvLLMParameter` 直接取本地 `data.shape[input_dim]` 为 size，源从 `tp_rank * size` 开始 | shape 已是 packed word/group 单位，不再除一次 pack/group size |
+| 复制 scale / zero-point 表 | `marlin_repeat_scales_on_all_ranks` 为 act-order 或 channelwise+row 时，AutoGPTQ 建无 `input_dim` 的 `ChannelQuantScaleParameter` / `PackedColumnParameter`；其 row loader 继承 Base 的整张 shape 校验与 copy | 每个 row TP rank 收到全局 group 表；不是通信广播或 MAX collective。Column/QKV 仍可沿 output_dim 分片，并非任何 TP 拓扑都复制所有输出列 |
+
+QKV 的 named shard 还区分 rank：Q 从 `tp_rank * shard_size` 取源片，K/V 从 `(tp_rank // num_kv_head_replicas) * shard_size` 取源片；因此 KV heads 少于 TP ranks 时，多个 rank 可取同一段。若 checkpoint 已融合、`loaded_shard_id=None`，先按全局 Q/K/V 宽度切成三个源张量（同样先换 block/packed 坐标），再回到 named-shard 路径；per-tensor scale 特例则把同一标量填满本地 q/k/v 三个槽位。
+
+**复算 `[64,512]`：同 shape 不代表同 TP 轴。** 前面的 row TP 例子保持不变；这里另取 QKV 层 `hidden_size=512`、Q heads=8、KV heads=4、head size=64、TP=2、rank=1，无 act-order、4 bit、group=128。其输入 K 不切分、全局 Q/K/V 输出宽度为 512/256/256，本地宽度为 256/128/128，总共 512。于是本地 qweight 仍为 `[64,512]`，scales 为 `[4,512]`，qzeros 为 `[4,64]`，但现在是**输出轴 TP**，不是把上文 `[1024,512]` row 分片当作 QKV。
+
+| 参数与本地目标段（区间右端不含） | rank 1 从独立 checkpoint shard 取哪一段 | 换算验证 |
+|---|---|---|
+| qweight：Q `[:,0:256]`、K `[:,256:384]`、V `[:,384:512]` | Q 源 `[64,512]` 的 `[:,256:512]`；K/V 各自源 `[64,256]` 的 `[:,128:256]` | `packed_dim=0`，`output_dim=1`；输出 offset=0/256/384 保持不变，每行仍是完整 int32 word |
+| qzeros：Q `[:,0:32]`、K `[:,32:48]`、V `[:,48:64]` | Q 源 `[4,64]` 的 `[:,32:64]`；K/V 各自源 `[4,32]` 的 `[:,16:32]` | `packed_dim=output_dim=1`；K 段逻辑 offset=256、size=128，经 `/8` 得 offset=32、size=16，源起点为 rank 1 × 16 |
+| scales：Q `[:,0:256]`、K `[:,256:384]`、V `[:,384:512]` | Q 源 `[:,256:512]`；K/V 各自源 `[:,128:256]` | 没有 packed 轴；group=128 只决定输入方向四行，不缩小输出 offset |
+
+如果磁盘已融合，qweight 全局 `[64,1024]` 先按输出区间 0:512、512:768、768:1024 切开；qzeros 全局 `[4,128]` 则先按 0:64、64:96、96:128 切开，再执行上表本地写入。前者没有输出 pack 调整，后者在“全局拆段”和“本地落段”各自转换自己的逻辑坐标，**不是对同一个 offset 连除两次**。当前对称 AutoGPTQ 虽不将 qzeros 作为 GEMM 的可变 zero-point，加载容器仍必须遵守这份 ABI。
+
+源码收束：`vllm/model_executor/layers/linear.py::WEIGHT_LOADER_V2_SUPPORTED`、`register_weight_loader_v2_supported_method`、`ColumnParallelLinear.__init__`、`RowParallelLinear.__init__`、`MergedColumnParallelLinear.weight_loader_v2`、`QKVParallelLinear._load_fused_module_from_checkpoint`、`QKVParallelLinear.weight_loader`、`QKVParallelLinear.weight_loader_v2`、`adjust_block_scale_shard`、`adjust_marlin_shard`；`vllm/model_executor/parameter.py::_ColumnvLLMParameter.load_qkv_weight`、`RowvLLMParameter.load_row_parallel_weight`、`BasevLLMParameter._assert_and_load`、`PackedvLLMParameter.adjust_shard_indexes_for_packing`、`_adjust_shard_indexes_for_packing`；`vllm/model_executor/layers/quantization/modelopt.py::ModelOptLinearMethod`。
 
 ### 5.2 Post-load 做哪几种真实变换
 
@@ -353,15 +405,15 @@ flowchart TB
 
 这个按元素计数的触发器仍有边界。源码承认重复小 metadata、padding 和加载顺序的限制；finalize 会处理部分元素未加载的 padding 层，首次未收到权重的层也可进入处理，reload 未收到新权重时可恢复旧 Kernel tensors。因此“8/12 必须等 bias”是具体修复，不应提升成通用“所有必需状态已验证齐全且 hook 全局恰调用一次”。online method 用 already-called flag 防重复数值转换，reload 会先清标志；全模型遍历还会调用 hook。
 
-多个 layer 的 checkpoint tensor 交错到达，也可能让多个 buffered layer 同时存活，源码对此提示额外内存；峰值并非永远严格一层。`DefaultModelLoader.track_weights_loading` 默认只对具备 loaded-name tracking 的非量化模型开启，且其 `has_postprocess_quant` 判断连继承 no-op hook 的普通 linear 参数都可能豁免。它不能证明每个量化字节、bias 和 scale 都真的写到；数值/shape/load 测试仍是不同证据。
+多个 layer 的 checkpoint tensor 交错到达，也可能让多个 buffered layer 同时存活，源码对此提示额外内存；峰值并非永远严格一层。`DefaultModelLoader.track_weights_loading` 默认只对具备 loaded-name tracking 的非量化模型开启，而且它对**凡是挂着 `quant_method` 的模块无条件豁免**——普通 linear 权重并不是“可能豁免”而是必然豁免；这条判定的机制与范围归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]] §2.8，本页不重述。它不能证明每个量化字节、bias 和 scale 都真的写到；数值/shape/load 测试仍是不同证据。
 
 ### 6.2 reload 与 CUDA Graph：本页负责哪一半
 
 在线换权重时三件事同时成立，分属三页，混在一起说就会得出"量化 method 保证了 CUDA Graph 有效"这种过强结论。
 
-- **17（本页）拥有量化侧动作**：`_layerwise_process` 里 `delattr(layer._already_called_process_weights_after_loading)`（不清这个标志，第二次 reload 的 method 会直接 return，权重不会被重新量化）→ 回放 buffered loads → `quant_method.process_weights_after_loading` 重新量化/repack → `update_param_tp_status` 重对齐 TP metadata → `_copy_and_restore_kernel_tensors`。
+- **17（本页）拥有量化侧动作及 Marlin 辅助 storage 的 reload 地址合同**：`_layerwise_process` 里 `delattr(layer._already_called_process_weights_after_loading)`（不清这个标志，第二次 reload 的 method 会直接 return，权重不会被重新量化）→ 回放 buffered loads → `quant_method.process_weights_after_loading` 重新量化/repack → `update_param_tp_status` 重对齐 TP metadata → `_copy_and_restore_kernel_tensors`；其中 workspace 与 sort indices 的具体复用条件也在这里闭合。
 - **25 拥有可见性协议与 pause window**：什么时候允许换、换到一半的版本对请求是否可见。
-- **19 拥有地址合同**：捕获的 graph 依赖的是 `data_ptr` 稳定，而不是值静止。
+- **19 拥有通用 CUDA Graph 捕获/重放合同与 `WorkspaceManager`**：捕获的 graph 依赖的是 `data_ptr` 稳定，而不是值静止；它不代替下表的 Marlin 特定 reload 实现。
 
 跨边界的对象有三个，名字都要点出来：
 
@@ -369,11 +421,15 @@ flowchart TB
 |---|---|---|---|
 | `LayerReloadingInfo.kernel_tensors` | `LAYERWISE_INFO` 里的 per-layer info | `initialize_layerwise_reload` 用 `get_layer_params_buffers(layer)` 快照旧 Parameter/buffer | `_copy_and_restore_kernel_tensors` 逐个 `param.data.copy_(getattr(layer, name))`，再 `_place_kernel_tensors` 把旧对象重新 `register_parameter`/`register_buffer` |
 | Marlin `workspace` | **kernel 对象**（`self.workspace`），不在上面的快照里 | 17 的 post-load：`marlin_make_workspace_new(device, existing=getattr(self, "workspace", None))` | 复用旧张量并 `zero_()`；device/dtype/numel 不符直接 `ValueError`，明说"Reload must reuse the workspace storage captured by CUDA graphs" |
-| Marlin `g_idx_sort_indices` | layer | 17 的 post-load：act-order 时 `replace_parameter(layer, "g_idx_sort_indices", …, prefer_copy=True)`，否则 `marlin_make_empty_g_idx` | `prefer_copy=True` 在 shape/dtype/device 相容时就地 copy，保住 `data_ptr` |
+| Marlin `g_idx_sort_indices` | layer 上注册的 **Parameter**，不是 checkpoint 输入 | 17 的 post-load：act-order 时 `replace_parameter(layer, "g_idx_sort_indices", …, prefer_copy=True)`，否则 `marlin_make_empty_g_idx` | `prefer_copy=True` 在旧参数存在且 shape/dtype/device 相容时就地 copy，保住 `data_ptr`；不相容时 helper 会注册新 Parameter，**不是**无条件保址或报错 |
 
-后两个是**参数以外**也必须保持地址的辅助 storage，正是 17 的 post-load 创建的，因而是 17 → 19 的真实交接物。回归测试 `test_marlin_post_load_preserves_runtime_tensor_addresses` 用两份不同的 act-order 连跑两次 post-load，断言 `kernel.workspace.data_ptr()` 与 `layer.g_idx_sort_indices.data_ptr()` 都不变、workspace 已被清零、sort indices 等于用新 `g_idx` 重算的结果，并且 `g_idx_sort_indices` 是 `torch.nn.Parameter`（这样 layerwise 的 copy-back 才会覆盖到它）。MoE 侧的对应保证由 `_setup_kernel` 里的 `replace_parameter` 提供（§3.3）。
+后两个都是 **post-load 派生的辅助 storage**，但只有 kernel-owned workspace 不在 layer 的 Parameter/buffer 快照里；sort indices 是 Parameter，layerwise reload 的 copy-back 会覆盖它。`marlin_make_workspace_new` 按 `num_compute_units(device.index) * max_blocks_per_sm` 个 int32 建缓冲（默认每 SM 一个），旧对象相容就清零并返回同一对象，不相容就报错而非悄悄换地址。`replace_parameter(..., prefer_copy=True)` 则只是**相容时优先 copy**：保留旧属性，并转入新 tensor 的非 loader 属性；新 tensor 的 loader 不被采纳。两次直接 post-load 时，旧 sort-index 仍挂在 layer 上且形状/类型/设备相同，才命中这条就地 copy；layerwise reload 先恢复构造时集合，派生 sort-index 可在 post-load 中新建，再由最后的 copy-back 恢复原对象。不能把两种机制都归功于 `prefer_copy`，也不能推广成任意形状/设备变更都保证 graph 有效。无 act-order 路径每次建立空 `g_idx`/sort-index Parameter，不是上述非空排序表的就地 copy 分支。
 
-源码收束：`vllm/model_executor/layers/quantization/online/fp8.py::OnlineLinearBase.create_weights`；`vllm/model_executor/model_loader/reload/layerwise.py::make_online_process_loader`、`initialize_layerwise_reload`、`_layerwise_process`、`_copy_and_restore_kernel_tensors`、`_place_kernel_tensors`、`finalize_layerwise_processing`；`vllm/model_executor/utils.py::replace_parameter`；`vllm/model_executor/layers/quantization/utils/marlin_utils.py::marlin_make_workspace_new`；`tests/model_executor/model_loader/test_reload.py::test_online_processing_waits_for_late_registered_bias`、`test_marlin_post_load_preserves_runtime_tensor_addresses`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader.track_weights_loading`。
+这与 `vllm/v1/worker/workspace.py::WorkspaceManager` 不是同一个对象：后者管理各 `(ubatch, lane)` 槽的通用 workspace，并以 `lock()` 禁止执行期继续扩容；Marlin helper 没有访问该 manager，而是给具体 kernel 保存自己的 int32 缓冲。20 拥有它在 Kernel 内的用途，19 拥有通用捕获约束；**本页拥有该 kernel 缓冲和排序索引在 reload 中怎样满足地址约束**，25 只决定更新何时可见。
+
+回归测试 `test_marlin_post_load_preserves_runtime_tensor_addresses` 用两份不同的 act-order 连跑两次 post-load，断言 workspace 与 sort indices 的 `data_ptr()` 都不变、workspace 清零、排序值更新且 sort indices 为 Parameter。`test_marlin_make_workspace_new_rejects_incompatible_existing` 另测复用对象身份以及大小/dtype 不相容拒绝。`test_marlin_act_order_layerwise_reload_accounting` 验证派生 sort indices 不被误计为待加载 checkpoint 元素：reload 先恢复构造时 tensor 集合再计数，最后一个输入到达即处理，随后恢复原 sort-index 对象。它们约束的是这些具体行为，不证明任意 reload 都不需要重新捕获 graph。MoE 侧的对应保证由 `_setup_kernel` 里的 `replace_parameter` 提供（§3.3）。
+
+源码收束：`vllm/model_executor/layers/quantization/online/fp8.py::OnlineLinearBase.create_weights`；`vllm/model_executor/model_loader/reload/layerwise.py::make_online_process_loader`、`initialize_layerwise_reload`、`_layerwise_process`、`_copy_and_restore_kernel_tensors`、`_place_kernel_tensors`、`finalize_layerwise_processing`；`vllm/model_executor/utils.py::replace_parameter`；`vllm/model_executor/layers/quantization/utils/marlin_utils.py::marlin_make_workspace_new`；`vllm/v1/worker/workspace.py::WorkspaceManager`；`tests/model_executor/model_loader/test_reload.py::test_online_processing_waits_for_late_registered_bias`、`test_marlin_post_load_preserves_runtime_tensor_addresses`、`test_marlin_make_workspace_new_rejects_incompatible_existing`、`test_marlin_act_order_layerwise_reload_accounting`；`vllm/model_executor/model_loader/default_loader.py::DefaultModelLoader.track_weights_loading`。
 
 ## 7. Dispatch 与 fallback 到底允许换什么
 
@@ -425,21 +481,21 @@ batch-invariant 模式还有有意的执行退路：在线 per-tensor FP8 若是
 
 | 对象 | 归属 | 谁改 / 谁读 |
 |---|---|---|
-| `QuantizationConfig` 子类实例、`QuantizationConfigArgs`、`online_quantization_config` | **本页** | `_verify_quantization`/`resolve_quantization_config` 写，`resolve_quant_method` 读 |
+| `QuantizationConfig` 子类实例、`QuantizationConfigArgs`、`online_quantization_config` | **本页** | `EngineArgs` 经 `resolve_quantization_config` 产出 args，`ModelConfig` 经 `_verify_quantization` 确定方法名，`get_quant_config` 构造主配置并在组合分支挂 overlay，`resolve_quant_method` 读 |
 | `layer.quant_method`（`QuantizeMethodBase` 实例） | **本页** | `LinearBase.__init__`/`RoutedExperts`/`_init_kv_cache_quant` 写，post-load 与 `apply` 读 |
-| weight/scale/zero/g_idx 的 Parameter ABI（`input_dim`/`output_dim`/`packed_dim`/`packed_factor`） | **本页** | `create_weights` 写，09 的 weight loader 读并按之切片 |
+| weight/scale/zero/g_idx 的 Parameter ABI（`input_dim`/`output_dim`/`packed_dim`/`packed_factor`）及 packed/block-scale 写入 | **本页**（§5.1.1） | Linear 按支持表选 loader；`create_weights` 建参数，v1 Linear loader / v2 Parameter loader 将逻辑 shard 转成存储 slice |
 | MoE 的 `w13_weight`/`w2_weight`/`w13_qweight`/`w2_qweight` 三维 ABI 与 per-expert scale | **本页**（§3.3） | MoE method 的 `create_weights`/`process_weights_after_loading` 写 |
 | `MPLinearLayerConfig`、kernel 选择结果与 `failure_reasons` | **本页** | `choose_mp_linear_kernel` 写，报错信息读 |
-| post-load 后的 executable 布局，以及 `workspace`/`g_idx_sort_indices` 辅助 storage | **本页**（§6.2） | Kernel 的 `process_weights_after_loading` 写，`apply_weights` 与 19 的 graph 捕获读 |
+| post-load 后的 executable 布局，以及 Marlin `workspace`/`g_idx_sort_indices` 的 reload 地址稳定合同 | **本页**（§6.2） | Kernel post-load 创建/复用，`apply_weights` 消费；workspace 不走 layer 快照，sort-index Parameter 走 copy-back |
 | 在线量化触发器 `LayerReloadingInfo.load_numel` / `load_numel_total` | **本页** | `online_process_loader` 写，`_layerwise_process` 读 |
-| KV scale 的四个哨兵 Parameter 与其消费判定 | **本页**（§4.3） | `BaseKVCacheMethod.create_weights` 写，同类 `process_weights_after_loading` 消费并删除 |
-| checkpoint 文件枚举、loaded-name 集合、packed/fused shard copy 与 TP slice 写入 | [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]] | 09 的所有权表把"量化参数布局"指回本页，两边对齐 |
+| KV scale 参数与其消费判定 | **本页**（§4.3） | 基类 create / post-load 管四个哨兵的复制与删除；CT 覆写管理三组 scale/zero-point，并把 scale Parameter 接到带下划线的属性 |
+| checkpoint 文件枚举、loaded-name 集合、融合名称到 shard ID 的映射与通用 TP 写入入口 | [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|09]] | 向本页交出命中的 Parameter、loaded tensor 与 shard ID；量化特有坐标规则不再推出 |
 | Kernel 内部 tile/warp/provider 与融合收益 | [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|20]] | 20 的适用范围写明"量化 ABI 归 17" |
 | collective 实现、rank 拓扑、EP/EPLB 专家放置 | [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|18]] | 本页只判断"要不要归约"与用哪个组 |
 | KV cache 物理布局、分页与容量 | [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]] | — |
 | `kv_cache_dtype` 与 backend 能力协商、attention kernel 内 scale 的使用 | [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|10]] | 本页交出的是已消费成 `_k_scale` 的值 |
 | reload 的 pause window 与版本可见性协议 | [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|25]] | — |
-| "地址稳定不是值静止"的 CUDA Graph 合同 | [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]] | 本页提供满足该合同的两个辅助 storage |
+| 通用 CUDA Graph 捕获/重放合同与 `WorkspaceManager` | [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]] | 通用 workspace 按 ubatch/lane 管理；不等同于本页 kernel-owned Marlin workspace |
 | IR 层融合 pass | [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|21]] | — |
 
 ### 8.2 配置契约
@@ -476,41 +532,57 @@ batch-invariant 模式还有有意的执行退路：在线 per-tensor FP8 若是
 
 ### 8.3 从 config 到 apply 的调用树
 
-下面合流两条路径：预量化 AutoGPTQ 与在线 FP8 overlay。同层节点按调用顺序排列，`[条件]` 分支不一定执行。
+下面合流两条路径：预量化 AutoGPTQ 与在线 FP8 overlay。config 部分先列三个独立调用根；EngineArgs 解析的 args 经 `create_model_config` 传入 ModelConfig，随后 VllmConfig 才构造主配置。同一根内节点按调用顺序排列，`[条件]` 分支不一定执行。
 
 ```text
+EngineArgs.__post_init__
+`-- resolve_quantization_config            -> EngineArgs.quantization_config: QuantizationConfigArgs 或 None
+    `-- QuantizationConfigArgs 构造/校验     [需要新建 args 时；可返回已有 args 或 deferred None]
+
+ModelConfig.__post_init__
+`-- ModelConfig._verify_quantization       -> 有序 overrides 探测 -> quantization 名
+    `-- Platform.verify_quantization       [平台支持集合非空时才限制]
+
 VllmConfig.__post_init__
-|-- ModelConfig._verify_quantization       -> 有序 overrides 探测 -> quantization 名
-|   `-- Platform.verify_quantization       [平台支持集合非空时才限制]
 `-- VllmConfig._get_quantization_config
-    `-- resolve_quantization_config        -> online_quantization_config
-        `-- QuantizationConfigArgs._validate_targets_exclusivity
+    `-- get_quant_config                   -> 主 QuantizationConfig
+        `-- maybe_compose_online_quantization [checkpoint 组合分支，且 online_args 非 None]
+            `-- OnlineQuantizationConfig(online_args) -> 主配置.online_quantization_config
 
 BaseModelLoader.load_model
 |-- initialize_model
 |   |-- configure_quant_config(quant_config, model_cls)   [仅非 SupportsQuant；只做 apply_vllm_mapper + 挂 packed_modules_mapping]
 |   `-- model_class(vllm_config=…, prefix=…)              [三个层构造是它的子节点，不是上一行的]
-|       |-- LinearBase.__init__
-|       |   |-- resolve_quant_method -> base / online / raise      [三分支，见 §4.1 表]
+|       |-- ColumnParallelLinear / RowParallelLinear 构造           [含 QKV/Merged 的 Column 继承路径]
+|       |   |-- LinearBase.__init__ -> resolve_quant_method         [base / online / raise，见 §4.1]
+|       |   |-- 按 WEIGHT_LOADER_V2_SUPPORTED 绑定 v2 或旧 loader
 |       |   `-- quant_method.create_weights
 |       |       |-- choose_mp_linear_kernel(MPLinearLayerConfig)   [失败 -> ValueError 列全部原因]
 |       |       |-- marlin_repeat_scales_on_all_ranks              [desc_act 或 channelwise+row -> 全 rank 复制]
-|       |       `-- register_parameter(qweight/scales/qzeros/g_idx)
-|       |           `-- initialize_online_processing(layer)        [条件：uses_meta_device]
+|       |       |-- [预量化 lane] AutoGPTQLinearMethod.create_weights
+|       |       |   `-- register_parameter(qweight/scales/qzeros/g_idx)   [不调 initialize_online_processing]
+|       |       `-- [在线 lane] OnlineLinearBase.create_weights
+|       |           |-- register_parameter(weight)
+|       |           `-- initialize_online_processing(layer)        [同级末尾语句，非 register_parameter 的子调用；条件：uses_meta_device]
 |       |-- RoutedExperts 构造
 |       |   `-- OnlineMoEMethodBase.create_weights                 [w13_weight/w2_weight/(bias) 三维 meta 参数]
 |       `-- _init_kv_cache_quant(layer, quant_config, prefix)
 |           |-- set_default_quant_scales(layer, register_buffer=True)
-|           `-- BaseKVCacheMethod.create_weights                   [条件：should_load_quant_weights]
-|-- self.load_weights -> model.load_weights                        [归 09]
-|   `-- online_process_loader                                      [条件：在线量化 / reload]
-|       `-- _layerwise_process   [load_numel >= load_numel_total]
-|           |-- materialize_layer
-|           |-- delattr(_already_called_process_weights_after_loading)
-|           |-- quant_method.process_weights_after_loading
-|           |-- layer.update_param_tp_status
-|           `-- _copy_and_restore_kernel_tensors                   [条件：kernel_tensors 非空，即 reload]
-|               `-- _place_kernel_tensors
+|           `-- 所选 KV method.create_weights                      [条件：should_load_quant_weights；基类或 CT 覆写]
+|-- self.load_weights -> model.load_weights                        [枚举/名称到 shard ID 的交接归 09]
+|   `-- param.weight_loader(param, loaded_weight, shard_id)
+|       |-- Linear.weight_loader / weight_loader_v2                [未包装路径；量化写入规则见 §5.1.1]
+|       |   `-- 计算逻辑段 -> block/packed/tile 坐标 -> TP 源片 -> shape assert -> copy_
+|       |       [v2 的 packed 换算和 copy 下放 Parameter.load_*；已融合输入先拆全局段]
+|       `-- online_process_loader                                  [替代分支：在线量化 / reload 包装器]
+|           `-- _layerwise_process   [load_numel >= load_numel_total]
+|               |-- materialize_layer
+|               |-- delattr(_already_called_process_weights_after_loading)
+|               |-- 解包并回放原 loader，履行同一写入规则
+|               |-- quant_method.process_weights_after_loading
+|               |-- layer.update_param_tp_status
+|               `-- _copy_and_restore_kernel_tensors               [条件：kernel_tensors 非空，即 reload]
+|                   `-- _place_kernel_tensors
 |-- finalize_layerwise_processing                                  [条件：_has_online_quant]
 |   |-- _finalize_attention_layer -> _reload_attention_scales      [条件：deferred attention]
 |   `-- LOADING_LAYERS.clear()
@@ -525,14 +597,15 @@ BaseModelLoader.load_model
     |   |       |   |-- marlin_sort_g_idx -> replace_parameter(g_idx_sort_indices, prefer_copy=True)
     |   |       |   `-- marlin_pad_qweight -> gptq_marlin_repack -> marlin_permute_scales
     |   |       |-- ExllamaLinearKernel.process_weights_after_loading   [bias-1=7 的 GPTQv1 zero tensor]
-    |   |       `-- BaseKVCacheMethod.process_weights_after_loading     [三条早返回 + 条件块 + 无条件尾巴 del 四个占位]
+    |   |       |-- BaseKVCacheMethod.process_weights_after_loading     [FP8/ModelOpt/Quark；三条早返回 + 条件块 + 尾巴；到达尾巴且缺 q 时最终为 1.0]
+    |   |       `-- CompressedTensorsKVCacheMethod.process_weights_after_loading [另一选择：接管 Parameter，host 多元素取 max，删原名与 zero-point]
     |   |-- module.update_param_tp_status
     |   `-- release_device_memory_under_pressure
     `-- 第二轮：is_deferred_attention_layer 的 module
         `-- Attention.process_weights_after_loading(model_config.dtype) -> impl 自己的钩子
 
-LinearBase.forward -> quant_method.apply
-`-- kernel.apply_weights                                            [VLLM_BATCH_INVARIANT 下改走 BF16 dequant + F.linear]
+ColumnParallelLinear.forward -> quant_method.apply            [ReplicatedLinear / RowParallelLinear 同形；LinearBase 不定义 forward]
+`-- kernel.apply_weights                                            [仅在线 FP8 lane：VLLM_BATCH_INVARIANT 下改走 BF16 dequant + F.linear，Cutlass 除外]
 ```
 
 ## 9. 用什么证据判断“数值没换、成本值得”
@@ -546,15 +619,17 @@ LinearBase.forward -> quant_method.apply
 | config 解析与有序 override 探测（#1/#2） | 一个已解析、逐层可判定的方案 | 启动期一次性；探测表长度线性 | 不兼容组合在这里就 `ValueError`，不会拖到首 token |
 | 名称映射与 fused 一致性（#3） | 一个 fused Kernel 只有一种方案 | 每层一次前缀匹配与 shard 展开 | 部分命中/多重命中/方案不一致都是硬失败 |
 | Kernel 候选遍历（#5） | 请求到达前就知道谁执行、为何拒绝 | 启动期每层遍历候选表并调 `can_implement` | 全部失败即硬失败；候选表长度是常数级 |
-| pack 存储（#6） | §2 的 8×8 例子 64 个 INT4 编码只占 **32 byte**，对比 BF16 的 **128 byte** | 常驻还要加 scale、zero/g_idx、workspace、padding | 不能因此声称模型内存降到四分之一 |
+| pack 存储与写入（#6） | §2 的 8×8 例子 64 个 INT4 编码只占 **32 byte**，对比 BF16 的 **128 byte**；loader 按存储坐标直接 copy，无需先解包成浮点 | 加载时每段索引换算与 copy；常驻还要加 scale、zero/g_idx、workspace、padding | packed axis 不等于 TP axis；shape assert 不能发现所有数值语义错误，不能因此声称模型内存降到四分之一 |
+| checkpoint scale 全 rank 复制（#6） | act-order / channelwise row TP 保留每个输入可能引用的全局 group 表 | §5.1 的 act-order 分支每 rank scale 从 `[4,512]` 增至 `[8,512]`；加载与常驻 scale 字节随复制增加 | 这不是现场量化 amax collective；Column/QKV 输出列仍按其 loader 分片 |
 | group scale 粒度 | 较小 group 让局部格点更合适 | 增加约 $KN/g$ 个 scale | 收益取决于 shape、activation 量化、解码带宽与 prefill 计算量 |
 | post-load repack（#7） | 得到选定 Kernel 的可执行布局 | 加载期设备空间；repack 临时块要 `release_device_memory_under_pressure` 归还 | offload 不等于零显存 repack |
+| Marlin reload 辅助 storage（#7/#8） | workspace 清零、act-order sort indices 重算，同时保留相容 storage 的地址 | workspace 常驻 `SM 数 × max_blocks_per_sm` 个 int32；reload 支付清零、排序与 copy | workspace 不相容硬失败；sort-index `prefer_copy` 不相容会换 Parameter，不能宣称任意 reload 都保址 |
 | CPU/UVA offload 往返 | 让不常驻设备的参数也能被 repack | 每层一次搬入搬出；`finally` 只恢复原有参数 | 新加参数不会被一概移回 CPU |
 | 在线量化加载期（#8） | 权重存储由每元素 2 byte 降为 1 byte，且避开全模型双表示峰值 | 局部 BF16 与低精度短时共存、量化计算、scale collective | 多层交错到达时多个 buffered layer 同时存活，源码在第二层时就 `warning_once` |
 | finalize 收尾（#9） | padding 层与首次未收到权重的层也能收敛 | 一次全模型遍历 | 恢复旧 kernel tensors **不是** checkpoint 完整性证明 |
 | MoE per-expert 量化与 EP 归约（#11） | 三维专家权重得到与未分片一致的格点 | 逐专家循环量化；`moe_tp_size>1` 时一次 EP group `MAX`；块粒度方案另加 padding 清零 | EP 下 `moe_tp_size=1`，归约整个消失 |
 | apply 与 batch-invariant 退路（#10） | 确定性执行目标 | 每次 apply 的 dequant 与临时高精度权重，且失去低精度 GEMM 收益 | 保留的是已量化权重，不恢复原 BF16 精度 |
-| KV scale 参数（#12） | 名字有 owner，消费点唯一 | 四个标量 Parameter，加载后即删除 | 只覆盖参数生命周期，不覆盖 kernel 内使用 |
+| KV scale 参数（#12） | checkpoint 名字到运行时 scale 有明确承接者 | 基类四个标量占位复制后删除；CT 创建三组 scale/zero-point，scale Parameter 转交给带下划线的属性，host 多元素取 max | 只覆盖参数生命周期；CT 与基类的重载前置条件不同，不能共用删除判据 |
 
 这些支付不能简单相加：pack 省的是常驻显存，在线量化省的是加载期峰值而不是常驻；collective 省的是"两片格点不一致"这种正确性风险，不是时间。只把 group 调小，可能从显存瓶颈换成 scale 读取瓶颈。
 
@@ -567,16 +642,16 @@ LinearBase.forward -> quant_method.apply
 3. **转换后的表示**：比较标准 pack 与目标 repack 的对应值，确认 bias、Parameter TP metadata 与 reload storage 地址；hook 被调用不等于数据完整性已证明。
 4. **执行与性能**：记录真正选中 Kernel 和拒绝原因；先与量化参考值比较，再与高精度值比较量化误差，分别测 prefill/decode 与加载峰值，区分误差、确定性和速度。
 
-源码 tests 给出的证据也各有边界：Marlin repack 测试将独立参考 permutation 与 GPU repack 比较，覆盖 act-order/bit width/形状；在线 TP tests 比较 FP8 编码与 scale 的精确 slice；late-bias test 只证明处理时已经见到 bias；地址保持 test 只证明两次 post-load 之间 workspace 与 sort-index 的 `data_ptr` 不变；online composition tests 检查未量化层替换与已量化层冲突。这些源码断言已阅读，本页只在 CPU 用独立数值生成器验证教学例子并检查图文一致，未运行设备 Kernel、模型加载/生成或性能 benchmark。
+源码 tests 给出的证据也各有边界：Marlin repack 测试将独立参考 permutation 与 GPU repack 比较，覆盖 act-order/bit width/形状；在线 TP tests 比较 FP8 编码与 scale 的精确 slice；late-bias test 只证明处理时已经见到 bias；地址保持 test 只证明两次 post-load 之间 workspace 与 sort-index 的 `data_ptr` 不变；online composition tests 检查未量化层替换与已量化层冲突。这些源码断言已阅读，本页在 CPU 用独立数值生成器验证教学例子，并从冻结源码抽取纯索引 helper 验证 block/pack/tile 换算、复算 §5.1.1 的 fused 与 named QKV 写入一致；未运行完整 vLLM loader、设备 Kernel、模型加载/生成或性能 benchmark。
 
 源码路线：`tests/kernels/quantization/test_marlin_gemm.py::test_gptq_marlin_repack`、`test_awq_marlin_repack`；`tests/quantization/test_online.py::test_online_prequantized_compatibility`、`test_online_target_rejects_prequantized_layer`、`test_online_ignore_keeps_checkpoint_quantization_linear`；`tests/model_executor/model_loader/test_reload.py::test_marlin_post_load_preserves_runtime_tensor_addresses`；其余数值、TP 与加载断言就近列于上文，调用顺序见 §8.3。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 接模型构造、checkpoint 枚举、名称映射和 TP 参数写入；本页从低精度参数解释接手，不把 loader 的 loaded-name 检查泛化为完整性证明。
+- [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 接模型构造、checkpoint 枚举、名称映射与通用 TP 写入入口；本页拥有量化 packed/block-scale 写入规则，不把 loaded-name 检查泛化为完整性证明。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 接 provider、tile、Kernel 内部优化；本页解释重排必须保持的数值与选择条件，并拥有其页头点名交回的量化 ABI。
 - [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 接 TP/EP rank 与 collective；本页解释 scale 为什么只在归约维度被切开时要求共同统计。
 - [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 接 KV cache 的物理布局、分页与容量；本页只到 KV scale 参数被消费为 `_k_scale` 为止。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接 KV dtype、scale 与 attention backend 的能力协商，量化 config 的名称归一化不替它选择 backend。
 - [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|vLLM 权重传输与在线更新]] — 接 reload 的 pause window 与版本可见性协议；本页只拥有 reload 中的量化侧动作。
-- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接“地址稳定不是值静止”的合同；本页提供满足它的 `workspace` 与 `g_idx_sort_indices` 两个辅助 storage。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接通用捕获/重放与 `WorkspaceManager`；Marlin `workspace`、`g_idx_sort_indices` 的具体 reload 地址合同由本页 §6.2 拥有。

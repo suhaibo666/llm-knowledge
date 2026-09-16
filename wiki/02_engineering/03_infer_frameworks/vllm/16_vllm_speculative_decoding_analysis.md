@@ -4,10 +4,10 @@ title: "vLLM 投机解码：怎样验证一串草稿，又只提交正确前缀"
 
 # vLLM 投机解码：怎样验证一串草稿，又只提交正确前缀
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从三词表、两步候选推导 standard/block verification 与 correction/bonus，再追踪候选分布、target 打分、GPU 前缀更新和 CPU 结算，解释接受更多 token 何时能省时间。
-> **适用范围**：启动构造 → 每步 propose → score → verify → rollback/commit → 草稿发布的完整闭环，含 draft KV 的归属与两个 lookahead 量、候选来源的执行接缝与成本；普通采样参数/grammar 语义归14，通用 KV block 生命周期与 hash/refcount 归08。区分 V1/V2、精确校正与 synthetic 模拟，不把共享 spec 字段的其他任务当作同一算法。
-> **最近更新**：2026-09-12。补齐定位与核心流程清单、EAGLE/MTP 自回归 proposer 的逐步重放、启动构造与 draft KV 归属、`num_lookahead_tokens` 与草稿发布路径、调用树/所有权视图与配置契约。
+> **适用范围**：启动构造 → 每步 propose → score → verify → rollback/commit → 草稿发布的完整闭环，含 draft KV 的归属与两个 lookahead 量、候选来源的执行接缝与成本；普通采样参数/grammar 语义归14，通用 KV block 生命周期与 hash/refcount 归08。区分 MRV1/MRV2、精确校正与 synthetic 模拟，不把共享 spec 字段的其他任务当作同一算法。
+> **最近更新**：2026-09-16。校正两代 Runner 的 proposer 分派与 Step3.5 MTP 条件，补齐 async 结构化输出下真实草稿的 D2H、deferred 发布与 grammar 交接。
 
 ## 1. 多算几个位置，为什么可能更快
 
@@ -15,7 +15,7 @@ title: "vLLM 投机解码：怎样验证一串草稿，又只提交正确前缀"
 
 设上轮已经采到 token S，但还没计算 S 的 KV；proposer 从含 S 的前缀猜出两个 token `x1,x2`。target 本轮输入 `S,x1,x2`，在三个位置分别给出分布：`p1` 判断 x1，`p2(·|x1)` 判断 x2，`p3(·|x1,x2)` 提供 bonus。如果只认可 x1，就输出 `x1,correction`，丢弃 x2 分支；如果两者都认可，就输出 `x1,x2,bonus`。这里的“丢弃”首先指不提交那条逻辑分支，物理 KV 回收另有时序。
 
-**本页负责的单元是这条闭环本身**：怎样从配置解析出一个 proposer、它的权重与注意力层怎样和 target 分开、它的 KV 从哪个池子扣、每步怎样产生候选与其条件分布 q、一次宽 target forward 怎样按 q 与 p 判定接受长度、被接受的前缀怎样同时修正 GPU 与 CPU 两处进度，以及新草稿怎样回到 Scheduler。**它不是这几样东西**：不是 token 预算调度器（每步 token/input budget、waiting 准入、抢占与结果对账的 CPU 算术归 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]）；不是 KV block 分配器（block 生命周期、hash、refcount、prefix 命中算法归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]）；不是普通采样参数路径（p 由哪些约束构成、grammar mask 的语义与 advance 归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]]）；不是 graph 捕获的所有者（bucket/piecewise/eager 的成本跳变归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]）；设备行排布与输出发布归 [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]]。本页只在这些边界上说明交接对象。
+**本页负责的单元是这条闭环本身**：怎样从配置解析出一个 proposer、它的权重与注意力层怎样和 target 分开、它的 KV 从哪个池子扣、每步怎样产生候选与其条件分布 q、一次宽 target forward 怎样按 q 与 p 判定接受长度、被接受的前缀怎样同时修正 GPU 与 CPU 两处进度，以及新草稿怎样回到 Scheduler。**它不是这几样东西**：不是 token 预算调度器（每步 token/input budget、waiting 准入、抢占与结果对账的 CPU 算术归 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]）；不是 KV block 分配器（block 生命周期、hash、refcount、prefix 命中算法归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]）；不是普通采样参数路径（p 由哪些约束构成、grammar mask 的语义与 advance 归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]]）；不是 graph 捕获的所有者（bucket/piecewise/eager 的成本跳变归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]）；设备行排布与输出发布归 [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner MRV1]] / [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner MRV2]]。本页只在这些边界上说明交接对象。
 
 下文用词表 `A,B,C` 和两行**教学概率**。为便于逐项复算，第二行设为不随第一 token 改变；真实模型必须使用草稿前缀条件下的 p、q。p 是本请求受支持的采样约束处理后的 target 分布，q 是 proposer **实际用来产生候选**的分布。
 
@@ -28,9 +28,9 @@ title: "vLLM 投机解码：怎样验证一串草稿，又只提交正确前缀"
 
 ### 1.1 一轮投机在引擎闭环里的位置
 
-同一轮里有六个不能合并的边界：**计划形成**（Scheduler 决定本步排几个候选位置、预留多少 KV）、**提案**（drafter 生成下一轮候选）、**验证**（一次宽 target forward 判定接受长度）、**GPU 前缀更新**（设备侧 computed/last_sampled 立刻回退到正确边界）、**草稿发布**（新候选回到 Scheduler 的 `request.spec_token_ids`）、**CPU 结算**（Scheduler 按原计划回退乐观记账并对外交付 token）。把其中任意两个当成同一时刻，就会得到错误的时序结论：例如“copy 已启动”不等于已提交，提案发生在 CPU 结算**之前**而不是之后。
+同一轮里有六个不能合并的边界：**计划形成**（Scheduler 决定本步排几个候选位置、预留多少 KV）、**提案**（drafter 生成下一轮候选）、**验证**（一次宽 target forward 判定接受长度）、**GPU 前缀更新**（设备侧 computed/last_sampled 立刻回退到正确边界）、**草稿发布**（同步写 `request.spec_token_ids`，deferred 则更新本步 `scheduled_spec_decode_tokens` 供 grammar 使用）、**CPU 结算**（Scheduler 按原计划回退乐观记账并对外交付 token）。把其中任意两个当成同一时刻，就会得到错误的时序结论：例如“copy 已启动”不等于已提交，提案发生在 CPU 结算**之前**而不是之后。
 
-<!-- 图1 spec：一轮投机在 EngineCore 闭环里的位置。每条边写真实交接对象：scheduled_spec_decode_tokens 与 num_lookahead_tokens 的 KV 预留入场、target logits 与行边界进入 verifier、设备草稿缓存提供候选与条件 q、num_sampled/num_rejected 进 GPU 前缀更新、sampled_token_ids 经 AsyncOutput 进 CPU 结算、DraftTokenIds 经 take_draft_token_ids 进 post_step 再回 Scheduler。节点标归属页，蓝色为本页负责的环节，橙色是跨轮存活的设备状态。拓扑依赖图，不是时间比例图。 -->
+<!-- 图1 spec：一轮投机在 EngineCore 闭环里的位置。每条边写真实交接对象：scheduled_spec_decode_tokens 与 num_lookahead_tokens 的 KV 预留入场、target logits 与行边界进入 verifier、设备草稿缓存提供候选与条件 q、num_sampled/num_rejected 进 GPU 前缀更新、sampled_token_ids 经 AsyncOutput 进 CPU 结算。DraftTokenIds 经 take_draft_token_ids 到草稿发布节点：同步 post_step 更新 request.spec_token_ids 回下一计划；batch queue deferred 更新本步 scheduled_spec_decode_tokens，再经归14的 grammar mask 进入验证；CPU 结算节点以虚线注明 deferred 要先结算前批输出。节点标归属页，蓝色为本页负责的环节，橙色是跨轮存活的设备状态。拓扑依赖图，不是时间比例图。 -->
 ```mermaid
 flowchart TB
     P["计划形成 归 07<br/>Scheduler.schedule"] -->|scheduled_spec_decode_tokens 与按 num_lookahead_tokens 的 KV 预留| G["行排布与打分 归 11、12 与本页 §7<br/>combine_sampled_and_draft_tokens"]
@@ -40,8 +40,10 @@ flowchart TB
     V -->|接受前缀加 correction 或 bonus 即 sampled_token_ids| C["CPU 结算 归 07 §8<br/>Scheduler.update_from_output"]
     F -->|last_sampled 与回退后的 computed 边界| R["提案 本页 §5<br/>speculator.propose"]
     R -->|新的 draft_tokens 覆盖设备缓存| D
-    R -->|DraftTokenIds 经 take_draft_token_ids| B["草稿发布 本页 §8.3<br/>EngineCore.post_step"]
-    B -->|request.spec_token_ids 的长度与内容| P
+    R -->|DraftTokenIds 经 take_draft_token_ids| B["草稿发布 本页 §8.3<br/>post_step 或 batch queue deferred"]
+    B -->|同步发布 request.spec_token_ids 给下一计划| P
+    B -->|deferred 更新本步 scheduled_spec_decode_tokens 后构造 grammar mask 归14| V
+    C -.->|deferred 先结算前批输出并推进 grammar| B
     C -->|已交付 token 与回退后的 CPU computed| P
     classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
     classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
@@ -61,12 +63,12 @@ flowchart TB
 | 草稿权重加载与 draft 注意力层分离 | `Worker.load_model` 加载完 target 之后 | `GPUModelRunner.load_model` → `DraftModelSpeculator.load_model` → `load_draft_model` | 构造好的 draft `nn.Module`；`draft_attn_layer_names`；EPLB 登记 | KV spec 收集与 attention group 划分（08、10） | §6.2 | 条件：只有带权重的 drafter，n-gram/suffix 无此步 |
 | draft KV 归属与 lookahead 预留 | `EngineCore._initialize_kv_caches`；每步 `allocate_slots` | `get_kv_cache_spec`、`_annotate_eagle_groups`、`speculator.set_attn`、`KVCacheManager.allocate_slots(num_lookahead_tokens=…)` | 同一 `KVCacheConfig` 内的 draft 组；`BlockTables`；每步 lookahead slots | 物理 block 分配与 prefix 命中（08）；每步 slot mapping（10） | §6.3、§6.4 | 条件：`num_lookahead_tokens` 为0的方法不预留 |
 | 每步提案 | `sample_tokens()` 内 GPU 前缀更新之后 | `AutoRegressiveSpeculator.propose`，或 DFlash/DSpark/多模块 MTP 的对应 `propose` | `draft_tokens` 张量与 probabilistic 模式下的 `draft_logits` | 下一轮 verifier；草稿发布 | §5.2、§5.3 | 基础 |
-| target 行排布与打分 | Scheduler 给出候选数后的 `execute_model` | `combine_sampled_and_draft_tokens`；V1 的 `SpecDecodeMetadata` | `logits_indices`、`cu_num_logits`、`expanded_idx_mapping`/`local_pos` | 采样参数处理与 verifier（14 提供 p 的约束语义） | §7 | 基础 |
+| target 行排布与打分 | Scheduler 给出候选数后的 `execute_model` | `combine_sampled_and_draft_tokens`；MRV1 的 `SpecDecodeMetadata` | `logits_indices`、`cu_num_logits`、`expanded_idx_mapping`/`local_pos` | 采样参数处理与 verifier（14 提供 p 的约束语义） | §7 | 基础 |
 | verify：standard / block / synthetic | `RejectionSampler.__call__` | `rejection_sample` 及 `_rejection_kernel`/`_resample_kernel`；block 另加两个累积/残差 kernel | `sampled`、`num_sampled`、可选 logprobs | GPU 前缀更新；CPU 结算 | §2、§3、§4 | standard 基础；block/synthetic 条件（`rejection_sample_method`，block 仅 MRV2） |
 | GPU finalize 与 rollback | 验证返回后 | `postprocess_sampled` → `post_update` → `_post_update_kernel` | 设备上的 `num_computed_tokens`、`last_sampled_tokens`、token 历史 | 本轮 proposal；下一步 gather（12） | §8.1 | 基础 |
-| 草稿发布回 Scheduler | `EngineCore._process_engine_step` 末尾；batch queue 的 deferred 分支 | `take_draft_token_ids` → `Executor.take_draft_token_ids` → `EngineCore.post_step` → `Scheduler.update_draft_token_ids` | `DraftTokenIds`；写入 `request.spec_token_ids` | 下一次 `schedule()` 的候选数与 grammar 过滤（07、14） | §8.3 | 基础（同步）；条件（batch queue 的 deferred 路线；async 下 `post_step` 为空操作） |
+| 草稿发布回 Scheduler | 同步 `post_step`；async/PP batch queue 中有 pending 结构化输出的 deferred 分支 | `post_step` / `step_with_batch_queue` → `Executor.take_draft_token_ids` → Scheduler 的 `update_draft_token_ids` / `update_draft_token_ids_in_output` | `DraftTokenIds`；同步写 `request.spec_token_ids`，deferred 改本步 `scheduled_spec_decode_tokens` 后构造 grammar mask | 下一次计划或本步 grammar 过滤（07、14） | §8.3 | 同步发布；async 有 pending 结构化输出时必须 deferred 取真实草稿，无结构化输出时由设备保留真实候选 |
 | CPU 结算 | 执行器交回 `ModelRunnerOutput` | `Scheduler.update_from_output`、`_update_request_with_output` | 回退后的 CPU computed；追加的 token 与 stop 判定 | 请求历史、后续调度与用户输出（07 §8） | §8.2 | 基础 |
-| grammar 预演与 `-1` 语义 | 请求使用结构化输出；uniform-decode padding；async 调度 | `Scheduler.update_draft_token_ids_in_output`、`Scheduler.schedule` 的 `pad_spec_decode` 分支、`AsyncScheduler._update_after_schedule` | 含 `-1` 的 `scheduled_spec_decode_tokens`；`num_invalid_spec_tokens` | verifier 的 placeholder 分支；统计（23） | §3.3、§7 | 条件：三种来源各有自己的触发 |
+| grammar 预演与 `-1` 语义 | 请求使用结构化输出；uniform-decode padding；async 调度 | `Scheduler.update_draft_token_ids_in_output`、`Scheduler.schedule` 的 `pad_spec_decode` 分支、`AsyncScheduler._update_after_schedule` | 含 `-1` 的 `scheduled_spec_decode_tokens`；`num_invalid_spec_tokens` | verifier 的 placeholder 分支；统计（23） | §3.3、§7 | 条件：§7 表把 `-1` 的产生情况拆成 6 行；按**机制**归并则是四类（grammar 补齐、uniform-decode padding、async 占位、MRV2 不回传真实候选），本页拥有内核侧语义 |
 | adaptive 预算 | DSpark + `enable_adaptive_verification` | `AdaptiveVerificationManager.get_num_tokens`、`compact_batch`、`_assign_draft_token_budget`、`reallocate_drafts` | 全 batch draft 预算与每请求 admitted count；GPU 真实 `cu_num_logits` | verifier 分块与 logprobs 边界 | §9.3 | 条件 |
 | 抢占与在途结果 | KV 不足触发抢占；async 在途结果迟到 | `Scheduler._preempt_request`、`_free_encoder_inputs`、`AsyncScheduler._update_request_with_output` | 清空的未验证草稿；按序或 drop-stale 的结果交付 | 队列与资源回收（07）；多模态 E 缓存（15） | §8.4 | 条件：async 与 drop-stale 模式 |
 | CUDA graph 宽度交接 | KV 初始化末尾解析 graph 模式；capture | `decode_query_len`、`VllmConfig.uniform_decode_query_len`、`ModelCudaGraphManager(varlen_decode=…)`、`speculator.init_cudagraph_manager`/`capture` | 统一的 `1 + K` decode query 宽度；drafter 自己的 prefill/decode graph | graph 捕获与降级（19） | §6.2、§9.1 | 基础（非 eager 时）；adaptive 下强制 `FULL_AND_PIECEWISE` 为条件 |
@@ -116,9 +118,9 @@ flowchart TB
 
 若 **target** temperature=0，目标策略是 argmax，standard 只接受与 target argmax 相同的连续草稿，首个不同位置直接输出 target argmax。它和“draft 使用 greedy、target 仍随机”是两种情况。默认 `draft_sample_method=greedy` 通常省掉 full q 的持久显存；probabilistic 模式则需要保存实际 q。依据：`vllm/config/speculative.py::SpeculativeConfig.draft_sample_method`、`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::_rejection_kernel`。
 
-MRV2 在词表块上归约 max/sumexp，再用 `log p(x) > log u + log q(x)` 做 standard 检查。target 已做 temperature，缓存的 draft logits 尚未做，因此读取 q 时还要除 temperature。full q 的 correction 用数值更稳定的 `log r = a + log1p(−exp(b−a))`，仅在 a>b 时保留，其中 a/b 是 target/draft log-prob；词表各块做 Gumbel argmax，再归约到一个 token。V1 则物化 target probabilities，按 `p/q ≥ u` 检查，并预先为各可能拒绝位置做残差/指数竞赛，最后只选首拒位置的结果；它的 bonus 先由普通 Sampler 独立采好。两者算法边际一致不意味着同 seed 逐 token 一致。依据：`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::_compute_global_logprobs_and_logsumexp`、`_resample_kernel`；`vllm/v1/sample/rejection_sampler.py::RejectionSampler.forward`、`rejection_random_sample_kernel`、`sample_recovered_tokens`、`sample_recovered_tokens_kernel`。
+MRV2 在词表块上归约 max/sumexp，再用 `log p(x) > log u + log q(x)` 做 standard 检查。target 已做 temperature，缓存的 draft logits 尚未做，因此读取 q 时还要除 temperature。full q 的 correction 用数值更稳定的 `log r = a + log1p(−exp(b−a))`，仅在 a>b 时保留，其中 a/b 是 target/draft log-prob；词表各块做 Gumbel argmax，再归约到一个 token。MRV1 则物化 target probabilities，按 `p/q ≥ u` 检查，并预先为各可能拒绝位置做残差/指数竞赛，最后只选首拒位置的结果；它的 bonus 先由普通 Sampler 独立采好。两者算法边际一致不意味着同 seed 逐 token 一致。依据：`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::_compute_global_logprobs_and_logsumexp`、`_resample_kernel`；`vllm/v1/sample/rejection_sampler.py::RejectionSampler.forward`、`rejection_random_sample_kernel`、`sample_recovered_tokens`、`sample_recovered_tokens_kernel`。
 
-V1 内核的接受判据还带一个显式保护：`draft_prob > 0 and target_prob / draft_prob >= uniform_prob`。源码注释说明 draft 概率本不该为0，检查它只为避免 NaN；实际效果是**零概率草稿一律拒绝**，而不是按比值判定。所以 §2.1 的 `p/q ≥ u` 要读成“在 q(x)>0 的前提下”。依据：`vllm/v1/sample/rejection_sampler.py::rejection_random_sample_kernel`。
+MRV1 内核的接受判据还带一个显式保护：`draft_prob > 0 and target_prob / draft_prob >= uniform_prob`。源码注释说明 draft 概率本不该为0，检查它只为避免 NaN；实际效果是**零概率草稿一律拒绝**，而不是按比值判定。所以 §2.1 的 `p/q ≥ u` 要读成“在 q(x)>0 的前提下”。依据：`vllm/v1/sample/rejection_sampler.py::rejection_random_sample_kernel`。
 
 分布保证还有 RNG 前提：proposal 和 residual 不可复用同一噪声向量，否则“某 token 赢得草稿 argmax”已经对其余噪声施加条件，残差采样会偏。MRV2 的 `gumbel_noised_argmax()` 对 drafting 的 position 加 `_DRAFT_NOISE_SALT=1<<30`，使同请求同位置的提案与回采分流。窄词表20万 trial 测试专门覆盖这个问题；不能仅以粗粒度大词表统计不显著来证明无偏。依据：`vllm/v1/worker/gpu/sample/gumbel.py::gumbel_noised_argmax`、`tests/v1/spec_decode/test_rejection_sampler_utils.py::test_gumbel_drafted_rejection_sample_is_unbiased`。
 
@@ -183,9 +185,9 @@ flowchart TB
 
 `-1` placeholder 不是词表里的一个 token。standard 遇到它必拒；block 遇到它结束可验证区间，前一个真实 token 改用“最后位置”阈值 ρ，不能再使用 placeholder 那一行的下一步残差。即使 `-1` 后还有看似合法的 token，也不能重新进入验证。回采遇到 placeholder 直接使用 target logits；greedy path 则必须写 target argmax，避免留下未初始化输出槽。依据：`_rejection_kernel`、`_resample_kernel`；`tests/v1/spec_decode/test_rejection_sampler_utils.py::test_block_verification_placeholder_truncates_block`、`test_placeholder_blocks_later_draft_tokens`、`test_greedy_placeholder_emits_target_argmax`。
 
-`-1` 从哪里来有四个来源，本页拥有内核侧语义，Scheduler 侧的产生条件见 §7：grammar 校验补齐、uniform-decode 的 CUDA graph padding、async 调度的占位列表，以及 MRV2 在不需要把真实候选送回 CPU 时直接返回的全 `-1` 列表。
+`-1` 从哪里来，按机制分是四类（§7 表按调度模式与 runner 代际展开成 6 行情况，两处口径一致）；本页拥有内核侧语义，Scheduler 侧的产生条件见 §7：grammar 校验补齐、uniform-decode 的 CUDA graph padding、async 调度的占位列表，以及 MRV2 在不需要把真实候选送回 CPU 时直接返回的全 `-1` 列表。
 
-target greedy 在内核中先于 block 分支选择，执行普通 argmax 前缀匹配；block 与 synthetic rate 张量不可同时传入。另一个实际边界是 **block 算法实现位于 MRV2**。V1 `RejectionSampler.__init__()` 只读取 synthetic 模式，没有 block 分支；本基线配置/Runner 选择也没有因 `rejection_sample_method=block` 就强制 V2 的对应 guard。因此仅看到配置值不能断言当前 V1 请求正在运行 block 算法。依据：`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler.__init__`、`vllm/v1/sample/rejection_sampler.py::RejectionSampler.__init__`、`vllm/config/vllm.py::VllmConfig._get_v2_model_runner_unsupported_features`。
+target greedy 在内核中先于 block 分支选择，执行普通 argmax 前缀匹配；block 与 synthetic rate 张量不可同时传入。另一个实际边界是 **block 算法实现位于 MRV2**。MRV1 `RejectionSampler.__init__()` 只读取 synthetic 模式，没有 block 分支；本基线配置/Runner 选择也没有因 `rejection_sample_method=block` 就强制 MRV2 的对应 guard。因此仅看到配置值不能断言当前 MRV1 请求正在运行 block 算法。依据：`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler.__init__`、`vllm/v1/sample/rejection_sampler.py::RejectionSampler.__init__`、`vllm/config/vllm.py::VllmConfig._get_v2_model_runner_unsupported_features`。
 
 ## 4. Synthetic：设定接受经济性，不再做 p/q 校正
 
@@ -215,9 +217,9 @@ synthetic 仍复用相同的输出/回采骨架，却已失去 §2 的 `q×α=mi
 
 ### 5.1 变体集合的枚举依据与实际可走的 Runner
 
-枚举依据是三处源码自身的选择点，不是按类名推断：配置的 `SpeculativeMethod` 取值集合、MRV2 的 `vllm/v1/worker/gpu/spec_decode/__init__.py::init_speculator` 分派、V1 的 `vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.__init__` 分支。`SpeculativeMethod` 展平后有 **39** 个字面量成员，其中 `MTPModelTypes` 的 27 个成员里除 `"mtp"` 之外的 26 个在 `__post_init__` 里告警并折叠成 `"mtp"`，因此**实际可区分的方法值是 13 个**：`ngram`、`ngram_gpu`、`suffix`、`medusa`、`mlp_speculator`、`draft_model`、`custom_class`、`eagle`、`eagle3`、`mtp`、`dflash`、`dspark`、`extract_hidden_states`。
+枚举依据是三处源码自身的选择点，不是按类名推断：配置的 `SpeculativeMethod` 取值集合、MRV2 的 `vllm/v1/worker/gpu/spec_decode/__init__.py::init_speculator` 分派、MRV1 的 `vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.__init__` 分支。`SpeculativeMethod` 展平后有 **39** 个字面量成员，其中 `MTPModelTypes` 的 27 个成员里除 `"mtp"` 之外的 26 个在 `__post_init__` 里告警并折叠成 `"mtp"`，因此**实际可区分的方法值是 13 个**：`ngram`、`ngram_gpu`、`suffix`、`medusa`、`mlp_speculator`、`draft_model`、`custom_class`、`eagle`、`eagle3`、`mtp`、`dflash`、`dspark`、`extract_hidden_states`。
 
-`mlp_speculator` 是这 13 个里唯一**可配置但两个 Runner 都未实现**的值：`__post_init__` 会在 draft checkpoint 的 `model_type == "mlp_speculator"` 时把 method 设成它，`_verify_and_get_draft_tp` 还专门把它的 draft TP 压到1并告警；但 `init_speculator` 走到 `else` 抛 `NotImplementedError`，V1 `GPUModelRunner.__init__` 走到 `else` 抛 `ValueError("Unknown speculative decoding method: …")`，`vllm/model_executor/models/registry.py` 里的 `MLPSpeculatorPreTrainedModel` 条目也是注释掉的。所以一个真实 `mlp_speculator` checkpoint 在 runner 构造处失败，而不是在配置校验处。
+`mlp_speculator` 是这 13 个里唯一**可配置但两个 Runner 都未实现**的值：`__post_init__` 会在 draft checkpoint 的 `model_type == "mlp_speculator"` 时把 method 设成它，`_verify_and_get_draft_tp` 还专门把它的 draft TP 压到1并告警；但 `init_speculator` 走到 `else` 抛 `NotImplementedError`，MRV1 `GPUModelRunner.__init__` 走到 `else` 抛 `ValueError("Unknown speculative decoding method: …")`，`vllm/model_executor/models/registry.py` 里的 `MLPSpeculatorPreTrainedModel` 条目也是注释掉的。所以一个真实 `mlp_speculator` checkpoint 在 runner 构造处失败，而不是在配置校验处。
 
 它们在词表、draft TP、KV dtype、attention backend、额外 slot 和采样模式上有各自约束；不能从共用字段推断所有方法在两个 Runner 都实现。
 
@@ -227,11 +229,32 @@ synthetic 仍复用相同的输出/回采骨架，却已失去 §2 的 `q×α=mi
 | MRV2 Gemma4 MTP、多模块 MTP | `use_gemma4_mtp()` 选 `Gemma4Speculator`（仍是自回归子类，但 `advance_draft_positions` 为假，Q-only 共享 target KV、位置不推进）；`use_multi_module_mtp()` 选 `MultiModuleMTPSpeculator`（直接继承 `DraftModelSpeculator`，每个 module 负责一步） | 同上；多模块另受 §7 的 prefill lookahead 约束 |
 | MRV2 DFlash | 一次 masked draft forward 产生多位置 hidden，再对各位置采样 | 来自这次并行 hidden 的实际采样 logits；不是额外运行 target |
 | MRV2 DSpark、DFlash2 | `DSparkSpeculator`/`DFlash2Speculator` 都继承 `DFlashSpeculator`；backbone 可并行，候选采样仍有顺序依赖，见 §5.3 | 必须保存经过 Markov/selector 修正的条件分布 |
-| V1 n-gram / ngram_gpu / suffix | 从已生成上下文匹配可延续 token；suffix 用外部 cache 的模式与频率门槛决定可变长度 | 这些入口返回 token IDs，不提供 full q |
-| V1 Step3.5 MTP | `use_step3p5_mtp()`（要求 `method == "mtp"` 且 draft `model_type == "step3p5_mtp"`）选 `Step3p5MTPProposer`，并在 per-group attention metadata 上另设接口。MRV2 **没有专用分支，也没有 unsupported 条目**：`init_speculator` 的 `"mtp"` 分支把它当通用 `MTPSpeculator` 静默跑起来，丢掉的是 V1 那套 per-group 接口——与 §3.3 里 `block` 在 V1 的情形同理，看到配置值不等于跑着专用实现 | 同 MTP |
-| V1 draft_model、Medusa、custom_class 等 | 独立 draft 模型运行；Medusa 从 target hidden 经多个 head 各取 argmax；custom 接口交回候选 | 提供完整 q 才走 full-distribution 校正；只给候选则按 §2.3 的点质量处理 |
+| MRV1 n-gram / ngram_gpu / suffix | 从已生成上下文匹配可延续 token；suffix 用外部 cache 的模式与频率门槛决定可变长度 | 这些入口返回 token IDs，不提供 full q |
+| MRV1 Step3.5 MTP | `use_step3p5_mtp()`（要求 `method == "mtp"` 且 draft `model_type == "step3p5_mtp"`）选 `Step3p5MTPProposer`，并在 per-group attention metadata 上另设接口。MRV2 无专用 Step3.5 分支：先检查 `use_multi_module_mtp()`，`min(num_nextn_predict_layers, k) > 1` 时选 `MultiModuleMTPSpeculator`，否则才由 `method == "mtp"` 选 `MTPSpeculator`；两者都没有 MRV1 的 `set_per_group_attn_metadata` 接口 | 同 MTP |
+| MRV1 draft_model、Medusa、custom_class | 独立 draft 模型运行；Medusa 从 target hidden 经多个 head 各取 argmax；custom 接口交回候选 | 提供完整 q 才走 full-distribution 校正；只给候选则按 §2.3 的点质量处理 |
 
-V2 当前列出的 spec 方法是 eagle/eagle3/mtp/dflash/dspark/extract_hidden_states；ngram/ngram_gpu、draft_model、suffix、Medusa/custom、`mlp_speculator` 等自动选择会落回 V1（`mlp_speculator` 落回 V1 后仍然抛错）。Step3.5 MTP 是另一种情形：它的 `method` 已经折叠成 `mtp`，两个 runner 的 unsupported 表里都没有它，所以 MRV2 不会因此落回 V1，只是按通用 `MTPSpeculator` 运行（见上表）。parallel EAGLE 也未在 V2 实现；DFlash/DSpark 原生支持自己的并行 drafting。反过来，DSpark/adaptive、DFlash2 和需要多 KV group 的混合 sliding/full DFlash 会阻止 V1。显式 Runner 配置还需通过相应 validation。依据：`vllm/config/vllm.py::VllmConfig._get_v2_model_runner_unsupported_features`、`_get_v1_model_runner_unsupported_features`、`vllm/v1/worker/gpu/spec_decode/__init__.py::init_speculator`、`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.__init__`。
+上表按提案算法归类；**MRV1 的完整选择顺序**则如下。仅在有 speculative config 且当前为最后 PP rank 时进入，按 `if/elif` 首个命中决定，不能把后面的 `use_eagle()` 提到专用 MTP/DFlash 分支前面：
+
+| 顺序与条件 | MRV1 实际构造 | MRV2 对应选择或限制 |
+|---|---|---|
+| 1 `method == custom_class` | `create_custom_proposer(vllm_config)` | 无对应分支，自动选择需回 MRV1 |
+| 2 `method == ngram` | `NgramProposer` | 无对应分支 |
+| 3 `uses_draft_model()` | `DraftModelProposer` | 无对应分支 |
+| 4 `use_ngram_gpu()` | `NgramProposerGPU` | 无对应分支 |
+| 5 `use_gemma4_mtp()` | `Gemma4Proposer` | `Gemma4Speculator`，优先于多模块/通用 MTP |
+| 6 `use_step3p5_mtp()` | `Step3p5MTPProposer` | 按上表的多模块条件选 `MultiModuleMTPSpeculator` 或 `MTPSpeculator` |
+| 7 `use_dflash()` | `DFlashProposer`，开启辅助 hidden 输出 | `DFlashSpeculator`；draft 架构含 `DFlash2DraftModel` 时改选 `DFlash2Speculator`，后者禁止 MRV1 |
+| 8 `method == suffix` | `SuffixDecodingProposer` | 无对应分支 |
+| 9 `use_eagle()` | `EagleProposer`；eagle3 的辅助 hidden 开关取 `drafter.eagle3_use_aux_hidden_state` | eagle/eagle3 → `EagleSpeculator`；普通 mtp → 多模块或 `MTPSpeculator`；DSpark 由 MRV2 专用分支接走并被 MRV1 validator 拒绝 |
+| 10 `method == medusa` | `MedusaProposer` | 无对应分支 |
+| 11 `method == extract_hidden_states` | `ExtractHiddenStatesProposer`，开启辅助 hidden 输出 | `ExtractHiddenStatesSpeculator`，是 MRV2 第一个分支；该方法用于缓存 target hidden，不能视作普通提案算法 |
+| else | `ValueError("Unknown speculative decoding method: …")` | `NotImplementedError` |
+
+MRV2 的顺序是 extract_hidden_states → dflash（内部再分 DFlash2）→ dspark → Gemma4 MTP → multi-module MTP → 通用 mtp → `use_eagle()` → else。`use_eagle()` 自身包含 eagle/eagle3/mtp/dflash/dspark，前面的专用分支与 Runner validator 决定哪些真正落到它；MRV1 的 Eagle、DFlash、Gemma4、ExtractHiddenStates 都是活实现，不能因为默认选择了 MRV2 就省掉。
+
+Step3.5 的配置改写锚点是 `vllm/config/speculative.py::SpeculativeConfig.hf_config_override`；hidden 缓存这一兄弟入口可对照 `vllm/v1/spec_decode/extract_hidden_states.py::ExtractHiddenStatesProposer.propose` 与 `vllm/v1/worker/gpu/spec_decode/extract_hidden_states.py::ExtractHiddenStatesSpeculator`。
+
+MRV2 当前列出的 spec 方法是 eagle/eagle3/mtp/dflash/dspark/extract_hidden_states；ngram/ngram_gpu、draft_model、suffix、Medusa/custom、`mlp_speculator` 等自动选择会落回 MRV1（`mlp_speculator` 落回 MRV1 后仍然抛错）。Step3.5 的 `method` 已折叠成 `mtp`，两个 runner 的 unsupported 表里没有专门的 Step3.5 条目，因此不会仅因这个模型类型回退；实际落多模块还是通用 MTP 取决于层数与 k。配置将 Step3.5/Step3.7 的 draft `model_type` 改成 `step3p5_mtp`，`n_predict` 取 `num_nextn_predict_layers`（缺失默认1）；本页未核验远程 Step3.5 checkpoint 的实际层数。parallel EAGLE 也未在 MRV2 实现；DFlash/DSpark 原生支持自己的并行 drafting。反过来，DSpark/adaptive、DFlash2 和需要多 KV group 的混合 sliding/full DFlash 会阻止 MRV1。显式 Runner 配置还需通过相应 validation。依据：`vllm/config/vllm.py::VllmConfig._get_v2_model_runner_unsupported_features`、`_get_v1_model_runner_unsupported_features`；`vllm/config/speculative.py::SpeculativeConfig.use_gemma4_mtp`、`use_step3p5_mtp`、`use_multi_module_mtp`、`use_eagle`；`vllm/v1/worker/gpu/spec_decode/__init__.py::init_speculator`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.__init__`；`vllm/v1/spec_decode/step3p5.py::Step3p5MTPProposer.set_per_group_attn_metadata`。
 
 n-gram 的一个最小例子是历史 `A B C A B`，以末尾 `A B` 查到早先同样的串，接上它后面的 token C。CPU 实现用反转序列和 LPS 匹配寻找允许长度内的最长 suffix；相同长度取原序列较早匹配，并截到 k/模型最大长度。依据：`vllm/v1/spec_decode/ngram_proposer.py::_find_longest_matched_ngram_and_propose_tokens`。
 
@@ -245,7 +268,7 @@ suffix 入口则把新输出写入请求 cache，取最近 max_tree_depth 个 to
 
 于是 drafter 的第 P 行携带“位置 P 的 target hidden”加“位置 P+1 的 token”，用来预测位置 P+2 的 token。`_prefill()` 的注释正是这个口径，并据此把采样键设为 `sample_src_positions = positions + 1`：取 `last_token_indices=1` 对应 `positions=11`，得 12。所以 `draft_tokens[:,0]` 是 index 13 的候选，采样键是它前一个位置 12。这一步的 attention 直接复用 target 传进来的 `attn_metadata` 与逐层 `slot_mappings`，源码说明理由是 batch 形状与 KV 布局完全相同。
 
-**第1步（draft decode）。** `prepare_decode_inputs` 把 `draft_tokens[:,0]` 写进 `input_ids`，`sample_src_positions` 12→13，`seq_len = target_seq_len − num_rejected = 13 − 1 = 12`，在 `ADVANCE_DRAFT_POSITIONS` 为真时再 `position 11→12`、`seq_len 12→13`（两者都对 `max_model_len` 做 clamp）。`_multi_step_decode` 随后用 `self.block_tables.compute_slot_mappings(idx_mapping, query_start_loc, positions, …)` 为这一步单独算 slot——写入的是 **draft 组自己的 slot**（§6.3）。这里的逻辑位置12与 §8.1 那个“旧 A@12”同号却不在同一份缓存：被拒草稿留下的陈旧 KV 在 **target 组**，而 draft 组的位置12是本轮第一次写（它的 prefill 只覆盖 draft 位置10与11）。`self.current_draft_step.fill_(step)` 之后，probabilistic 模式下 `sample_draft()` 把这一步的实际分布写进 `draft_logits[:, step]`；greedy 模式 `draft_logits` 为 `None`，直接走 `_greedy_sample_draft()`（`use_local_argmax_reduction` 时改调模型的 `get_top_tokens()`）。`update_draft_inputs` 把采到的 token 写进 `draft_tokens[:, step]`；因为 `step == k − 1`，它在写完后直接返回，不再推进 hidden/position/seq_len。k=1 时 `propose()` 在 prefill 之后就早退，返回 `draft_tokens[:num_reqs, :1]`。
+**第1步（draft decode）。** `prepare_decode_inputs` 把 `draft_tokens[:,0]` 写进 `input_ids`，`sample_src_positions` 12→13，`seq_len = target_seq_len − num_rejected = 13 − 1 = 12`，在 `ADVANCE_DRAFT_POSITIONS` 为真时再 `position 11→12`、`seq_len 12→13`（两者都对 `max_model_len` 做 clamp）。`_multi_step_decode` 随后用 `self.block_tables.compute_slot_mappings(idx_mapping, query_start_loc, positions, …)` 为这一步单独算 slot——写入的是 **draft 组自己的 slot**（§6.3）。这里的逻辑位置12与 §8.1 那个“旧 A@12”同号却不在同一份缓存：被拒草稿留下的陈旧 KV 在 **target 组**。draft 组这一侧要说得更准：`_prepare_prefill_inputs_kernel` 只改写前 `query_len`（这里是 2）行的 `input_ids`/`positions`，第 3 行保留旧 buffer 内容，但 `_prefill` 仍以 target 传入的 `slot_mappings` 跑**整个 padded 宽度**——**分析推断**：因此第 0 步就已经按无效输入往 draft 层 slot(12) 写过一条 KV，第 1 步的 `compute_slot_mappings` 再覆盖同一个 slot。这不是“第一次写”，而是一次被覆盖的无效写；它也是 §5.2 增量成本里“为被拒位置付了算力”的具体一项。（该推断基于“attention 按 `slot_mapping` 写入所有非 −1 行”的通用行为，未逐 backend 打开验证。）`self.current_draft_step.fill_(step)` 之后，probabilistic 模式下 `sample_draft()` 把这一步的实际分布写进 `draft_logits[:, step]`；greedy 模式 `draft_logits` 为 `None`，直接走 `_greedy_sample_draft()`（`use_local_argmax_reduction` 时改调模型的 `get_top_tokens()`）。`update_draft_inputs` 把采到的 token 写进 `draft_tokens[:, step]`；因为 `step == k − 1`，它在写完后直接返回，不再推进 hidden/position/seq_len。k=1 时 `propose()` 在 prefill 之后就早退，返回 `draft_tokens[:num_reqs, :1]`。
 
 `advance_draft_positions` 是子类可覆盖的**属性**而非动作：Eagle/标准 MTP 为真（每步产生新 KV），Gemma4 MTP 为假（Q-only、共享 target KV、位置恒定）。为假时 `_multi_step_decode` 只在 `step == 1` 建一次 slot mapping 与 metadata，后续步复用。
 
@@ -301,7 +324,7 @@ flowchart TB
 
 概率 DFlash2 把 walk 实际读取的分数行存成 FP32 draft logits，先清掉旧候选位置，再写新候选；未选词保持负无穷。这里用 FP32 是为了避免 selector walk 与低精度缓存对应的 q 不一致；greedy 模式则不分配这份概率缓存。上述 DSpark/DFlash2 例子说明 exact 校正依赖的是**实现所产生的条件 q**，不依赖某个 proposer 名称听起来是否“并行”。依据：`vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py::_selector_walk_kernel`、`_cache_draft_logits_kernel`、`DFlash2Speculator._generate_draft`、`draft_logits_spec`。
 
-V1 还要按当前 request IDs 重排上轮缓存的 draft probabilities，再截到本步各请求实际草稿数；若找不到某请求的概率行，当前实现会告警并返回 None，进入旧的无 full-q 行为。这个 fallback 改成 §2.3 的点质量校正，不能继续按原 full-q 接受率分析；补偿分布也必须跟着所选分支变化。custom proposer 也被配置明确标为 experimental，构造接口可能变化。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._get_spec_decode_draft_probs`、`vllm/config/speculative.py::SpeculativeConfig.__post_init__`。
+MRV1 还要按当前 request IDs 重排上轮缓存的 draft probabilities，再截到本步各请求实际草稿数；若找不到某请求的概率行，当前实现会告警并返回 None，进入旧的无 full-q 行为。这个 fallback 改成 §2.3 的点质量校正，不能继续按原 full-q 接受率分析；补偿分布也必须跟着所选分支变化。custom proposer 也被配置明确标为 experimental，构造接口可能变化。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._get_spec_decode_draft_probs`、`vllm/config/speculative.py::SpeculativeConfig.__post_init__`。
 
 `extract_hidden_states` 虽走 spec 接口，主要用途是缓存 target 辅助 hidden，并从所选请求的 last_sampled 取一列作为 draft 输出；MRV2 要求 k=1、greedy draft、指定辅助层且使用 padded batch。diffusion 也可复用 draft 字段，但没有自回归 bonus。它们不能因为字段相同就套用本页 A+1 的加速或 p/q 正确性推导。依据：`vllm/v1/worker/gpu/spec_decode/extract_hidden_states.py::ExtractHiddenStatesSpeculator`、`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`。
 
@@ -319,7 +342,7 @@ V1 还要按当前 request IDs 重排上轮缓存的 draft probabilities，再�
 
 ### 6.2 drafter 构造、权重加载与 draft 注意力层分离
 
-MRV2 `GPUModelRunner.__init__` 在 `self.is_last_pp_rank` 为真时调 `init_speculator()`；V1 的条件是 `if self.speculative_config and get_pp_group().is_last_rank`，并带源码自己的 NOTE：目前把**整个 draft model 放在最后一个 PP rank**，“如果 draft model 层数很多就不理想”。两者都在这一步把 `use_aux_hidden_state_outputs` 打开（eagle3/dflash/dspark/extract_hidden_states）。
+MRV2 `GPUModelRunner.__init__` 在 `self.is_last_pp_rank` 为真时调 `init_speculator()`；MRV1 的条件是 `if self.speculative_config and get_pp_group().is_last_rank`，并带源码自己的 NOTE：目前把**整个 draft model 放在最后一个 PP rank**，“如果 draft model 层数很多就不理想”。两者都在这一步把 `use_aux_hidden_state_outputs` 打开（eagle3/dflash/dspark/extract_hidden_states）。
 
 构造时就分配的持久 buffer 属于 drafter 自己：`idx_mapping`、`temperature`、`seeds`、`draft_tokens`（`[max_num_reqs, k]` int64），以及 **仅在 `draft_sample_method="probabilistic"` 时**才分配的 `draft_logits`（`[max_num_reqs, k, V]`，dtype/填充见 §5.3）。hidden 宽度按 `_target_feeds_hc_residual()` 决定是否乘 `hc_mult`：判据是 target 模型类是否实现 `get_mtp_target_hidden_states()`，源码解释不能只看 `hc_mult`——HY V4 的 backbone 用 iHC（`hc_mult=4`）但 MTP head 消费的是折叠后的 hidden，按 `hc_mult` 加宽会给 `propose()` 送进4倍宽的 buffer。`AutoRegressiveSpeculator` 再加 `hidden_states`、`current_draft_step`、`last_token_indices`、`sample_src_positions`。
 
@@ -351,23 +374,24 @@ group 身份另有一套标注，且只在 `use_eagle_block_drop()` 为真时才
 
 ## 7. Target 分布、执行位置与有效前缀必须一致
 
-Scheduler 从 `num_tokens_with_spec` 与 output placeholders 计算应追赶的长度，受 token/input/model-length budget 限制，再为 target query 与 drafter lookahead 申请 KV slots（两个量的区别见 §6.4）。词表行数由本步实际候选数加 bonus 数确定；MRV2 的 cumulative logits offsets 和 `expanded_idx_mapping/local_pos` 把每行对应到正确 request 与候选位置。V1 的 `SpecDecodeMetadata` 分开列出 draft/target/bonus indices。
+Scheduler 从 `num_tokens_with_spec` 与 output placeholders 计算应追赶的长度，受 token/input/model-length budget 限制，再为 target query 与 drafter lookahead 申请 KV slots（两个量的区别见 §6.4）。词表行数由本步实际候选数加 bonus 数确定；MRV2 的 cumulative logits offsets 和 `expanded_idx_mapping/local_pos` 把每行对应到正确 request 与候选位置。MRV1 的 `SpecDecodeMetadata` 分开列出 draft/target/bonus indices。
 
 `scheduled_spec_decode_tokens` 里装什么要分情况，不能一句“被实际选入的候选”了事：
 
 | 情况 | CPU 列表内容 | 真实候选来自哪里 |
 |---|---|---|
-| 同步调度 + V1 | 上一轮从设备复制回 CPU 的真实 draft ids，按批准区间截断 | 同一份 CPU 列表 |
+| 同步调度 + MRV1 | 上一轮从设备复制回 CPU 的真实 draft ids，按批准区间截断 | 同一份 CPU 列表 |
 | 同步调度 + MRV2，且本批无结构化输出请求 | 全 `-1`，长度等于本步候选数 | 设备上的 `req_states.draft_tokens`，经 `combine_sampled_and_draft_tokens` 进 `input_ids`，verifier 再用 `input_ids[logits_indices]` 取 `draft_sampled` |
 | 同步调度 + MRV2，本批有结构化输出请求 | 经 D2H 复制回来的真实 ids，供 grammar 校验 | 同上；CPU 列表额外用于过滤 |
-| async 调度 | `AsyncScheduler._update_after_schedule` 写入的 `[-1] * num_spec_tokens_to_schedule`，源码注释“actual spec token ids 由 worker 进程更新” | 同设备路径；`post_step` 因此是空操作（§8.3） |
+| async 调度，本批无结构化输出请求 | `AsyncScheduler._update_after_schedule` 写入的 `[-1] * num_spec_tokens_to_schedule`，源码注释“actual spec token ids 由 worker 进程更新” | 同设备路径；`post_step` 是空操作，没有本步 grammar 草稿回传（MRV1 为 penalties/bad_words 的额外 D2H 另见 §8.3） |
+| async 调度，有结构化输出请求且先前输出占位未结清 | 初始是占位列表；batch-queue deferred 分支取回真实草稿并更新本步 `scheduled_spec_decode_tokens`，随后构造 grammar mask | MRV2 的 `DraftTokensHandler` 对该 batch 做 D2H，CPU 取得真实 ids 后预筛；设备继续提供 verifier 候选，grammar 语义归14 |
 | uniform-decode padding | `Scheduler.schedule` 的 `pad_spec_decode` 分支给**本来没有草稿**的新准入 decode 请求写 `[-1] * num_spec_tokens` | 没有真实候选，这些行只为凑齐 `1 + num_spec_tokens` 的图宽度 |
 
-所以 CPU 上的 `spec_token_ids` 首先是一个**长度契约**，其次才可能是内容。`request.spec_token_ids` 在被写进本步计划后立刻清空，等 `update_draft_token_ids()` 或 async worker 重新填，不能重复消费。`AsyncScheduler` 同时把 `num_output_placeholders` 增加 `num_sampled_tokens_per_step + cur_num_spec_tokens`。padding 分支还有一个保护：Mamba 对齐切分改变了 token 数时，源码宁愿把 padding 整个丢掉（`num_new_tokens = 1`、`pad_spec_decode = False`）也不缩短它，因为被 padding 的尾部行是投机位置而不是 prefill token，缩短会让 sampler 的行数与 query 行数不再匹配。依据：`vllm/v1/core/sched/scheduler.py::Scheduler.schedule`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`；`vllm/v1/worker/gpu/input_batch.py::combine_sampled_and_draft_tokens`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler.__call__`；`vllm/v1/worker/gpu/spec_decode/utils.py::DraftTokensHandler.set_draft_tokens`、`get_draft_tokens`；`vllm/v1/spec_decode/metadata.py::SpecDecodeMetadata`。
+所以 CPU 上的 `spec_token_ids` 首先是一个**长度契约**，其次才可能是内容。`request.spec_token_ids` 在被写进本步计划后立刻清空；同步路径以后由 `update_draft_token_ids()` 写回真实列表，async 路径则由 `AsyncScheduler._update_after_schedule` 在 CPU request 上写 `_spec_token_placeholders`，真实草稿留在 worker 设备状态，只有 deferred grammar 分支才按上表回传并改写当前计划，不能把这些 owner 合成“async worker 重新填 request”。`AsyncScheduler` 同时把 `num_output_placeholders` 增加 `num_sampled_tokens_per_step + cur_num_spec_tokens`。padding 分支还有一个保护：Mamba 对齐切分改变了 token 数时，源码宁愿把 padding 整个丢掉（`num_new_tokens = 1`、`pad_spec_decode = False`）也不缩短它，因为被 padding 的尾部行是投机位置而不是 prefill token，缩短会让 sampler 的行数与 query 行数不再匹配。依据：`vllm/v1/core/sched/scheduler.py::Scheduler.schedule`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`；`vllm/v1/worker/gpu/input_batch.py::combine_sampled_and_draft_tokens`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler.__call__`；`vllm/v1/worker/gpu/spec_decode/utils.py::DraftTokensHandler.set_draft_tokens`、`get_draft_tokens`；`vllm/v1/spec_decode/metadata.py::SpecDecodeMetadata`。
 
-p_i 还必须包含假设前面 draft 已成立时的重复惩罚、bad-word 等上下文。V1 显式构造 `outputs`、`outputs+x1` 等逐位置历史；MRV2 将 draft IDs 和 expanded local position 传给普通 sampler 的参数处理。grammar mask 先应用到 target logits，再选普通/rejection sampler。不能拿 raw softmax p 去证明另一套经过约束的目标策略；也不能据共享 sampler 推断所有参数都支持投机，当前请求验证会拒绝 spec 配置下的 min_p/logit_bias 等不支持组合。依据：`vllm/v1/sample/rejection_sampler.py::RejectionSampler._combine_outputs_with_spec_tokens`、`apply_logits_processors`、`apply_sampling_constraints`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.sample`、`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler._verify`；`vllm/sampling_params.py::SamplingParams._validate_spec_decode`。
+p_i 还必须包含假设前面 draft 已成立时的重复惩罚、bad-word 等上下文。MRV1 显式构造 `outputs`、`outputs+x1` 等逐位置历史；MRV2 将 draft IDs 和 expanded local position 传给普通 sampler 的参数处理。grammar mask 先应用到 target logits，再选普通/rejection sampler。不能拿 raw softmax p 去证明另一套经过约束的目标策略；也不能据共享 sampler 推断所有参数都支持投机，当前请求验证会拒绝 spec 配置下的 min_p/logit_bias 等不支持组合。依据：`vllm/v1/sample/rejection_sampler.py::RejectionSampler._combine_outputs_with_spec_tokens`、`apply_logits_processors`、`apply_sampling_constraints`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.sample`、`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler._verify`；`vllm/sampling_params.py::SamplingParams._validate_spec_decode`。
 
-grammar preview 不永久 advance。同步更新（`update_draft_token_ids`）可以先用 `grammar.validate_tokens()` 截掉不合法草稿；已有 scheduled placeholder 长度的路径（`update_draft_token_ids_in_output`）则保留可用前缀，先按原 placeholder 长度裁掉多余项，再用 `-1` 填齐剩余位置并把数量记进 `scheduler_output.num_invalid_spec_tokens`，verifier 按 §3.3 处理，统计也区分 grammar-invalidated drafts。部分 prefill 还未结束时，Scheduler 忽略并清空新草稿；多模块 MTP 的 `_reserve_prefill_lookahead()` 要么让 chunk 完成 prefill，要么为下一块留足已知 token，避免 trailing module 用猜测污染自己的 KV。依据：`vllm/v1/core/sched/scheduler.py::Scheduler.update_draft_token_ids`、`update_draft_token_ids_in_output`、`_reserve_prefill_lookahead`；`tests/v1/core/test_scheduler.py::test_no_spec_tokens_scheduled_for_prefill_chunks`。
+grammar preview 不永久 advance。同步发布可以截掉不合法草稿；async 有 pending 结构化输出时走 §8.3 的 deferred 发布，在生成 mask 前用真实草稿更新本步列表。两条路线的截断、补 `-1`、`num_invalid_spec_tokens` 与 grammar rollback 语义由 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis#6.4 接受新 token、draft 预演、跨 reasoning 边界、完成与失败|采样与结构化输出 §6.4]] 解释，verifier 对 placeholder 的数值处理仍见本页 §3.3。部分 prefill 还未结束时，Scheduler 忽略并清空新草稿；多模块 MTP 的 `_reserve_prefill_lookahead()` 要么让 chunk 完成 prefill，要么为下一块留足已知 token，避免 trailing module 用猜测污染自己的 KV。已确定的尾 token 何时有 slot、何时能登记 block hash 是另一条资源合同，归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis#3.3 分配：把候选命中变成受保护的请求映射|KV Cache §3.3 的 3.3.3]]。依据：`vllm/v1/core/sched/scheduler.py::Scheduler.update_draft_token_ids`、`update_draft_token_ids_in_output`、`_reserve_prefill_lookahead`；`tests/v1/core/test_scheduler.py::test_no_spec_tokens_scheduled_for_prefill_chunks`。
 
 独立 draft model 默认校验 target/draft vocab size 相等；heterogeneous vocab 仅允许 draft_model+greedy draft，并需对应 ID 映射（`vocab_mapping.constrain_draft_logits()` 把 draft logits 限制在共享 token 上，`map_draft_to_target_ids()` 再换成 target 的 ID），不能只关闭检查就把两个 tokenizer 的 ID 当成相同语义；源码还留了断言，确保这条路径下不出现 probabilistic draft probs。MRV2 full-logit verifier 对已知 padding 差异取 target/draft 词表宽度的较小值，这是 padding 接缝，不是任意异构词表转换。依据：`vllm/config/speculative.py::SpeculativeConfig._verify_args`、`verify_equal_vocab_size_if_draft_model`；`vllm/v1/spec_decode/llm_base_proposer.py::_greedy_sample`、`_sample_draft_tokens`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::rejection_sample`。
 
@@ -405,21 +429,27 @@ flowchart TB
 
 worker 主分支和 copy-ready 支线必须在 Scheduler 消费前合流。`AsyncOutput.get_output()` 等 event 后按 num_sampled 截断有效输出；单进程执行器会物化或包装 async output，多进程 WorkerProc 通过 output queue 等完成后送响应；EngineCore 取执行器结果后才调用 `Scheduler.update_from_output()`。因此不能把“copy 已开始”画成 commit，也不能把下一轮 proposer 放到 CPU output commit 之后。依据：`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.sample_tokens`、`vllm/v1/worker/gpu/async_utils.py::AsyncOutput.get_output`、`vllm/v1/executor/uniproc_executor.py::UniProcExecutor.collective_rpc`、`vllm/v1/executor/multiproc_executor.py::WorkerProc.enqueue_output`、`vllm/v1/engine/core.py::EngineCore.step`。
 
-CPU 这一侧的算术由 07 拥有：Scheduler 在 schedule 结束时已乐观把本步 token 数加到 computed 并记录 in-flight tokens，回传后以“scheduled drafts − accepted drafts”得 rejected 数并据此回退 computed，async 还修正 output placeholders；之后逐个 append 输出 token、检查 stop/长度，并裁掉 stop 后尚未对外提交的 token。完整的四元组账本与 21/20/3 的逐步示例见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]] §8.1，本页不再另算一遍，以免两页的例子各自漂移。两处提交各有消费者：GPU finalize 服务下一 proposal 与设备执行，CPU 结算服务请求历史、后续调度及用户输出。依据：`vllm/v1/core/sched/scheduler.py::Scheduler._update_after_schedule`、`update_from_output`、`_update_request_with_output`。
+CPU 这一侧的算术由 07 拥有：Scheduler 在 schedule 结束时已乐观把本步 token 数加到 computed 并记录 in-flight tokens，回传后以“scheduled drafts − accepted drafts”得 rejected 数并据此回退 computed，async 还修正 output placeholders；之后逐个 append 输出 token、检查 stop/长度，并裁掉 stop 后尚未对外提交的 token。完整的四元组账本与 21/20/3 的逐步示例见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]] §8.1.4（该算例有自己的子节，不在 §8.1 正文本身），本页不再另算一遍，以免两页的例子各自漂移。两处提交各有消费者：GPU finalize 服务下一 proposal 与设备执行，CPU 结算服务请求历史、后续调度及用户输出。依据：`vllm/v1/core/sched/scheduler.py::Scheduler._update_after_schedule`、`update_from_output`、`_update_request_with_output`。
 
 ### 8.3 草稿发布：新候选怎样回到 Scheduler
 
-`update_from_output` 只结算**已交付的 token**；新的**草稿**走另一条路，完成点是 Scheduler 上的 `request.spec_token_ids`，交接对象是 `DraftTokenIds`（`req_ids` 与 `draft_token_ids` 两个并行列表）。本基线有三条路线：
+`update_from_output` 只结算**已交付的 token**；新的**草稿**走另一条路，交接对象是 `DraftTokenIds`（`req_ids` 与 `draft_token_ids` 两个并行列表）。同步发布的完成点是 `request.spec_token_ids`；deferred 发布则直接改本步 `SchedulerOutput.scheduled_spec_decode_tokens`，必须赶在本步 grammar mask 与采样之前。本基线有三条路线：
 
-1. **普通同步路线。** `EngineCore._process_engine_step()` 在把本步 outputs 放进 output queue 之后调 `post_step(model_executed)`；`post_step` 的门是 `check_for_draft_tokens and not self.async_scheduling and model_executed`，其中 `check_for_draft_tokens = use_spec_decode or model_config.is_diffusion`。通过后依次是 `Executor.take_draft_token_ids()`（基类对 `collective_rpc` 的结果取 `output[0]`；uniproc 覆写为 `single_value=True`，多进程覆写为 `unique_reply_rank=self.output_rank`，源码注释说明只向单个 worker 取输出是优化）→ `Worker.take_draft_token_ids()` → runner 的 `take_draft_token_ids()` → `Scheduler.update_draft_token_ids(draft_token_ids)`。Scheduler 在这里跳过已结束请求，对 prefill chunk 清空草稿，对结构化输出请求先做 `grammar.validate_tokens()`，最后写 `request.spec_token_ids`。注意 `post_step` 在 `update_from_output` **之后**执行，不在其内部。
-2. **batch queue 的 deferred 路线。** `step_with_batch_queue()` 对完旧批之后，如果存在 deferred scheduler output，就先 `take_draft_token_ids()`，再调 `update_draft_token_ids_in_output(draft_token_ids, deferred_scheduler_output)` 过滤并用 `-1` 补齐，**然后**才 `get_grammar_bitmask()` 与 `sample_tokens()`——顺序是为了让 bitmask 跳过不合法草稿。
-3. **async 路线。** `post_step` 被门直接跳过；`AsyncScheduler._update_after_schedule` 已经写好 `-1` 占位列表，真实候选留在设备上。
+1. **普通同步路线。** `EngineCoreProc._process_engine_step()`（该方法只在 `EngineCoreProc` 上，基类 `EngineCore` 没有；被调的 `post_step` 才在基类）在把本步 outputs 放进 output queue 之后调 `post_step(model_executed)`；`post_step` 的门是 `check_for_draft_tokens and not self.async_scheduling and model_executed`，其中 `check_for_draft_tokens = use_spec_decode or model_config.is_diffusion`。通过后依次是 `Executor.take_draft_token_ids()`（基类对 `collective_rpc` 的结果取 `output[0]`；uniproc 覆写为 `single_value=True`，多进程覆写为 `unique_reply_rank=self.output_rank`，源码注释说明只向单个 worker 取输出是优化）→ `Worker.take_draft_token_ids()` → runner 的 `take_draft_token_ids()` → `Scheduler.update_draft_token_ids(draft_token_ids)`。Scheduler 在这里跳过已结束请求，对 prefill chunk 清空草稿，对结构化输出请求先做 `grammar.validate_tokens()`，最后写 `request.spec_token_ids`。注意 `post_step` 在 `update_from_output` **之后**执行，不在其内部。
+2. **async / PP 的 batch-queue deferred 路线（有 pending 结构化输出时）。** async 下 `VllmConfig.max_concurrent_batches` 至少为2，因此 Core 必走 `step_with_batch_queue`。`AsyncScheduler._update_after_schedule` 对非 prefill chunk 的结构化请求检查先前 `num_output_placeholders > 0`，若为真就置 `pending_structured_output_tokens`。Core 已提交新批 `execute_model`，但必须等旧批结果经 `update_from_output` 结算、grammar 前缀更新后，才能给新批采样：先 `take_draft_token_ids()` 取真实草稿，再 `update_draft_token_ids_in_output(draft_token_ids, deferred_scheduler_output)` 更新本步候选列表，**然后**才 `get_grammar_bitmask()` → `sample_tokens()` → 入 batch queue。这是 async + 结构化输出在存在未结清前序 token 时的必经分支；若没有 pending（例如首次进入而没有前序在途输出），Core 可以立即构造 mask 并采样。PP 也使用 batch queue，但队列存在本身不是 deferred 条件。
+3. **async 且本批无结构化输出请求。** `post_step` 被门直接跳过，也无上述 grammar deferred 取草稿步骤；`AsyncScheduler._update_after_schedule` 为下步写好 `-1` 占位列表，真实候选由设备状态提供。这里说的是 Scheduler 的草稿发布；MRV1 为 penalties/bad_words 的额外 CPU 副本不属于这条 grammar 发布路线。
 
-两个 Runner 的 `take_draft_token_ids()` 内容不同，这点直接决定 §7 那张表。MRV2 委托给 `DraftTokensHandler`：`set_draft_tokens()` 只有在 `input_batch.has_structured_output_reqs` 为真时才在独立 copy stream 上做 D2H（并 `record_stream` 防止分配器提前复用临时张量），否则把 `draft_tokens_np` 置 `None`；`get_draft_tokens()` 于是返回 `[[-1] * num_draft_tokens for _ in req_ids]`，源码注释标明“这种情况只在关闭 async 调度时出现”。也就是说 **MRV2 在不需要 grammar 校验时根本不把真实候选送回 CPU，只送回长度**。V1 的 `take_draft_token_ids()` 在 `num_spec_tokens` 与 `_draft_token_req_ids` 都非空时调 `_get_draft_token_ids_cpu()`；`_copy_draft_token_ids_to_cpu()` 在 async 调度下只在结构化输出、penalties 或 bad_words 需要时才复制。依据：`vllm/v1/engine/core.py::EngineCore.post_step`、`step_with_batch_queue`、`_process_engine_step`；`vllm/v1/executor/abstract.py::Executor.take_draft_token_ids`、`vllm/v1/executor/uniproc_executor.py`、`vllm/v1/executor/multiproc_executor.py`；`vllm/v1/worker/gpu_worker.py::Worker.take_draft_token_ids`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.take_draft_token_ids`、`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.take_draft_token_ids`、`_copy_draft_token_ids_to_cpu`；`vllm/v1/worker/gpu/spec_decode/utils.py::DraftTokensHandler`；`vllm/v1/core/sched/scheduler.py::Scheduler.update_draft_token_ids`、`update_draft_token_ids_in_output`。
+例如新计划已为 R 留出两个草稿位置，而 R 的前一步输出仍有占位未结清：Core 先等旧输出推进 R 的 grammar，再取真实 `x1,x2`，让 `update_draft_token_ids_in_output` 预筛并更新这两个位置，随后构造 mask 给已经提交 target forward 的新批。若只保留 `[-1,-1]` 而跳过这次回传，CPU grammar 就无法按真实候选预演。本页拥有这条发布顺序；过滤、补齐与 mask 的含义归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis#6.4 接受新 token、draft 预演、跨 reasoning 边界、完成与失败|采样与结构化输出 §6.4]]。
 
-### 8.4 V1、抢占和在途结果的边界
+两个 Runner 的 `take_draft_token_ids()` 内容不同，这点直接决定 §7 那张表。MRV2 委托给 `DraftTokensHandler`：`set_draft_tokens()` 在 `input_batch.has_structured_output_reqs` 为真时在独立 copy stream 上做 D2H（并 `record_stream` 防止分配器提前复用临时张量），**不因 async 而跳过**；此时 `get_draft_tokens()` 等 `copy_event` 后返回真实 ids。无结构化请求时才把 `draft_tokens_np` 置 `None`；同步路线调用 `get_draft_tokens()` 得到 `[[-1] * num_draft_tokens for _ in req_ids]`，源码注释标明“这种情况只在关闭 async 调度时出现”。普通 async 的长度占位由 Scheduler 自己产生，不需要通过这个 getter 往返。MRV1 的 `take_draft_token_ids()` 在 `num_spec_tokens` 与 `_draft_token_req_ids` 都非空时调 `_get_draft_token_ids_cpu()`；`_copy_draft_token_ids_to_cpu()` 在 async 调度下只在结构化输出、penalties 或 bad_words 需要时才复制。
 
-V1 不能直接套用图7全部函数顺序：padded GPU drafter 可以直接使用 GPU sampled tensor，在 CPU bookkeeping 完成前 propose；CPU n-gram/suffix 等要等 `_bookkeeping_sync()` 得到有效 token list 后才 propose。这条分岔正由 `disable_padded_drafter_batch` 控制（§11）。输入不适配 drafter 时清掉旧候选，避免下一轮误用；带模型 collectives 的 DP 路径还需 dummy run 保持各 rank 一致。共同要求是只把验证后有效 token 作为新上下文，compact row 与状态发布细节接11。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.sample_tokens`、`propose_draft_token_ids`。
+依据：`vllm/config/vllm.py::VllmConfig.max_concurrent_batches`；`vllm/v1/engine/core.py::EngineCore.__init__`、`post_step`、`step_with_batch_queue`、`_process_engine_step`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`；`vllm/v1/executor/abstract.py::Executor.take_draft_token_ids`、`vllm/v1/executor/uniproc_executor.py`、`vllm/v1/executor/multiproc_executor.py`；`vllm/v1/worker/gpu_worker.py::Worker.take_draft_token_ids`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.take_draft_token_ids`、`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.take_draft_token_ids`、`_copy_draft_token_ids_to_cpu`；`vllm/v1/worker/gpu/spec_decode/utils.py::DraftTokensHandler.set_draft_tokens`、`get_draft_tokens`；`vllm/v1/core/sched/scheduler.py::Scheduler.update_draft_token_ids`、`update_draft_token_ids_in_output`。
+
+测试证据边界：`tests/v1/spec_decode/test_mtp_structured_output.py::test_bitmask_with_padded_invalid_drafts` 直接验证 padded 草稿生成 N+1 行 mask，`test_bitmask_idempotent_across_calls` 验证预演不永久推进；`tests/v1/core/test_scheduler.py::test_per_request_spec_decode_subtracts_invalid_drafts` 注入 invalid count 验证统计扣除。它们不等于已经覆盖 async 的 D2H/deferred 全链；上述发布条件来自冻结源码逐步追踪，本轮未运行 GPU/模型测试。
+
+### 8.4 MRV1、抢占和在途结果的边界
+
+MRV1 不能直接套用图7全部函数顺序：padded GPU drafter 可以直接使用 GPU sampled tensor，在 CPU bookkeeping 完成前 propose；CPU n-gram/suffix 等要等 `_bookkeeping_sync()` 得到有效 token list 后才 propose。这条分岔正由 `disable_padded_drafter_batch` 控制（§11）。输入不适配 drafter 时清掉旧候选，避免下一轮误用；带模型 collectives 的 DP 路径还需 dummy run 保持各 rank 一致。共同要求是只把验证后有效 token 作为新上下文，compact row 与状态发布细节接11。依据：`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.sample_tokens`、`propose_draft_token_ids`。
 
 抢占释放请求 blocks、重置 computed、清空未验证草稿，但普通 async 在途结果默认仍按序交付，只禁止 stale rejection 修改已重置 counters。新基线还存在明确的 drop-stale 模式，用于 reset-prefix 同步恢复及需要有效 KV 交付的 connector 情形，不能概括成“stale 总丢”或“stale 永不丢”。多模态 E 也要等 confirmed progress（computed 减 output placeholders）再加上 drafter lookahead 确认越过 span 才释放，免得拒绝回退后 gather 读到已逐出的图片。依据：`vllm/v1/core/sched/scheduler.py::Scheduler._preempt_request`、`_free_encoder_inputs`、`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_request_with_output`；`tests/v1/core/test_scheduler.py::test_free_encoder_inputs_respects_unconfirmed_placeholders`。
 
@@ -443,8 +473,8 @@ cycle 包含关键路径上的 proposal、宽 target score、verification 和 st
 | target 随 query 宽度、batch、graph bucket 的时间 | 扩宽不免费；跨 bucket/piecewise/eager 边界会跳变 |
 | verifier/FP32 buffer/词表带宽 | standard 需要归约和回采，block 还需累积比值及下一行 residual mass |
 | KV 与 input budget | lookahead 和宽 query 可能挤出其他请求，单请求 TPOT 好不等于吞吐更好 |
-| drafter 只在最后一个 PP rank | 两个 Runner 都把整个 draft model 放在末 PP rank，V1 源码自带 NOTE 说层多时不理想；这也是 adaptive verification 拒绝 PP 的原因（cost curve 与 confidence 只存在于末 rank） |
-| 用户可见 logprobs 的缺口 | 投机路径下 `Sampler.get_logprobs_dims()` 以 `include_token_ids=False` 调用，注释是“rejection sampler 不返回 logprob token ids”；adaptive verification 下 `_get_logprobs_tensors()` 还要 `cu_num_logits.clone()` 才能拿到真实的每请求边界 |
+| drafter 只在最后一个 PP rank | 两个 Runner 都把整个 draft model 放在末 PP rank，MRV1 源码自带 NOTE 说层多时不理想；这也是 adaptive verification 拒绝 PP 的原因（cost curve 与 confidence 只存在于末 rank） |
+| 用户可见 logprobs 的缺口 | 走 rejection sampler 时拿不到 `logprob_token_ids`，但两条路径的机制不同：普通路径由 `num_draft_tokens == 0 or rejection_sampler is None` 这个 if/else 直接选走 `self.rejection_sampler(...)`，它本就不产出这些列；**batch-sharded gather 分支**（`if shard_metadata is not None:`）才显式以 `include_token_ids=(num_draft_tokens == 0 or rejection_sampler is None)` 调 `get_logprobs_dims()`，令 `max_token_ids=0`。源码注释“Rejection sampler does not return logprob token ids”。adaptive verification 下 `_get_logprobs_tensors()` 还要 `cu_num_logits.clone()` 才能拿到真实的每请求边界。该字段的正常语义与本例外的 owner 是 [[14_vllm_sampling_structured_output_analysis|采样与结构化输出]] §3.5 |
 
 交给 19 的那一跳有具体对象，不只是“graph bucket”：统一的 decode query 宽度是 `VllmConfig.uniform_decode_query_len = 1 + k`，MRV2 侧对应 `decode_query_len = num_speculative_steps + num_new_sampled_tokens_per_step`，它同时进入 `resolve_cudagraph_mode_and_sizes(...)` 与 `ModelCudaGraphManager(..., decode_query_len=…, varlen_decode=self.adaptive_verification is not None)`；开启 adaptive verification 时 runner 先把 `compilation_config.cudagraph_mode` 强制为 `FULL_AND_PIECEWISE`，再解析。drafter 自己的两个 graph 宽度见 §5.2。
 
@@ -489,10 +519,10 @@ CPU `compact_batch()` 可以用均分 placeholder 保持总 token 数，真实�
 
 ### 10.1 调用树
 
-从 EngineCore 的活入口走到“草稿对 Scheduler 可见”的完成点，MRV2 + `AutoRegressiveSpeculator` 路径。归属其他页的节点标出页号；纯转发的 worker/executor 跳数保留，因为省掉它们会造出假边。
+从 EngineCore 的活入口走到“草稿对 Scheduler 可见”的完成点，MRV2 + `AutoRegressiveSpeculator` 路径。先列普通同步入口与发布，再列 async/PP batch queue 的 deferred 入口；后者复用相同 runner 采样/提案链。归属其他页的节点标出页号；纯转发的 worker/executor 跳数保留，因为省掉它们会造出假边。
 
 ```text
-EngineCore.step                                                  # 归 06
+EngineCore.step                                                  # 普通同步入口，归 06
 |-- Scheduler.schedule                                           # 归 07：写 scheduled_spec_decode_tokens
 |   `-- KVCacheManager.allocate_slots num_lookahead_tokens=...    # 归 08；余量见 §6.4
 |-- Executor.execute_model -> Worker.execute_model
@@ -527,12 +557,23 @@ EngineCore.step                                                  # 归 06
 |-- AsyncOutput.get_output -> ModelRunnerOutput
 `-- Scheduler.update_from_output                                 # 归 07 §8：token 对外可见
 
-EngineCore._process_engine_step
-`-- EngineCore.post_step                                         # §8.3，在 update_from_output 之后
-    `-- Executor.take_draft_token_ids -> Worker.take_draft_token_ids
-        `-- GPUModelRunner.take_draft_token_ids
-            `-- DraftTokensHandler.get_draft_tokens -> DraftTokenIds
-                `-- Scheduler.update_draft_token_ids             # request.spec_token_ids 可见
+EngineCoreProc._process_engine_step
+`-- EngineCore.post_step                                         # §8.3，在 update_from_output 之后；async 跳过
+    |-- Executor.take_draft_token_ids -> Worker.take_draft_token_ids
+    |   `-- GPUModelRunner.take_draft_token_ids
+    |       `-- DraftTokensHandler.get_draft_tokens -> DraftTokenIds
+    `-- Scheduler.update_draft_token_ids                         # 同步 request.spec_token_ids 可见
+
+EngineCore.step_with_batch_queue                                 # async 或 PP；这里展开 pending 结构化输出分支
+|-- Scheduler.schedule -> AsyncScheduler._update_after_schedule  # 写 pending_structured_output_tokens
+|-- Executor.execute_model -> Worker.execute_model              # 已提交本步 target forward，暂缓 sample
+|-- 取旧批 future.result -> Scheduler.update_from_output          # 旧输出先结算，推进 grammar
+|-- Executor.take_draft_token_ids -> Worker.take_draft_token_ids
+|   `-- GPUModelRunner.take_draft_token_ids
+|       `-- DraftTokensHandler.get_draft_tokens                   # 等 D2H copy_event，返回真实 ids
+|-- Scheduler.update_draft_token_ids_in_output                    # 更新本步 scheduled_spec_decode_tokens
+|-- Scheduler.get_grammar_bitmask                                # grammar 语义归 14
+`-- Executor.sample_tokens -> Worker.sample_tokens               # 复用上面的 runner 验证/提案链，再入队
 ```
 
 ### 10.2 所有权视图：谁跨轮持有什么
@@ -541,14 +582,14 @@ EngineCore._process_engine_step
 
 | 对象 | 持有者与生命周期 | 关键状态 | 谁改 / 谁读 |
 |---|---|---|---|
-| `vllm/v1/sample/rejection_sampler.py::RejectionSampler` | V1 runner 在 drafter 构造后创建；`nn.Module` | 只有 `synthetic_conditional_rates` 与 logprobs 模式标记；**没有 block 分支** | 每步 `forward(SpecDecodeMetadata, …)` 读 |
+| `vllm/v1/sample/rejection_sampler.py::RejectionSampler` | MRV1 runner 在 drafter 构造后创建；`nn.Module` | 只有 `synthetic_conditional_rates` 与 logprobs 模式标记；**没有 block 分支** | 每步 `forward(SpecDecodeMetadata, …)` 读 |
 | `vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler` | MRV2 runner 在 `load_model` 后创建；普通类，不是 Module | `use_block_verification`、`synthetic_conditional_rates`、`enable_adaptive_verification` | 每步 `__call__` → `_verify_in_chunks` → `_verify` |
 | `BaseSpeculator` / `DraftModelSpeculator` 及其子类 | 末 PP rank 的 runner 持有，跨轮存活。层次是 `BaseSpeculator` → `DraftModelSpeculator` → `AutoRegressiveSpeculator`（Eagle/MTP/Gemma4）、`MultiModuleMTPSpeculator`、`DFlashSpeculator`（→ DSpark、DFlash2）、`ExtractHiddenStatesSpeculator` | `input_buffers`、`idx_mapping`、`temperature`、`seeds`、`draft_tokens`、可选 `draft_logits`；`draft_attn_layer_names`、`block_tables`、`kv_cache_config`、自己的 `attn_groups` | drafter 自己写；runner 读 `draft_logits` 交给 verifier |
 | `AutoRegressiveSpeculator` 的逐步状态 | 同上 | `hidden_states`、`current_draft_step`、`last_token_indices`、`sample_src_positions`、`use_fused_multi_step_decode`、prefill/decode 两个 graph manager | 三个 Triton kernel 写；`sample_draft` 读 `current_draft_step` 选列 |
 | `req_states.draft_tokens` | MRV2 runner 的稳定行状态，按 request slot 索引 | 本轮每请求的候选 token | `propose()` 返回后按 `idx_mapping` 覆盖；`combine_sampled_and_draft_tokens` 与 `DraftTokensHandler` 读 |
 | `DraftTokensHandler` | MRV2 runner 持有 | 独立 `copy_stream` 与 blocking `copy_event`、`req_ids`、`draft_tokens_np`、`num_draft_tokens` | `set_draft_tokens()` 写、`get_draft_tokens()` 读并同步 event |
 | `AdaptiveVerificationManager` | MRV2 runner 在 KV 初始化时按条件创建 | `cost_tables`、`_batch_budget`、`_confidence_probs`、双缓冲的 `_stale_confidences` | `record_confidences` 写；`get_num_tokens`/`compact_batch`/`reallocate_drafts` 读写 |
-| `SpecDecodeMetadata` | V1 每步构造的 dataclass，不跨轮 | `draft_token_ids`、`num_draft_tokens`、`cu_num_draft_tokens`、`cu_num_sampled_tokens`、`target_logits_indices`、`bonus_logits_indices`、`logits_indices` | V1 `_prepare_inputs` 写；`RejectionSampler.forward` 读 |
+| `SpecDecodeMetadata` | MRV1 每步构造的 dataclass，不跨轮 | `draft_token_ids`、`num_draft_tokens`、`cu_num_draft_tokens`、`cu_num_sampled_tokens`、`target_logits_indices`、`bonus_logits_indices`、`logits_indices` | MRV1 `_prepare_inputs` 写；`RejectionSampler.forward` 读 |
 | `Request.spec_token_ids` | Scheduler 持有的 CPU 状态 | 下一步候选的长度，必要时才是真实内容（§7） | `update_draft_token_ids` / `AsyncScheduler` 写；`schedule()` 读后清空 |
 
 ## 11. 配置契约
@@ -584,8 +625,8 @@ EngineCore._process_engine_step
 | 字段 | 类型 | 默认 | 契约；报错还是静默降级 |
 |---|---|---|---|
 | `draft_sample_method` | `greedy` 或 `probabilistic` | `greedy` | `probabilistic` 才分配 `[max_num_reqs, k, V]` 的 `draft_logits` 并走 full-q 校正；greedy 按 one-hot 处理（§2.3） |
-| `parallel_drafting` | bool | False | dflash/dspark 在 post-init 被强制置真；V2 上对非 dflash/dspark 的 parallel EAGLE 会被列为 V2 blocker |
-| `disable_padded_drafter_batch` | bool | False | 决定 V1 的 drafter 在 CPU bookkeeping 之前还是之后 propose（§8.4）；`extract_hidden_states` 直接拒绝该组合；显式 `async_scheduling=True` 时 `ValueError`，`async_scheduling=None` 时告警并静默关闭 async |
+| `parallel_drafting` | bool | False | dflash/dspark 在 post-init 被强制置真；MRV2 上对非 dflash/dspark 的 parallel EAGLE 会被列为 MRV2 blocker |
+| `disable_padded_drafter_batch` | bool | False | 决定 MRV1 的 drafter 在 CPU bookkeeping 之前还是之后 propose（§8.4）；`extract_hidden_states` 直接拒绝该组合；显式 `async_scheduling=True` 时 `ValueError`，`async_scheduling=None` 时告警并静默关闭 async |
 | `use_local_argmax_reduction` | bool | False | 与 `draft_sample_method="probabilistic"` 组合 → `ValueError`；draft 模型未实现 `get_top_tokens()` → `ValueError`；可用时把通信量从 O(vocab) 降到 O(2·tp_size) |
 | `use_heterogeneous_vocab` | bool | False | 要求 `method="draft_model"` **且** `draft_sample_method="greedy"`，否则 `ValueError`；为真时跳过等词表检查，改用 `vocab_mapping` 的 TLI 约束与 ID 映射 |
 | `disable_eagle_block_drop` | bool | False | 为真时 `use_eagle_block_drop()` 为假，`_annotate_eagle_groups` 直接返回；源码标为实验选项，只用于测量接受率影响，不关掉 drafter |
@@ -596,10 +637,10 @@ EngineCore._process_engine_step
 
 | 字段 | 类型 | 默认 | 契约；报错还是静默降级 |
 |---|---|---|---|
-| `rejection_sample_method` | `standard`/`synthetic`/`block` | `standard` | `block` 只在 MRV2 的 `RejectionSampler` 里有分支，V1 无对应实现也无强制 V2 的 guard（§3.3） |
+| `rejection_sample_method` | `standard`/`synthetic`/`block` | `standard` | `block` 只在 MRV2 的 `RejectionSampler` 里有分支，MRV1 无对应实现也无强制 MRV2 的 guard（§3.3） |
 | `synthetic_acceptance_rates` | `list[float]` 或 None | None | 非 synthetic 时给出 → `ValueError`；长度须为 k、取值在 [0,1]、单调不增 |
 | `synthetic_acceptance_length` | float 或 None | None | 与 rates 互斥；范围 `[1, k+1]`；解析后内部转成 rates 并把自身置 None |
-| `enable_adaptive_verification` | bool | False | 非 dspark → `ValueError`；另外 LoRA、`cudagraph_mode=NONE`、PP>1 各自 `ValueError`；V1 侧列为 V1 blocker。开启后 runner 强制 `cudagraph_mode=FULL_AND_PIECEWISE` 并以 `varlen_decode=True` 建 graph manager |
+| `enable_adaptive_verification` | bool | False | 非 dspark → `ValueError`；另外 LoRA、`cudagraph_mode=NONE`、PP>1 各自 `ValueError`；MRV1 侧列为 MRV1 blocker。开启后 runner 强制 `cudagraph_mode=FULL_AND_PIECEWISE` 并以 `varlen_decode=True` 建 graph manager |
 
 ### 11.5 suffix decoding
 
@@ -622,12 +663,12 @@ EngineCore._process_engine_step
 | `SpeculativeConfig.max_num_new_slots_for_drafting` | 派生 property | 每请求额外 input-budget 槽；docstring 带完整的每算法表 |
 | `SchedulerConfig.async_scheduling` | 相邻配置 | 显式为真时，spec 方法不在 `EagleModelTypes ∪ NgramGPUTypes ∪ {draft_model, dspark}` → `ValueError`；为 None 时同样条件只告警并关闭 async |
 | `CompilationConfig.cudagraph_mode` | 相邻配置（归 19） | adaptive verification 下被 runner 强制为 `FULL_AND_PIECEWISE` |
-| `ParallelConfig.enable_batch_sharded_sampling` | 相邻配置 | 被 `_get_v1_model_runner_unsupported_features` 列为 V1 blocker（与是否投机无关）；开启后投机路径的 logprobs gather 不返回 token ids |
+| `ParallelConfig.enable_batch_sharded_sampling` | 相邻配置 | 被 `_get_v1_model_runner_unsupported_features` 列为 MRV1 blocker（与是否投机无关）；开启后投机路径的 logprobs gather 不返回 token ids |
 
 ## 12. 阅读和验证时分别问什么
 
-1. **算法是否补足目标质量**：先读 `vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::_rejection_kernel`、`_resample_kernel`，用 §2/§3 的概率表复算；block 再补 cumulative ratio/residual mass 两个 kernel。V1 对照 `vllm/v1/sample/rejection_sampler.py::rejection_sample` 及其内核 `rejection_random_sample_kernel`（注意 `draft_prob > 0` 这一支），不要被类 docstring 中旧的“spec 不支持 top-k/top-p”用语误导，实际 `apply_sampling_constraints()` 已应用这两项。
-2. **校正的 q 是否就是实际 q**：读 `vllm/v1/worker/gpu/spec_decode/speculator.py::DraftModelSpeculator.sample_draft` 与 `draft_logits_spec`，再按方法看 `autoregressive/speculator.py` 的三个 Triton kernel（`_prepare_prefill_inputs_kernel`、`_prepare_decode_inputs_kernel`、`_update_draft_inputs_kernel`）、DSpark/DFlash2 的最终 logits 缓存及 V1 request 重排；检验 token ID、temperature、position 和 RNG 分流。
+1. **算法是否补足目标质量**：先读 `vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py::_rejection_kernel`、`_resample_kernel`，用 §2/§3 的概率表复算；block 再补 cumulative ratio/residual mass 两个 kernel。MRV1 对照 `vllm/v1/sample/rejection_sampler.py::rejection_sample` 及其内核 `rejection_random_sample_kernel`（注意 `draft_prob > 0` 这一支），不要被类 docstring 中旧的“spec 不支持 top-k/top-p”用语误导，实际 `apply_sampling_constraints()` 已应用这两项。
+2. **校正的 q 是否就是实际 q**：读 `vllm/v1/worker/gpu/spec_decode/speculator.py::DraftModelSpeculator.sample_draft` 与 `draft_logits_spec`，再按方法看 `autoregressive/speculator.py` 的三个 Triton kernel（`_prepare_prefill_inputs_kernel`、`_prepare_decode_inputs_kernel`、`_update_draft_inputs_kernel`）、DSpark/DFlash2 的最终 logits 缓存及 MRV1 request 重排；检验 token ID、temperature、position 和 RNG 分流。
 3. **这个 drafter 是怎么被造出来的、KV 记在谁账上**：读 `vllm/config/speculative.py::SpeculativeConfig.__post_init__`、`_verify_args`、`vllm/v1/worker/gpu/spec_decode/__init__.py::init_speculator`、`vllm/v1/worker/gpu/spec_decode/speculator.py::DraftModelSpeculator.load_model`/`set_attn`，再联读 `vllm/v1/worker/gpu/attn_utils.py::get_kv_cache_spec` 与 `vllm/v1/core/kv_cache_utils.py::_annotate_eagle_groups`、`_warn_if_unannotated_eagle_mamba`，核对 §6.3 的“同一池子 + group 身份”结论。
 4. **下一个消费者看到哪个前缀**：联读 `vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.sample_tokens`、`vllm/v1/worker/gpu/input_batch.py::_post_update_kernel`、`vllm/v1/worker/gpu/async_utils.py::AsyncOutput.get_output` 与 `vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output`，核对图7的12/13差别；草稿那一侧另读 `vllm/v1/engine/core.py::EngineCore.post_step`、`step_with_batch_queue`、`vllm/v1/worker/gpu/spec_decode/utils.py::DraftTokensHandler` 与 `Scheduler.update_draft_token_ids`，确认 CPU 上的 `spec_token_ids` 何时只是长度。
 5. **节省是否覆盖额外开销**：读 `vllm/v1/worker/gpu/spec_decode/rejection_sampler.py::RejectionSampler._verify_in_chunks` 与 `vllm/v1/worker/gpu/spec_decode/adaptive_verification.py::AdaptiveVerificationManager`，同时观察 survival、proposal/target/verifier 时间、`uniform_decode_query_len` 对应的 graph 宽度和 KV 压力。
@@ -639,7 +680,7 @@ EngineCore._process_engine_step
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] — 定义 p 的普通采样约束，以及 grammar preview、mask 与实际输出 advance。
 - [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] — 展开 token/input budget、抢占和异步在途请求，§8.1 拥有 CPU 侧乐观记账的回退算术；本页提供候选、draft KV 归属与拒绝结算规则。
 - [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 接续逻辑边界之外的物理 block 分配、引用、复用及释放；本页 §6.3 负责 draft 组的归属与身份判定。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] — 说明 compact batch、CPU/GPU proposer 时序与验证结果发布。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] — 说明 stable row、GPU finalize、PP 与输出拷贝的设备执行接缝。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner MRV1]] — 说明 compact batch、CPU/GPU proposer 时序与验证结果发布。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner MRV2]] — 说明 stable row、GPU finalize、PP 与输出拷贝的设备执行接缝。
 - [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接续 `uniform_decode_query_len` 对应的 graph 宽度与 piecewise/eager 的成本跳变。
 - [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 把接受长度、各阶段时间与 KV 压力接到诊断信号，避免只用单一接受率判断收益。

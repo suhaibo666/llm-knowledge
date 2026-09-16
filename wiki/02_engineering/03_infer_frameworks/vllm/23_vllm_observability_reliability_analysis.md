@@ -4,10 +4,10 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 
 # vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与故障域
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-06）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：解释调度事件如何变成请求指标，指标与 trace 如何关联，以及引擎和 Worker 故障如何传播、清理和恢复。最后说明时钟、采样、聚合与健康信号的边界。
 > **适用范围**：本页拥有指标产生和故障处理机制；采证命令与排障过程见 [[05_vllm_debugging_troubleshooting_guide|调试与排障]]，评测与调优见 [[04_vllm_performance_tuning_guide|性能评测与调优]]，服务路由和拓扑见 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。
-> **最近更新**：2026-09-14。补全普通请求的统计计算、消费端选择、多模态与传输观测，以及故障终结和受控恢复。
+> **最近更新**：2026-09-16。补全普通请求的统计计算、消费端选择、多模态、connector 遥测矩阵与 KV cache 事件发布链，修正异步远端 KV 等待和异常终态样本的指标归属，并说明故障终结与受控恢复。
 
 ## 1. 背景：SLO 是症状，资源承诺和故障域才是原因
 
@@ -49,7 +49,7 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 
 **先保留跨输出的请求状态。** R 建立时，前端 `RequestStateStats` 保存 arrival=1000.000，queued、scheduled、first-token 和 last-token 初始为零。EngineCore 中的 Request 则另存一个事件列表：入队时追加 QUEUED=10.010，首次调度时追加 SCHEDULED=10.030；Scheduler 生成请求输出时用 `Request.take_events` 取走列表，并把原列表换成空列表。事件因此可以随首输出一起到达，又不会在后续输出中被重复计算。
 
-**首输出建立时间基点。** 前端在 1000.090 收到首批输出，创建本批的 `IterationStats`。`update_from_output` 看到 R 的 `is_prefilling=True`，先把 4 个 prompt token 的 PrefillStats 计入本次 prompt 统计，再把 1000.090 减 arrival 得到 TTFT=0.090；随后消费 QUEUED、SCHEDULED 事件，将两个源时间写入 R 的持久状态。最后用输出封装的时间 10.080 同时设置 first-token 和 last-token，并将生成 token 数从 0 加到 1。OutputProcessor 完成这次统计更新后才把 `is_prefilling` 改成 False，后续 delta 不会再次登记 prompt token 或 TTFT。
+**首输出建立时间基点。** 前端在 1000.090 收到首批输出，创建本批的 `IterationStats`。`update_from_output` 的实际顺序是：**先**把本批新生成 token 数累加进 `num_generation_tokens`（从 0 加到 1，这一步在任何分支之前）；**再**看 `is_prefilling=True`，把 4 个 prompt token 的 PrefillStats 计入本次 prompt 统计，并把 1000.090 减 arrival 得到 TTFT=0.090；**之后**才消费 QUEUED、SCHEDULED 事件，将两个源时间写入 R 的持久状态；最后用输出封装的时间 10.080 同时设置 first-token 和 last-token。顺序本身不改变数值，但读代码时不要按“事件先于计数”去找。OutputProcessor 完成这次统计更新后才把 `is_prefilling` 改成 False，后续 delta 不会再次登记 prompt token 或 TTFT。
 
 **后续输出只推进末端。** 第二批在前端 1000.115 到达时，会创建新的 IterationStats，但继续使用同一个 R 状态。因为此时已不是 prefill，统计代码用本批 EngineCore 时间 10.105 减旧 last-token=10.080，形成 ITL=0.025，然后才把 last-token 更新为 10.105，并将生成数加到 2。第三批同样先得到 ITL=10.135−10.105=0.030，再把末端推进到 10.135、生成数加到 3。first-token=10.080 始终保留，所以不需要保存所有输出时间，也能在结束时计算完整 decode 区间。
 
@@ -65,6 +65,8 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 | Inference | 10.135 减 10.030 = **0.105 s** | 结束时；Prefill + Decode |
 | 每请求平均 TPOT | 0.055 除以 2 = **0.0275 s/token** | 结束时；分母为 generation token 数减 1，只有一个 token 时返回 0 |
 | E2E | 1000.145 减 1000.000 = **0.145 s** | 结束 iteration；尚未包含此后的 HTTP flush、网络与客户端读取 |
+
+**“有终态输出”不等于“这些区间一定有效”。** `Scheduler.update_from_output` 在异步 KV load 失败或 grammar 编译失败时，会用 `FINISHED_ERROR` 结束请求并发出空 `new_token_ids` 的 `EngineCoreOutput`；从未获调度的请求此时可能只有 QUEUED event。前端仍把处于 prefill 状态的空 token 终态送入 `IterationStats.update_from_output`，登记 TTFT，并在 `update_from_finished_request` 中直接使用尚为零的 `scheduled_ts`：queue 可能成为 `0 - queued_ts` 的负值，prefill 和 inference 则可能接近 `output_timestamp - 0` 的超大值。FT 的 `_send_abort_outputs` 也会发出空 token、无 events 的 `FINISHED_ABORTED` 输出；若请求此前没有建立完整基点，同样可能产生失真的完成区间。`PrometheusStatLogger.record` 会逐条 observe 这些 `finished_requests`；只有 `vllm:request_success_total` 计数器带 `finished_reason` 标签，延迟 histogram 不带该标签，因而不能靠按完成原因过滤来净化已混入的分布。这是实现的异常样本边界，不应把这些终态记录解释为一次正常完成。
 
 `EngineCoreOutputs.__post_init__` 为整个输出封装取一个 monotonic timestamp；这不是每个 token 单独的设备完成时间。前端也是每个收到的输出批次创建一个 `IterationStats`，其 wall-clock 在分块处理前固定。因此本页 TTFT/E2E 是前端实现所见的请求延迟，不等同于压测客户端测得的 TTFT/E2E；客户端边界见 [[04_vllm_performance_tuning_guide|性能评测与调优]]。
 
@@ -226,7 +228,7 @@ Prometheus 的基础 label 是 `model_name` / `engine`。waiting reason 固定�
 
 进程身份与请求身份走不同载体。初始化OTel provider时，vLLM把pid、instrumenting module等写进Resource，并把endpoint放入环境供子进程继承；请求span的parent则从本次trace headers恢复。span.end之后，BatchSpanProcessor会先缓存再批量交给OTLP exporter，结束请求并不等于远端collector已经收到span。`test_traces`因此在生成完成后继续轮询，最多等待15秒，再核验llm_request的request ID、token数和queue/TTFT/E2E属性。批量发送减少频繁导出的开销，但增加可见延迟，进程异常退出时也可能来不及送出最后一批。
 
-OTLP 传输由 `get_span_exporter` 的实际分支限定为默认 `grpc` 或 `http/protobuf`，其他值抛 ValueError。`collect_detailed_traces` 的枚举是 `model`、`worker`、`all`，配置会要求 endpoint；但本基线 `collect_model_forward_time` / `collect_model_execute_time` 仅定义为派生属性，未找到 v1 消费点。因此不能仅凭配置说明承诺逐请求 GPU forward/execute timing span 已启用。普通 `llm_request` 由上面的 OutputProcessor 完成分支产生；它断言 request/iteration stats 存在，单设 endpoint 不会让 AsyncLLM 自动打开 `self.log_stats`，使用本页链路必须保持有效 stats 采集。
+OTLP 传输由 `get_span_exporter` 的实际分支限定为默认 `grpc` 或 `http/protobuf`，其他值抛 ValueError。`collect_detailed_traces` 的枚举是 `model`、`worker`、`all`，配置会要求 endpoint；但本基线 `collect_model_forward_time` / `collect_model_execute_time` 仅定义为派生属性，未找到 v1 消费点。因此不能仅凭配置说明承诺逐请求 GPU forward/execute timing span 已启用。普通 `llm_request` 由上面的 OutputProcessor 完成分支产生；它断言 request/iteration stats 存在（`do_tracing` 开头两条 `assert`），单设 endpoint 不会让 AsyncLLM 自动打开 `self.log_stats`。**后果要说清**：stats 缺失时这两条 assert 抛 `AssertionError`，它发生在 output handler 里，经 `OutputProcessor.propagate_error` 传播给**所有在途请求**，随后 `/health` 转 503——不是“少一条 span”这么轻，而是整个前端失效。所以使用本页链路必须保持有效 stats 采集。
 
 核心请求与资源metrics使用model、engine和有限reason/source，LoRA专用指标另带adapter维度，request ID位于trace attribute。由这个分工可以推导：把request ID或prompt加入常驻metrics label，会让时序数量随请求身份增长，而不是只随部署规模增长。让metrics触发告警、trace解释个例，可以同时保留长期聚合和单请求关联；这一cardinality理由是分析推断，并非源码对排除request ID的历史说明。
 
@@ -270,19 +272,73 @@ flowchart TB
 
 **先运输，再由 connector 解释。** 不同 KV connector 可以报告不同 telemetry，因此 Scheduler 不把 transfer 字段写死在统一统计结构中。`update_from_output` 先取得 worker 的 KVConnectorOutput.kv_connector_stats，再与 scheduler-side connector stats 聚合，`make_stats` 调用 to_dict 把结果变成可序列化 payload。前端 text logger 经 connector factory 的 build_kv_connector_stats 还原具体对象，Prometheus 则通过同一个 connector class 的 build_prom_metrics 构造专有 collector。前者未实现时 text warning 后跳过，后者返回 None 时 Prometheus observe 直接返回；配置了 KV transfer 并不自动意味着存在一套统一传输延迟指标。
 
+固定基线中的 hook 矩阵把这个差异具体化。这里的“有”表示 classmethod 返回实际 stats/collector，不是仅覆写后返回 `None`；MultiConnector 会按内部 connector class 去重并委托构造，因此它的最终可见信号仍由子 connector 决定。
+
+| Connector | `build_kv_connector_stats`（text 还原） | `build_prom_metrics`（Prometheus） | 必须保留的边界 |
+|---|---|---|---|
+| NIXL | 有：`NixlKVConnectorStats` | 有：`NixlPromMetrics` | 七组数组型样本，成功与失败分开 |
+| Mooncake（direct） | 有：`MooncakeKVConnectorStats` | **无**：继承基类并返回 `None` | P 记录成功 write；D 只记录 recv/ZMQ 失败；不能期待同名 Prometheus collector |
+| Mooncake Store | 有：`MooncakeStoreConnectorStats` | 有：`MooncakeStorePromMetrics` | 与 direct Mooncake 是两套实现，不能因名称相近合并 |
+| MultiConnector | 有：`MultiKVConnectorStats` | 有：聚合各子 connector collector | stats payload 按 connector class name 分组；相同 class 只构造一套 collector |
+| OffloadingConnector | 有：`OffloadingConnectorStats` | 有：`OffloadPromMetrics` | 报告 offload 专有样本，不等同于 NIXL 字段 |
+| HF3FS | 有：`HF3FSKVConnectorStats` | 有：`HF3FSPromMetrics` | 使用自己的计数与时延契约 |
+| LMCache MP | **无**：覆写后返回 `None` | **无**：覆写后返回 `None` | KV 搬运存在，但这两个通用 logger hook 不产生信号 |
+| MoRIIO | **无**：继承基类 `None` | **无**：继承基类 `None` | 同步 READ 仍会影响 prefill；无通用 connector 指标不等于无成本 |
+
+因此排障时必须先由已解析的 connector class 判断能看到哪一类信号。尤其 direct Mooncake 的成功样本只出现在 P 端 text stats，不能在 D 端或 Prometheus 中用“零值”推断没有传输；LMCache MP 与 MoRIIO 则连这两个 hook 都不产出对象，必须回到请求区间、实现日志或 connector 自身出口取证。
+
 **成功传输保留单次样本。** 以 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] 使用的 NIXL 为例，`NixlKVConnectorStats` 保留七组数组。`record_transfer` 将库返回的 xferDuration、postDuration 从微秒换成秒，同时追加 totalBytes 和 descCount；跨 worker 或跨步聚合时，aggregate 按 key extend，保留每一次传输的样本。NixlPromMetrics 再逐样本 observe 到 `vllm:nixl_xfer_time_seconds`、`vllm:nixl_post_time_seconds`、`vllm:nixl_bytes_transferred` 和 `vllm:nixl_num_descriptors`。这样 histogram 能保留传输规模和时延分布，但时间起止点来自 NIXL 库 telemetry，不是请求从 waiting 到恢复执行的整个区间，字节数也不是业务有效 token 数。
 
 **失败独立计数，不能混入成功时延。** 传输失败和通知失败分别调用 record_failed_transfer、record_failed_notification，在各自数组中追加1，再由 Prometheus 对 `vllm:nixl_num_failed_transfers`、`vllm:nixl_num_failed_notifications` 增加 Counter，exposition 使用 `_total` 后缀。即使窗口内没有成功传输，is_empty 仍检查失败数组，防止这批故障统计被丢弃。一个多 read 请求可能创建多个 handle，失败会逐操作记录，因此这些 counter 不能当作失败请求数；只看成功传输 histogram，也会遗漏失败请求已经等待的时间。
 
 **lease 过期与 invalid blocks 分属统计和控制两条出口。** worker 的 get_finished 发现 send lease 已过期时，先调用 record_kv_expired_req，再释放追踪状态并把请求放入 done_sending，最终增加 `vllm:nixl_num_kv_expired_reqs`；双向 pull 拒绝过期 read 时也调用这个记录函数。注册说明将它标为 P instance 信号，它只覆盖这些实际调用点，并不囊括全部 TTL/deadline 分支。相对地，invalid block IDs 和 failed request IDs 通过 worker queue、connector output 送给 Scheduler._handle_invalid_blocks，用于决定重算还是失败，并在日志中报告 affected requests/tokens；NIXL七项和通用 logger 都没有专用 invalid-block histogram 或 counter。资源释放与重算/fail 策略仍沿22的机制继续，观测端不能凭一个虚构指标替代这条控制数据。
 
+**这张表不是全集。** `KVConnectorFactory` 共注册 **16** 个 connector，上表逐行核过其中 8 个；未列入的还有 `ExampleConnector`、`ExampleHiddenStatesConnector`、`LMCacheConnectorV1`、`NixlPullConnector`、`NixlPushConnector`、`DecodeBenchConnector`、`FlexKVConnectorV1`、`SimpleCPUOffloadConnector`（两个 NIXL 变体与 NIXL 行同族，其余本页未逐个打开）。因此**“表里没有”只等于“本页未核”，不等于“该 connector 没有 telemetry”**。另外要把两件事分开：这里说的是 **connector 自己的传输 telemetry**（`build_kv_connector_stats` / `build_prom_metrics` 这对钩子）；**KV cache 事件**是另一条完全独立的发布链，归 §5.3，两者既不互相替代也不互为兜底。
+
 **text 输出压缩一个传输窗口。** KVConnectorLogging.observe 会把收到的具体 stats 对象聚合到 transfer_stats_accumulator，log 时调用 reduce 生成成功数量、平均/P90 transfer与post时间、平均MiB、平均descriptor和throughput，然后清空 accumulator，下一窗口重新累积。NIXL reduce 只总结成功传输；若只有失败，text 显示成功数及成功性能为零，失败详情仍从 Prometheus counter 读取。throughput 的计算是总MiB除以各成功transfer duration之和，并非窗口总字节除以墙钟时间；并发传输时，几个duration可以重叠，因此这个值不能当作链路的实际总带宽。
+
+### 5.3 KV cache 事件：从 block 生命周期发布到外部前缀路由
+
+KV transfer stats 回答“搬运发生得怎样”，KV cache events 回答“哪些 block 现在被宣告存入、移除或整体清空”。两者经过同一个 Scheduler 步骤，却不是同一份 payload：`Scheduler.update_from_output` 先从 `KVCacheManager.take_events` 排空本地 block-pool 事件，再拼接 `connector.take_events` 返回的远端/offload 事件；只有合并结果非空才构造 `KVEventBatch` 并调用 publisher。事件源由实际改变 residency 的 owner 产生，Scheduler 只负责汇合与发布。
+
+| 事件 | 对外表达的状态变化 | 消费端必须保留的限定 |
+|---|---|---|
+| `BlockStored` | 一组 block hash 已在某个 `medium` 出现；可带 parent、token IDs、block size、LoRA/extra keys、KV group/spec、locality、ownership 与 session | 同一 hash 可能被重复宣告或跨层级出现；`session_id` 是触发事件的请求上下文，不是 block 的独占所有权 |
+| `BlockRemoved` | 一组 hash 已从指定 medium/group/locality/ownership 移除 | 只含定位删除所需字段；消费者应容忍未见过的 hash，不能据此删除其他 medium 的副本 |
+| `AllBlocksCleared` | 本地 prefix cache 在可安全 reset 后整体清空 | reset 因仍有占用 block 而失败时不会发出；消费者应用它作该 publisher 范围内的失效边界 |
+
+`KVEventsConfig` 先决定事件是否采集，再决定 publisher。`enable_kv_cache_events=False` 时 block pool 不记录事件；配置缺失、禁用或 `publisher="null"` 时 factory 使用 no-op publisher。启用且未显式指定 publisher 时，`__post_init__` 选择 `zmq`。ZMQ publisher 为每个 DP rank 偏移 TCP 端口并写入 `data_parallel_rank`，后台线程按 `[topic, 8-byte sequence, msgpack batch]` 发布；可选 `replay_endpoint` 通过 ROUTER 从内存中的最近 `buffer_steps` 批次补发。主线程入有界 `max_queue_size` 队列会在满时等待，PUB socket 的 `hwm` 又是独立的下游背压/丢弃边界；shutdown 先给队列约 1 秒排空预算，再独立 `thread.join(timeout=1秒)`，仍可能带剩余项退出。因此 sequence 与 replay 让消费者能检测并尝试补洞，但不能把实现注释中的 at-least-once 接口意图扩大为“任意外部订阅者必达”。
+
+<!-- Figure spec: KV event ownership and publication pipeline. Local block pool and connector-specific event producers converge only in Scheduler.update_from_output, then a null-or-ZMQ publisher branch. ZMQ adds DP rank and sequence before external consumers update a replica-local prefix index; the index is advisory routing state, not Scheduler ownership. Orange nodes show loss/backpressure and replay limits. -->
+```mermaid
+flowchart LR
+  L["BlockPool / KVCacheManager<br/>Stored · Removed · Cleared"] --> S["Scheduler.update_from_output<br/>take_events 后合并"]
+  C["KV connector / offload<br/>可选远端事件"] --> S
+  S --> B["KVEventBatch<br/>ts + events"]
+  B --> F{"EventPublisherFactory"}
+  F -->|禁用或 null| N["Null publisher<br/>不对外发送"]
+  F -->|zmq| Z["每 DP rank 的后台 publisher<br/>topic + sequence + msgpack<br/>附 data_parallel_rank"]
+  Z --> X["外部消费者<br/>维护 replica / medium 的 prefix 索引"]
+  X --> R["前缀感知路由<br/>优先选择声明持有前缀的副本"]
+  Z -.-> Q["有界队列 · PUB HWM<br/>可选有限 replay buffer"]
+  R -.-> O["路由索引只消费事件<br/>不拥有 vLLM block 生命周期"]
+  classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+  classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+  class L,C,B,N,X,R,O neutral
+  class S,Z acc1
+  class F,Q acc2
+```
+
+外部 prefix-aware router 可以按 `BlockStored` 建立“副本/medium 可能持有此前缀”的索引，按 `BlockRemoved` 或 `AllBlocksCleared` 失效，再把新请求送到最可能复用前缀的实例。仓库内给出了 subscriber 示例，llm-d 集成文档也明确以这条事件流做 prefix-aware routing；**本基线的 vLLM 核心只有 publisher，没有拥有路由决策的通用 subscriber**。所以路由索引是异步、可能陈旧的提示，实际命中与 block 生命周期仍以目标 Scheduler/KV owner 为准。
+
+block hash 的 wire 表示还受 `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES` 影响：默认 `1` 把内部 hash 截成低 64 位整数以兼容旧消费者，设为 `0` 才发送原始 bytes。消费者必须与 publisher 使用的表示一致，不能把两种 key 混成同一个索引；这也解释了 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] 中该环境变量为何归本页拥有，而 connector 页面只链接到这里。
 
 ## 6. 从故障发生到所有等待者终结
 
 ### 6.1 先区分故障域
 
-**先区分等待与执行变慢。** TTFT 尾部升高时，用同一个 engine、同一时间窗中的 queue 与 prefill 分解寻找增量：queue 上升说明首次调度前等待增长，随后应对照 capacity/deferred waiting reason 和 KV usage；queue 稳定而 prefill 上升，才继续检查已调度阶段的执行或数据装载。单看高KV usage 不能推出容量故障，因为它没有说明 R 是否正在等待这些 block；request span 则可以验证聚合趋势是否也发生在某个具体请求上。
+**先区分等待与执行变慢。** TTFT 尾部升高时，用同一个 engine、同一时间窗中的 queue 与 prefill 分解寻找增量。queue 上升通常说明首次调度前等待增长。**这里要避免一个误读：P/D consumer 的异步远端 KV load 不是 `deferred` 之外的另一种原因，它本身就被计入 `deferred`。** `Scheduler.schedule` 判定 `load_kv_async` 后把请求留在 `WAITING_FOR_REMOTE_KVS` 并跳过执行，该请求进入 `skipped_waiting`；`num_requests_waiting_by_reason` 的 `deferred` 标签正是由 `len(self.skipped_waiting)` 供数，指标 documentation 也把 “KV transfer” 与 LoRA budget、blocked status 并列为 `deferred` 的三类瞬时约束。直到 load 完成才发出首个 SCHEDULED event，所以这段数据等待计入 queue。因此该指标的两个标签是**互斥且穷尽**的（两者之和等于 `vllm:num_requests_waiting`）：要区分“排队等容量”与“等远端 KV”，不能只看 `deferred` 的值，还要对照 KV usage 与 connector transfer stats。相反，同步 MoRIIO READ 发生在请求已获调度之后、进入 forward 的路径内，才计入 prefill。queue 稳定而 prefill 上升时，再检查这类同步装载或已调度执行。单看高 KV usage 不能推出容量故障，因为它没有说明 R 是否正在等待这些 block；request span 则可以验证聚合趋势是否也发生在某个具体请求上。
 
 **首 token 之后用输出间隔追踪中断。** ITL或TPOT上升时，PREEMPTED事件和decode区间共享同一个 RequestStateStats，可以先检查长间隔是否包含抢占，再结合spec、connector和perf stats区分恢复等待、外部传输与设备执行退化。若输出出现NaN但进程仍存活，问题已经是数值损坏，应关联corrupted completion count、model revision和backend/runner trace；只有显式开启NaN检测才会计算这些记录，进程存活不能替代数值正确性。
 
@@ -290,7 +346,7 @@ flowchart TB
 
 ### 6.2 默认多进程路径：worker 死和 EngineCore 死如何闭合
 
-**本机 worker 死亡先终止整个 executor。** `MultiprocExecutor.start_worker_monitor` 等待各worker的process sentinel，发现一个意外退出后先置is_failed=True，再调用shutdown。shutdown关闭所有death pipe，让其余worker退出，随后收尾worker响应队列和RPC broadcast队列；不能只丢掉死亡worker后继续调度，因为剩余worker仍可能等待它参与同一次执行或通信。清理完成后，failure callback向EngineCore input_queue放入EXECUTOR_FAILED，busy loop dispatch据此抛RuntimeError；正在等待的RPC也可能更早因队列关闭而报错。这条路径限定本机MultiprocExecutor，Ray和外部launcher的监督拓扑见 [[18_vllm_distributed_inference_analysis|分布式推理]] 与 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。
+**本机 worker 死亡先终止整个 executor。** `MultiprocExecutor.start_worker_monitor` 等待各worker的process sentinel，发现一个意外退出后先置is_failed=True，再调用shutdown。shutdown关闭所有death pipe，让其余worker退出，随后收尾worker响应队列和RPC broadcast队列；不能只丢掉死亡worker后继续调度，因为剩余worker仍可能等待它参与同一次执行或通信。清理完成后，failure callback向EngineCore input_queue放入EXECUTOR_FAILED，busy loop dispatch据此抛RuntimeError；正在等待的RPC也可能更早因队列关闭而报错。这条路径限定本机 `MultiprocExecutor`。**Ray 与 external launcher 的监督拓扑（含 Ray DP actor 的生命周期）在基线下全域没有 owner**，该缺口已提交 `planning-codebase-analysis` 裁决；[[18_vllm_distributed_inference_analysis|分布式推理]] 拥有的是 executor 类的选择与 `external_launcher` 对 world size 的影响，不是它们的故障监督，本页不把读者交给不拥有该内容的页面。
 
 **EngineCore用两条通道通知前端。** 默认FT关闭时，上述异常离开busy loop，进入run_engine_core的fatal处理：EngineCore把ENGINE_CORE_DEAD byte sentinel放入output_queue，最多等待output thread五秒发送，再进入shutdown。AsyncMPClient收到这一特殊帧时，validate_alive设置engine_dead并抛EngineDeadError。如果EngineCore被SIGKILL直接结束，它没有机会发送sentinel或执行finally，本机MPClient的process monitor会独立发现进程退出，设置同一个engine_dead并shutdown client。双通道的作用是让故障传播不只依赖濒死进程成功发出最后一条消息；这一理由由两条检测路径的关系推导，直接死亡后的收尾仍依赖进程和父子pipe的监督清理。
 
@@ -320,7 +376,7 @@ flowchart TB
 
 “通知已提交”与“请求已终结”之间还有等待：worker monitor 在 executor shutdown 之后才调 failure callback；关 pipe、worker 退出和队列清理各有完成点，因此进程死亡不会在同一时刻变成所有 HTTP 请求的异常。源码的 `_ensure_worker_termination` 先等 `VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS`，再给 SIGTERM 4 秒，最后对仍存活者 kill；这里核验 vLLM 发信号和关资源的顺序，不把操作系统实际回收时延说成有界性能承诺。队列与 RPC 内部收尾详见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]。
 
-`OutputProcessor.propagate_error` 本身只是给每个 collector `put(e)`，并不直接清空 request_states。`generate` 对 EngineDeadError 直接传播，避免再向死亡 engine abort；其他非预期异常尝试 abort，再包成 EngineGenerateError；无论哪条最后都关闭 collector。因此 fatal 并不保证为每个未完成请求产生正常 FinishedRequestStats 或 llm_request span，完成请求 histogram 会遗漏这些终止前未能正常消费的样本。
+`OutputProcessor.propagate_error` 本身只是给每个 collector `put(e)`，并不直接清空 request_states。`generate` 对 EngineDeadError 直接传播，避免再向死亡 engine abort；其他非预期异常尝试 abort，再包成 EngineGenerateError；无论哪条最后都关闭 collector。因此**突然死亡并只传播异常**时，不保证为每个未完成请求产生 FinishedRequestStats 或 llm_request span，完成请求 histogram 会遗漏这些样本。另一条边界恰好相反：Scheduler 显式产生的 `FINISHED_ERROR`，以及 FT sentinel 通过 `_send_finish_outputs_to_client` 发出的 `FINISHED_ABORTED`，都会作为终态输出经过 OutputProcessor；即便 token 为空、events 不完整，也可能进入完成 histogram。**两种终态的失真形态不同**：Scheduler 的 `FINISHED_ERROR` 通常已带 QUEUED event，缺的是 SCHEDULED，于是出现 §3.1 所述的负 queue 或超大 prefill/inference；FT sentinel 的 `FINISHED_ABORTED` 则可能一个 EngineCore event 都没有，此时各区间以基点 0 计算，表现为**以 0 为基点的样本**而不是负值。可观测性因此同时存在“fatal 样本缺失”和“显式异常终态污染”，二者不能合并成“所有失败都不进完成指标”。
 
 **健康探针只读取错误状态。** AsyncLLM.errored检查engine_core.resources.engine_dead，或output handler是否已经结束；check_health在errored为真时抛EngineDeadError，HTTP `/health`再把它映射为503。它不会创建新推理请求，也不逐一查询FT sentinel是否UNHEALTHY；render-only前端根本没有engine，直接返回200。因此探针可以证明这两个致命错误标记尚未触发，却不能证明当前设备执行一定有进展。FT状态描述能否继续执行或接受恢复命令，新请求成功才证明恢复后的执行链重新走通，三者回答的是不同问题。
 
@@ -359,7 +415,7 @@ flowchart TB
 
 `DPEngineCoreProc.reinitialize_distributed` 是另一套 **Elastic EP 扩缩容** 协议：输入 ReconfigureDistributedRequest，创建 ElasticEPScalingState，并返回 ready key；已有 scaling state 时直接拒绝重入。它不是这里的 FT retry，也不是 worker/EngineCore 死亡后的通用恢复 API，扩缩容后续步骤属于 [[18_vllm_distributed_inference_analysis|分布式推理]]。
 
-数值损坏提供“计数”与“终止”两种策略：开 `VLLM_COMPUTE_NANS_IN_LOGITS` 时完成请求进入 corrupted counter；开更强的 `VLLM_RAISE_ON_LOGIT_NANS` 会同时启用计数，并把非零 per-request NaN map 转成异常。已核验的 MRV1 同步路径为此执行 opt-in D2H，异步路径在 `AsyncGPUModelRunnerOutput.get_output()` 物化计数时检查；这两处都属于诊断成本，不能外推为所有 Runner 和后端的相同实现。
+数值损坏提供“计数”与“终止”两种策略：开 `VLLM_COMPUTE_NANS_IN_LOGITS` 时完成请求进入 corrupted counter；开更强的 `VLLM_RAISE_ON_LOGIT_NANS` 会同时启用计数，并把非零 per-request NaN map 转成异常。已核验的 MRV1 同步路径为此执行 opt-in D2H，异步路径在 `AsyncGPUModelRunnerOutput.get_output()` 物化计数时检查。**本基线的默认 runner 是 MRV2，它自有一条同名开关的实现**：`vllm/v1/worker/gpu/sample/sampler.py::Sampler.compute_nans` 直接取 `envs.VLLM_COMPUTE_NANS_IN_LOGITS`（默认 False），`Sampler` 与 `spec_decode/rejection_sampler.py` 在其为真时各调一次 `get_num_nans(logits)`，`model_runner.py` 则把它作为 `gather_num_nans=` 传进 batch-sharded gather。三处都属于诊断成本；本页只核到“开关存在且被这些点消费”，未逐后端核实 NaN 判定的数值等价性。
 
 ## 7. 配置、成本与信号边界
 
@@ -397,7 +453,22 @@ flowchart TB
 
 #### 构造参数与环境开关
 
-`log_stats`、`stat_loggers`、`aggregate_engine_logging`、`client_count` 属于 AsyncLLM/manager 构造控制，不是 ObservabilityConfig 字段，实际组合见 §4.2。`PROMETHEUS_MULTIPROC_DIR` 选择 registry/数据目录；`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` 选择 grpc 或 http/protobuf。`VLLM_COMPUTE_NANS_IN_LOGITS`、`VLLM_RAISE_ON_LOGIT_NANS` 默认均为 0，后者隐含前者；数值诊断与 fatal 边界见 §6.3。`VLLM_V1_OUTPUT_PROC_CHUNK_SIZE` 只控制前端每次连续处理的输出数量，不会改变输出源时间戳。
+`log_stats`、`stat_loggers`、`aggregate_engine_logging`、`client_count` 属于 AsyncLLM/manager 构造控制，不是 ObservabilityConfig 字段，实际组合见 §4.2。
+
+`KVEventsConfig`（`vllm/config/kv_events.py`）是本页 §5.3 那条发布链的全部配置面，8 个字段列全如下——replay buffer 的常驻内存正是 `buffer_steps` × 每步事件量，不列出默认值就无法估：
+
+| 字段 | 默认 | 契约 |
+|---|---|---|
+| `enable_kv_cache_events` | `False` | 总开关；关闭时不产生 block 存储/移除事件 |
+| `publisher` | `None`（`__post_init__` 据开关定 `"null"` / `"zmq"`） | 取 `"null"` 或 `"zmq"` |
+| `endpoint` | `"tcp://*:5557"` | 发布用 zmq 端点 |
+| `replay_endpoint` | `None` | 重放用 zmq 端点；为 `None` 即不提供重放 |
+| `buffer_steps` | `10_000` | 为重放端点保留最近 N **步**的事件——常驻内存的主项 |
+| `hwm` | `100_000` | zmq high water mark：排队超过 N 条后，消费者跟不上就开始丢事件 |
+| `max_queue_size` | `100_000` | 等待发布期间的最大排队事件数 |
+| `topic` | `""` | 发布主题，供消费者订阅 |
+
+`PROMETHEUS_MULTIPROC_DIR` 选择 registry/数据目录；`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` 选择 grpc 或 http/protobuf。`VLLM_COMPUTE_NANS_IN_LOGITS`、`VLLM_RAISE_ON_LOGIT_NANS` 默认均为 0，后者隐含前者；数值诊断与 fatal 边界见 §6.3。`VLLM_V1_OUTPUT_PROC_CHUNK_SIZE` 只控制前端每次连续处理的输出数量，不会改变输出源时间戳。
 
 | 成本项 | 增量与聚合后的限制 |
 |---|---|
@@ -430,6 +501,8 @@ Prometheus gauges 只在 logger 收到 `SchedulerStats` 时被 `set`；trace 又
 当前实现也承认不完整聚合比没有聚合更危险：`api_server_count > 1` 时默认 text stats logging 被禁用，以避免 incomplete stats。这不是说 Prometheus 永不陈旧，而是提醒每个 sink 都必须声明自己覆盖哪些进程和更新时间。
 
 进程聚合错误还有更具体的失败边界：多 engine 时 `vllm:lora_requests_info` 被源码直接警告为可能错误或误导。此时继续展示一条“最近值”会掩盖覆盖缺口，而不是增加可观测性。
+
+完成 histogram 还可能“新鲜但无效”：显式 ERROR/ABORT 输出会刷新 collector，却可能缺少 SCHEDULED 或全部 EngineCore events。带 QUEUED 而缺 SCHEDULED 的 ERROR 样本给出负 queue 或超大 prefill/inference；完全没有 event 的 ABORT 样本则以 0 为基点、接近 monotonic 纪元。此时 scrape freshness 和请求完成计数都正常，数值仍不能代表正常请求路径。诊断时要把异常终态日志与这些离群样本同窗关联；`vllm:request_success_total` 的 `finished_reason` 只能帮助确认错误终态确实发生，不能按相同标签从无 `finished_reason` 的延迟 histogram 中剔除它们。
 
 ### 7.5 Process boundary：源时间、传输时间和观察时间不能混算
 
@@ -466,13 +539,17 @@ Frontend 的 `_time_since` 直接用 `time.time()` 差值，没有 monotonic 替
 |---|---|
 | 谁产生状态和事件？ | `vllm/v1/core/sched/scheduler.py::Scheduler.add_request / schedule / _preempt_request / make_stats`；`vllm/v1/engine/__init__.py::EngineCoreEvent / EngineCoreOutputs` |
 | 抢占怎样进入区间和计数？ | `vllm/v1/metrics/stats.py::RequestStateStats / IterationStats.update_from_output / update_from_events / update_from_finished_request` |
+| 异步远端 KV 等待落在哪个区间？ | `vllm/v1/core/sched/scheduler.py::Scheduler.schedule / _update_waiting_for_remote_kv`（`load_kv_async`、`WAITING_FOR_REMOTE_KVS` 与首次 SCHEDULED）；同步 MoRIIO READ 的执行边界见 `vllm/distributed/kv_transfer/kv_connector/v1/moriio/moriio_connector.py::MoRIIOConnector.start_load_kv / wait_for_layer_load` 与 `MoRIIOConnectorWorker.start_load_kv / wait_for_layer_load` |
 | 怎样交给 exporter？ | `vllm/v1/engine/async_llm.py::AsyncLLM._run_output_handler` → `vllm/v1/engine/output_processor.py::OutputProcessor.process_outputs` → `vllm/v1/metrics/loggers.py::StatLoggerManager.record / PrometheusStatLogger.record / LoggingStatLogger._track_iteration_stats / _update_stats / _reset / log` |
+| ERROR/ABORT 终态为什么会形成失真样本？ | `vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output`（空 token 的 `FINISHED_ERROR`）与 `vllm/v1/engine/core.py::EngineCoreProc._send_finish_outputs_to_client / _send_abort_outputs`（无 events 的 `FINISHED_ABORTED`）→ `vllm/v1/metrics/stats.py::IterationStats.update_from_output / update_from_finished_request` → `vllm/v1/metrics/loggers.py::PrometheusStatLogger.record` |
 | Trace 怎样关联与导出？ | `vllm/v1/engine/output_processor.py::OutputProcessor.do_tracing` → `vllm/tracing/otel.py::extract_trace_context / init_otel_tracer / init_otel_worker_tracer`；`tests/v1/tracing/test_tracing.py::test_traces` |
 | 哪些配置改变观测成本？ | `vllm/config/observability.py::ObservabilityConfig`；`vllm/v1/core/kv_cache_metrics.py::BlockMetricsState / KVCacheMetricsCollector`；`vllm/v1/metrics/loggers.py::PrometheusStatLogger.__init__ / StatLoggerManager.__init__` |
-| 可恢复路径何时生效？ | `vllm/config/parallel.py::ParallelConfig`；`vllm/v1/fault_tolerance/engine_core_sentinel.py::fault_tolerant_wrapper / EngineCoreSentinel.on_fault / handle_command / retry` → `vllm/v1/worker/sentinel/gpu_worker_sentinel.py::WorkerSentinel.retry / _clean_worker_state` |
+| 可恢复路径何时生效？ | `vllm/config/fault_tolerance.py::FaultToleranceConfig`（§7.1 展开的那组字段的定义处）；`vllm/config/parallel.py::ParallelConfig`；`vllm/v1/fault_tolerance/engine_core_sentinel.py::fault_tolerant_wrapper / EngineCoreSentinel.on_fault / handle_command / retry` → `vllm/v1/worker/sentinel/gpu_worker_sentinel.py::WorkerSentinel.retry / _clean_worker_state` |
 | Fatal 怎样终结等待？ | `vllm/v1/engine/core.py::EngineCoreProc.run_engine_core / _send_engine_dead` → `vllm/v1/engine/core_client.py::BackgroundResources.validate_alive / MPClient.start_engine_core_monitor` → `vllm/v1/engine/async_llm.py::AsyncLLM._run_output_handler / errored / check_health` → `vllm/entrypoints/serve/instrumentator/health.py::health` |
 | 多模态两条计量链怎样区分？ | `vllm/v1/core/sched/scheduler.py::Scheduler._make_scheduled_encoder_input_stats` → `vllm/v1/engine/core.py::EngineCore.capture_iteration_details` → `vllm/v1/metrics/loggers.py::LoggingStatLogger._log_iteration_details`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.timed_encoder_operation` / `vllm/v1/worker/gpu/mm/encoder_runner.py::EncoderRunner.timed_encoder_operation` → `vllm/benchmarks/mm_processor.py::get_timing_stats_from_engine` |
 | NIXL 哪些信号被 export？ | `vllm/distributed/kv_transfer/kv_connector/v1/metrics.py::KVConnectorLogging / KVConnectorProm`；`vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py::NixlKVConnectorStats / NixlPromMetrics`；`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker.get_finished / _handle_failed_transfer`；`vllm/v1/core/sched/scheduler.py::Scheduler._handle_invalid_blocks` |
+| Connector 遥测 hook 怎样分叉？ | `vllm/distributed/kv_transfer/kv_connector/v1/base.py::KVConnectorBase_V1.build_kv_connector_stats / build_prom_metrics`；各实现的同名 classmethod：`nixl/connector.py::NixlBaseConnector`、`mooncake/mooncake_connector.py::MooncakeConnector`、`mooncake/store/connector.py::MooncakeStoreConnector`、`multi_connector.py::MultiConnector`、`lmcache_mp_connector.py::LMCacheMPConnectorUpstream`、`offloading_connector.py::OffloadingConnector`、`hf3fs/hf3fs_connector.py::HF3FSKVConnector`、`moriio/moriio_connector.py::MoRIIOConnector` |
+| KV cache 事件如何产生并发布？ | `vllm/config/kv_events.py::KVEventsConfig` → `vllm/v1/core/block_pool.py::BlockPool.reset_prefix_cache / take_events` → `vllm/v1/core/kv_cache_manager.py::KVCacheManager.take_events` 与 `vllm/distributed/kv_transfer/kv_connector/v1/base.py::KVConnectorBase_V1.take_events` → `vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output` → `vllm/distributed/kv_events.py::EventPublisherFactory.create / ZmqEventPublisher.publish / ZmqEventPublisher._publisher_thread / ZmqEventPublisher._service_replay`；hash 表示见 `vllm/v1/core/kv_cache_utils.py::maybe_convert_block_hash` 与 `vllm/envs.py::VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES` |
 | 默认多进程故障如何清理？ | `vllm/v1/executor/multiproc_executor.py::MultiprocExecutor.start_worker_monitor / shutdown / _ensure_worker_termination`；`vllm/v1/engine/core.py::EngineCoreProc._handle_client_request`；`vllm/v1/engine/output_processor.py::OutputProcessor.propagate_error / RequestOutputCollector.get`；`vllm/v1/engine/async_llm.py::AsyncLLM.generate` |
 | Logger 选择与 scrape 由谁负责？ | `tests/v1/metrics/test_engine_logger_apis.py::test_async_llm_add_to_default_loggers / test_async_llm_replace_default_loggers`；`vllm/v1/metrics/prometheus.py::get_prometheus_registry / setup_multiprocess_prometheus`；`vllm/entrypoints/serve/instrumentator/metrics.py::attach_router`；`vllm/utils/jit_monitor.py::activate / _handle_jit_event` |
 | NaN 计数与异常在哪发生？ | `vllm/envs.py::VLLM_COMPUTE_NANS_IN_LOGITS / VLLM_RAISE_ON_LOGIT_NANS`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._get_nans_in_logits / AsyncGPUModelRunnerOutput.get_output` |

@@ -4,10 +4,10 @@ title: "vLLM IR 与融合 Pass：让语义先稳定，再让实现安全落地"
 
 # vLLM IR 与融合 Pass：让语义先稳定，再让实现安全落地
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-06）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：解释 vLLM IR 与 torch.compile 的关系，从 add 与 RMSNorm 的双输出计算出发，跟踪 pattern 注册、匹配、替换与实现选择。随后展开输入捐赠、各融合家族、Pass 装配，以及自定义 Pass 的接入和验证。
 > **适用范围**：IR 语义、torch-wrap、donation/alias/functionalization、图融合及 `PassConfig` 全部字段；编译与缓存生命周期归 19，provider 与设备 kernel 实现归 20。
-> **最近更新**：2026-09-14。
+> **最近更新**：2026-09-16。统一冻结源码基线日期；正文机制与既有边界保持不变。
 
 ## 1. 为什么图里要先保留算子语义
 
@@ -142,7 +142,7 @@ pre-grad 与 post-grad 是相对 AOTAutograd 的处理阶段：前者位于其�
 lowering 对 inplace implementation 调 `func_impl_fn`，所以先得到保护性 clones；`UnsafeCloneEliminationPass` 再决定哪些 clone 可移除（`vllm/compilation/passes/ir/lowering_pass.py::VllmIRLoweringPass.lower_matched_op`；`vllm/ir/op.py::IrOpImpl.func_impl_fn`）。manager 在 lowering 后调用它，逐个检查 `aten.clone.default`，结合 user 的 write schema、`PassContext.donated_input_ids` 与 fake layout 决定能否将 clone 的消费者重新指向原 tensor。具体检查如下：
 
 - clone 不改变 stride 与 storage offset；缺 metadata 或读取 stride/offset 抛异常时**默认视为 layout preserved**，已知 layout 改变则保留（`vllm/compilation/passes/ir/clone_elimination.py::clone_preserves_layout`）；
-- clone 被写时，original 在该 write 后不能再有 user（`vllm/compilation/passes/ir/clone_elimination.py::user_writes_to_node`）；
+- clone 被写时，original 在该 write 后不能再有 user——该比较本身在 `UnsafeCloneEliminationPass.__call__` 内（用 `node_to_idx` 比对写点与 original 各 user 的序号），`user_writes_to_node` 只是它用来判定“某个 user 是否写这个节点”的谓词（`vllm/compilation/passes/ir/clone_elimination.py::UnsafeCloneEliminationPass.__call__` / `user_writes_to_node`）；
 - clone 被写且 original 是 graph input 时，必须出现在 pre-grad 传来的 donated-input set，否则保留 clone；只有 read-only users 的 clone 不要求 donation（`vllm/compilation/passes/ir/clone_elimination.py::UnsafeCloneEliminationPass.__call__`）；
 - unknown higher-order op 默认视作可能写，例外只有两种，理由不同（`vllm/compilation/passes/ir/clone_elimination.py::user_writes_to_node`）：`TritonKernelWrapperFunctional` 是真正的 functional HOP；`auto_functionalized` 则**确实会写**该节点，被豁免是因为它保证是该节点的**最后一次使用**（它把张量返回给后续使用），源码注释原话是写入发生但“is a follow-up use we're not interested in”。
 
@@ -257,7 +257,7 @@ Sequence parallelism 还展示了更强的顺序依赖：matcher 从图尾向前
 两个已知窄处决定读者不能把 non-match 一概解释成已证安全的 fallback：
 
 - `vllm/compilation/passes/utility/split_coalescing.py::SplitCoalescingPass.__call__` 的 key 只比较同一 input 和相同 split sizes，**没有比较 split dim**；`tests/compile/passes/test_split_coalescing.py::test_split_coalescing` 的三个 split 全是 `dim=-1`。它服务这种 QKV 图；不同轴的同 size split 并非数学等价，未运行该反例，也没有证据可将此 pass 宣称为通用跨轴 CSE。
-- `tests/compile/passes/test_fusion.py::test_fusion_rmsnorm_quant` 对 BF16 + DeepGEMM UE8M0 路径显式 skip：注释记录 B200 packed int32 scale 与当前 FP32-scale pattern / fused output layout 不一致时会有 NaN，TODO 要同时补 packed scale 输出与 pattern。**这是未覆盖路径及已记录风险，不是 runtime 拒绝或自动回退的证明**。scale ABI 继续由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化设计]] 与 20 管理。
+- `tests/compile/passes/test_fusion.py::test_fusion_rmsnorm_quant` 对 BF16 + DeepGEMM UE8M0 路径显式 skip：注释记录 B200 packed int32 scale 与当前 FP32-scale pattern / fused output layout 不一致时会有 NaN，TODO 要同时补 packed scale 输出与 pattern。**这是未覆盖路径及已记录风险，不是 runtime 拒绝或自动回退的证明**。scale ABI 继续由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]] 与 20 管理。
 
 ### 6.1 Norm 与 activation：消除的是哪个中间结果
 
@@ -298,7 +298,7 @@ flowchart TB
   class B acc2;
 ```
 
-各分支返回 `(q,u,s)` 中自己承诺的结果：static scale 沿用输入，dynamic/group scale 作为输出保留。T=2、H=4 表示 static/per-token 的教学计算，G=64/128 分支按前述重复规则扩大 H。scale 的量化公式与 packed ABI 继续见 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化设计]]。
+各分支返回 `(q,u,s)` 中自己承诺的结果：static scale 沿用输入，dynamic/group scale 作为输出保留。T=2、H=4 表示 static/per-token 的教学计算，G=64/128 分支按前述重复规则扩大 H。scale 的量化公式与 packed ABI 继续见 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]]。
 
 ROCm 还有独立选择轴。`RocmAiterRMSNormQuantFusionPass` 先注册一个 norm 扇出到两个 group quant 的 `DoubleAiterRMSFp8GroupQuantPattern` 与可容忍 view 的同族，再注册单 group 与 residual group，避免宽 pattern 抢走共同的 norm；其 replacement 对同一 input 运行两次 fused norm+group quant，分别返回两组 q/scale；代价是重复 norm 计算，换取不物化供两个 quant 读取的高精度 y。per-token 分支根据 `quant_fp8` custom op 是否开启选择 AITER/native matcher，避免两条最终 trace 成相同 native 图而重复注册；RDNA 分支不注册这组 per-token pattern。`AiterRMSNormGatedFp8GroupQuantPattern` 另从 `GatedDeltaNetAttention` 发现 head 几何，仅 head_dim=128 且相应 GDN Triton kernel 可用时注册，将逐 head RMS、SiLU gate 与 group quant 合并。这些是真实 sibling families，不能用普通 RMS+quant 的 dtype guard 概括；它们的 kernel 运算证据归 20。
 
@@ -598,7 +598,7 @@ VllmBackend.configure_post_pass()                          # vllm/compilation/ba
 |     `-- pass_manager.add(inductor_compile_config[pass_key])   # 进 self.passes，参与 UUID
 `-- inductor_config["post_grad_custom_post_pass"] = pass_manager
       `-- PostGradPassManager.__call__(graph)
-          |-- VllmInductorPass.dump_prefix = 0             # 逐 pass 递增，是顺序的可观察证据
+          |-- VllmInductorPass.dump_prefix = 0             # 只在 pass 实际执行后 += 1；被 range 跳过的 pass 不占序号，故 {i} 不等于装配位置
           |-- for pass_ in self.passes:
           |     |-- if pass_.is_applicable_for_range(compile_range): pass_(graph)
           |     `-- else: logger.debug 记 skip                [只有 6 个 pass 重写此方法]
@@ -618,7 +618,7 @@ VllmBackend.configure_post_pass()                          # vllm/compilation/ba
 
 lowering 复用的 `IrOp.dispatch`、`_filter_priority_impls`、`supports_args`、平台 priority、`CustomOp` 与 OOT implementation 注册在 [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]] 展开；同页继续解释 kernel 计算、workspace、硬件收益与 fallback。本页保留 `register_fake`、`register_input_generator`、`DEFAULT_TOLERANCES` 和 `override_tolerance` 的声明侧，provider 对拍与 benchmark 则检验这些声明是否兑现。 `tests/kernels/ir/test_layernorm.py::TestRMSNorm.test_impls` 生成实参、检查 `supports_args`，再比较 provider 与 native；它调用的 `tests/ir/ir_test_utils.py::assert_close` 通过 `op.get_tolerance(actual.dtype)` 取声明容差，因而是容差执行侧归 20 的具体证据。worker 初始化中相邻的 `ir_op_priority.set_default()` 也沿 provider 选择链阅读。
 
-SP 改写依赖 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] 的 collective 与 rank 语义；量化融合须服从 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化设计]] 的 quant key、scale 与 pack ABI；KV 写入与 attention 的 dummy 依赖则连接到 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]] 的 metadata 和 backend 能力。前文的每项图变换保留这些约束，才能把计算交给对应实现，而不会因图上节点变少就丢失它们。
+SP 改写依赖 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] 的 collective 与 rank 语义；量化融合须服从 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]] 的 quant key、scale 与 pack ABI；KV 写入与 attention 的 dummy 依赖则连接到 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]] 的 metadata 和 backend 能力。前文的每项图变换保留这些约束，才能把计算交给对应实现，而不会因图上节点变少就丢失它们。
 
 ### 8.5 每一阶段消费与产出的不变量
 
@@ -631,7 +631,7 @@ SP 改写依赖 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_in
 
 ## 9. 配置契约
 
-**覆盖率**：本页拥有 `vllm/config/compilation.py::PassConfig` 的 **16/16** 个字段，以及 19 明确移交的 6 个 `CompilationConfig` 字段中属于 IR/pass 的那一面，合计 **22 个字段**。`CompilationConfig` 共 36 个字段，其余 30 个（含 `fast_moe_cold_start` 与 `debug_dump_path`）归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
+**覆盖率**：本页拥有 `vllm/config/compilation.py::PassConfig` 的 **16/16** 个字段，以及 19 明确移交的 6 个 `CompilationConfig` 字段中属于 IR/pass 的那一面，合计 **22 个字段**。`CompilationConfig` 共 36 个字段，其余 30 个按三方口径一致地拆成：**21 个**（含 `fast_moe_cold_start` 与 `debug_dump_path`）归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]，**9 个**是内部/计算字段（`local_cache_dir`、`enabled_custom_ops`、`disabled_custom_ops`、`traced_files`、`compilation_time`、`encoder_compilation_time`、`static_forward_context`、`static_all_moe_layers`、`_attention_ops`），不作为用户契约展开。
 
 解析链固定为四段，**顺序不能调换**：声明值（多为 `None`）→ `PassConfig.__post_init__` 的平台裁决 → `VllmConfig.__post_init__` 调 `_apply_optimization_level_defaults(OPTIMIZATION_LEVEL_TO_CONFIG[level])` → `VllmConfig.__post_init__` 的 SP/TP 与 splitting 裁决。平台裁决在 `PassConfig` **构造时只运行一次**，早于 level 默认，此后不再重跑——`_set_config_default` 用 `setattr` 直接写字段，不会重建 `PassConfig`。所以平台裁决**只拦得住用户显式给的真值**；由 level 默认函数写入的真值不经过它，默认路径上的平台安全完全取决于该默认函数自己有没有平台判据（第 9 项就没有）。**用户显式给值永远优先于 level 默认**——`_set_config_default` 只在字段仍为 `None` 时写入（`vllm/config/vllm.py::VllmConfig._apply_optimization_level_defaults`），官方文档 `docs/design/fusions.md::Enabling / Disabling Fusions` 也这么写。
 
@@ -639,8 +639,8 @@ SP 改写依赖 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_in
 
 | # | 字段 | 声明默认 | O0 / O1 / O2 / O3 解析默认 | 触发什么、还有哪些反向裁决 | 本页小节 |
 |---|---|---|---|---|---|
-| 1 | `fuse_norm_quant` | `None` | F / `enable_norm_fusion` / 同 / 同 | `RMSNormQuantFusionPass`，ROCm 上另加 `RocmAiterRMSNormQuantFusionPass`；也是 `enable_transformers_norm_canonicalization` 的三个触发之一 | §2.1、§6.1 |
-| 2 | `fuse_act_quant` | `None` | F / `enable_act_fusion` / 同 / 同 | `ActivationQuantFusionPass`，ROCm 上另加 `RocmAiterSiluMulFp8GroupQuantFusionPass` | §6.1 |
+| 1 | `fuse_norm_quant` | `None` | F / `enable_norm_fusion` / 同 / 同 | `RMSNormQuantFusionPass`；另加 `RocmAiterRMSNormQuantFusionPass` 的条件是 `rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled()`，不是“平台为 ROCm 即加”；也是 `enable_transformers_norm_canonicalization` 的三个触发之一 | §2.1、§6.1 |
+| 2 | `fuse_act_quant` | `None` | F / `enable_act_fusion` / 同 / 同 | `ActivationQuantFusionPass`；另加 `RocmAiterSiluMulFp8GroupQuantFusionPass` 同样以 `rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled()` 为条件 | §6.1 |
 | 3 | `fuse_attn_quant` | `None` | F / F / `IS_QUANTIZED` / 同 | `AttnQuantFusionPass` + `MLAAttnQuantFusionPass`；非 inductor-partition 时反向改写 `splitting_ops`（后果归 19）。**`IS_QUANTIZED` 在本基线是模块级常量 `False`**，lambda 形式被注释掉并指向 issue 25689，所以四级实际都关 | §6.4 |
 | 4 | `eliminate_noops` | **`Field(default=True)`**，唯一字面默认为真的 bool | 恒 True 除非显式关 | `NoOpEliminationPass`；关掉时 `PassConfig.__post_init__` 对 norm/act/attn/allreduce/pad 五种融合逐条 warn “might not work”（仅对用户显式开启的融合——该 warn 同样只在构造时跑一次，level 默认后开启的融合不会触发） | §5.3 |
 | 5 | `enable_sp` | `None` | F / F / `IS_DENSE` / 同 | `SequenceParallelismPass`；`fuse_gemm_comms` 为真时强制置 True；TP==1 或阈值启发式返回 `None` 时连同 `fuse_gemm_comms` 一起强制置 False；PP>1 时追加 `+rms_norm`。**`IS_DENSE` 同为常量 `False`** | §6.6 |
@@ -675,7 +675,7 @@ ROCm 的 `RocmAiterAllReduceFusionPass` 两处都只用目标 hidden size，没�
 | `inductor_passes` | `{}` | 按 hook 名将解析对象写进 `inductor_compile_config` | 字符串解析、callable 字段类型/hash 边界见 §10.1；默认 post hook 最终要求 `InductorPass`，manager 对象被 `ValueError` 拒绝。用户对象追加到 `self.passes`，参与 range gate 与 UUID；推荐测试已使用的对象配置入口 | §10.1–10.2、§8.3 |
 | `pass_config` | `PassConfig()` | 见 §9.1 | 全部 16 字段 | §9.1 |
 
-**字段对账**：`CompilationConfig` 本页拥有上述 6 / 36 字段的指定面向；其余 30 字段归 19，未在本页重述。
+**字段对账**：`CompilationConfig` 本页拥有上述 6 / 36 字段的指定面向；其余 30 个中 21 个归 19、9 个是内部/计算字段，均未在本页重述（拆法见 §9.4 的覆盖率段）。
 
 ### 9.3 相关环境变量
 
@@ -686,14 +686,18 @@ ROCm 的 `RocmAiterAllReduceFusionPass` 两处都只用目标 hidden size，没�
 | `VLLM_BATCH_INVARIANT` | `0` | 为真时 `enable_allreduce_rms_fusion` 直接返回 False：融合后的 AR+RMS 路径不是 batch-invariant |
 | `VLLM_DEBUG_DUMP_PATH` | `None` | 覆盖 `CompilationConfig.debug_dump_path`，决定 `dump_graph` / `dump_patterns` 产物落到哪里。**路径与开关归 19**；本页只拥有 `post_grad.{i}.{pass_name}.{stage}` 里那个 `{i}` 的语义（§8.3） |
 
-### 9.4 官方支持矩阵，以及它落后源码的两处
+### 9.4 官方支持矩阵，以及它落后源码的四处
 
 `docs/design/fusions.md::Support Matrix` 给出 11 行 × 5 类平台（SM100 / SM90 / SM89 / SM80 / ROCm）的量化方案支持格——11 行对应 10 个不同 flag，`fuse_attn_quant` 按普通 attention 与 MLA 分占两行——是配置这些字段时的第一手参考。它是**文档面**，源码为准的地方有两处必须点破。
 
-> [!contradiction] 官方文档与基线源码不一致的两处
+> [!contradiction] 官方文档与基线源码不一致的四处
 > 其一，`Support Matrix` 的 `†` 脚注称 “`enable_sp`/`fuse_gemm_comms` only autoconfigured for SM90 today”，而 `vllm/compilation/passes/fusion/sequence_parallelism.py::SP_MIN_HIDDEN_SIZE` 与 `SP_MIN_PER_GPU_SIZE_MB` 同时含 90 与 100 两个键（SM100 家族的 per-GPU 门槛是 32 MiB，注释写明“Blackwell 上更保守，让 TP8 更晚启动”）。源码的 SP 阈值启发式已经支持 SM100 家族；但 §9.1 中 `IS_DENSE=False` 仍使 `enable_sp/fuse_gemm_comms` 的各优化级别默认关闭。这里指启用 SP 后可在 SM100 上自动求阈值，不能据阈值表存在反推当前默认已打开 SP/AsyncTP。
+>
 > 其二，`vllm/config/compilation.py::PassConfig` 中 `fi_allreduce_fusion_max_size_mb` 的 docstring 抄了一份 `{90: {2:64, 4:2, 8:1}, 100: {2:64, 4:32, 8:1}}`，而真值 `vllm/compilation/passes/fusion/allreduce_rms_fusion.py::FI_ALLREDUCE_FUSION_MAX_SIZE_MB` 是 SM90 `{2:64, 4:2, 8:0.5}`、SM100 `{2:64, 4:32, 8:1, 16:64}`，另有 SM103 与 SM107 两组 docstring 完全没提。以真值为准；docstring 只是注释，不参与查表。
-
+>
+> 其三，`docs/design/fusions.md::Quick Reference` 把 QK Norm + RoPE 的 `num_tokens` 一列标作 `Low`，暗示它只在小 batch 生效；而 `QKNormRoPEFusionPass` 并没有 `is_applicable_for_range` 覆写，对所有 compile range 一视同仁地应用（§11）。
+>
+> 其四，同一张 Quick Reference 把 RMSNorm + Quant 与 SiLU+Mul + Quant 的目标写成 “FP8/FP4 quant”，而 `vllm/compilation/passes/fusion/rms_quant_fusion.py` 中没有任何 NVFP4 replacement（§6.1），当前只有 FP8 侧的四个 `_C` 入口。
 ## 10. 自定义 Pass：接入、改写与验证
 
 ### 10.1 用户怎样接入自己的 Pass
@@ -864,6 +868,6 @@ config.compilation_config.inductor_compile_config[
 
 - [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 接手本页产出的 lowered graph，解释 whole-model compile、partition、cache、capture 与 replay 生命周期；`compile_range` 与转储路径由它产生，`fast_moe_cold_start` 与 `debug_dump_path` 也归它。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 拥有 provider / Kernel family 的收益、workspace、硬件能力与 fallback 账本，以及 `IrOp.dispatch` 三层选择、OOT implementation 注册与容差的执行侧对拍。
-- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化设计]] — 定义 quant key、scale 与 pack ABI；本页只解释这些合同怎样约束 fusion pattern。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化]] — 定义 quant key、scale 与 pack ABI；本页只解释这些合同怎样约束 fusion pattern。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 attention metadata、KV 副作用与 backend capability；本页只保留其 functional dependency 与 fusion guard。
 - [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 collective 与 rank 语义；本页只解释 sequence-parallel / async-TP pass 怎样改写其图表示。

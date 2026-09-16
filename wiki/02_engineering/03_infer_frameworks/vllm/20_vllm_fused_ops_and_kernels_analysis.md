@@ -4,10 +4,10 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
 # vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-08）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：用 residual+RMSNorm+quant、rope、activation、两专家 MoE、Marlin/FP8 权重重排和 multi-LoRA 重建专用 Kernel 改变的数值步骤、数据布局与中间存储。随后解释三层 provider 选择、meta 参数查表、scratch 复用及失败边界。
 > **适用范围**：拥有融合收益账本、CustomOp/IrOp/oracle 三层选择、六个代表 Kernel 族的设备算术与 Kernel 内布局、workspace 与 fallback；量化 ABI 归 17、IR 改写归 21、图生命周期归 19、EP 通信与 EPLB 归 18、位置张量归 15、slot mapping 构造归 11/12、采样 kernel 归 14。完整排除清单见 §1 与 §2。
-> **最近更新**：2026-09-14。第二轮：图 2 的闭环改为模型层循环里真实存在的 residual 回流并删去不存在的 cache→worker 回边；rope 族补齐 `ApplyRotaryEmb` 与 `DualChunkRotaryEmbedding`，锚点改为 `RotaryEmbedding.forward_*`；qk-norm+rope 融合补上 SM 9.0 自动选择的 N-head shared-memory 变体与 Triton 版 `fused_qk_rmsnorm_rope_gate`；按 `MarlinLinearKernel.can_implement` 与 `marlin_padded_nk` 重写 192/384 的解释；修 SVG 排版与配置契约归属。2026-09-13：兑现 17/15/19 三条落空的入向合同（Marlin warp/tile 布局、FP8 MoE 的 Kernel 内 shuffle 与分支理由、rope 与 qk-norm+rope 融合 kernel）；补收 MoE meta 参数三级选择与 activation family；补齐闭环位置图、核心流程清单、所有权表、配置契约与调用树；纠正 FP32 scratch 的理由与尺寸依据、显式 backend 的静默改写、`workspace_shapes` 参数表、`is_supported_config` 第二项方向与 groupwise guard。
+> **最近更新**：2026-09-16。按冻结基线纠正默认 O2/Inductor 与 eager provider 路径、norm+quant 四入口、MoE 能力覆写及 quant-specific oracle、KV-cache 融合端点；闭合 provider/OOT 注册合同，补充 RoPE 配对通信与 LoRA 分组写回原理图。
 
 ## 1. 定位：本页负责哪个单元，不负责什么
 
@@ -15,7 +15,7 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
 **它不是这几样东西**，每条排除都点名真正的 owner：
 
-- 不是 checkpoint 里那些字节怎么形成 pack、scale、zero-point——**归 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化设计]]**。本页从 `process_weights_after_loading` 已经提交的表示接手，只解释 Kernel 内部还要怎么摆。
+- 不是 checkpoint 里那些字节怎么形成 pack、scale、zero-point——**归 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]]**。本页从 `process_weights_after_loading` 已经提交的表示接手，只解释 Kernel 内部还要怎么摆。
 - 不是 `torch.fx` 图里的 pattern 何时被改写、`maybe_inplace`/donation/functionalization 为何保持语义、pass 顺序——**归 [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]]**。本页只解释那个产物落到哪个 provider。
 - 不是编译区间、capture 与 replay 的生命周期——**归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]**。本页只拥有它「最终选择或生成的那个 Kernel」。
 - 不是 collective 的全局语义、EP dispatch/combine 与 EPLB——**归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]**。本页从 `topk_ids`（物理 ID）与 `topk_weights` 接手，止于单卡。
@@ -40,7 +40,7 @@ $$
 
 本例 `u=(2,2,2,2)`，平方和 16、均方 4、倒数平方根 0.5，故 `y=(1,2,1,2)`。两个结果都必须交付：更新残差 u 供后续子层使用，归一化 y 供当前后继使用。不能只保留 y 而把 residual 副作用删掉。
 
-若继续做对称、无 `scale_ub` 的逐 token INT8 量化，本例 absmax 为 2，scale 为 `2/127`；量化先除 scale 再最近舍入并饱和，理想结果 `q=(64,127,64,127)`。反量化后首/第三项为 `128/127`，而非精确 1。一般 kernel 还对 scale 设正下界；FP8 使用其格式上限与转换规则，不能把 127 和 INT8 舍入搬过去。详细 scale、pack ABI 见 [[17_vllm_quantization_analysis|量化设计]]。
+若继续做对称、无 `scale_ub` 的逐 token INT8 量化，本例 absmax 为 2，scale 为 `2/127`；量化先除 scale 再最近舍入并饱和，理想结果 `q=(64,127,64,127)`。反量化后首/第三项为 `128/127`，而非精确 1。一般 kernel 还对 scale 设正下界；FP8 使用其格式上限与转换规则，不能把 127 和 INT8 舍入搬过去。**INT8 在这里用于复演动态 quant kernel 的能力，不代表当前编译 pass 会产出 INT8 norm+quant 融合；`RMSNormQuantFusionPass` 的 `FUSED_OPS` 只注册 FP8 替换。** 详细 scale、pack ABI 见 [[17_vllm_quantization_analysis|量化]]。
 
 源码中数值顺序比实数公式更具体。IR native 把 x 与 r 转 FP32 后求和与均方，更新残差单独 cast 回输入 dtype；归一化值先 cast 到 weight dtype 再相乘。vLLM C 的 fused-add kernel 先在输入标量类型形成和、写回 residual，再做 FP32 归约与后续归一化。FP16/BF16 的加法/乘法舍入点和归约宽度因此可能不同，测试按容差比对，**不是逐 bit 等价承诺**。该基线已支持 `weight=None` 的无权重路径；Oink 不支持时可走其他 provider，AITER 会构造全 1 权重。
 
@@ -93,7 +93,9 @@ flowchart TB
 
 ### 1.4 图 2：闭环位置图
 
-<!-- 图 2 spec：Mermaid 位置图。节点是持有状态的 owner，边标注跨越边界的实际对象名而不是“调用/返回”。启动侧：平台默认与用户 priority 汇入 IrOpPriorityConfig，WorkerBase.__init__ 在 worker 生命周期内只安装一次；compute_hash 是流向 19 的单向 cache 身份边，不回流。执行侧沿一个真实的 decoder 层走：input_layernorm 经 CustomOp/IrOp 落到 fused_add_rms_norm，q k 经 rope kernel 交给 10 的 attention，post_attention_layernorm 再次经过同一条 norm 路径，然后分流到稠密 activation 或 FusedMoEKernel；MoE 权重先由 17 的 quant method 调 oracle 选 backend，再经布局转换进入 kernel。闭环是模型代码里真实存在的 for layer: hidden_states, residual = layer(positions, hidden_states, residual)——本层输出与 fused_add_rms_norm 更新后返回的 residual 回到下一层入口（是否原地取决于 provider）；另有 use_output_alias 的自反边。虚线框是本轮未打开内部实现的外部库。 -->
+先固定图中的两种执行上下文。普通 CUDA 文本模型未显式覆盖编译或算子配置时，默认 O2 使用 `VLLM_COMPILE` 与 `inductor`，自动设置 `custom_ops` 的 `none` 和 `ir_enable_torch_wrap=True`。未显式启用的 layer CustomOp 走 `forward_native`；RMSNorm 保留 IR 节点，21 的 `VllmIRLoweringPass.lower_matched_op` 以 fake tensor 实参调用 `dispatch`，默认 CUDA priority `["native"]` 将节点展开给 Inductor 生成代码。**这条默认路径不能画成每层必调 `_C.fused_add_rms_norm`、`_C.rotary_embedding` 或 `_C.silu_and_mul`。** 显式 provider priority、`+rotary_embedding` 等启用项，以及融合 pass 的改写会形成条件路径。
+
+<!-- 图 2 spec：Mermaid 位置图。节点是持有状态的 owner，边标注跨越边界的实际对象名而不是“调用/返回”。启动侧：平台默认与用户 priority 汇入 IrOpPriorityConfig，WorkerBase.__init__ 在 worker 生命周期内只安装一次；compute_hash 是流向 19 的单向 cache 身份边，不回流。执行侧沿一个真实的 decoder 层走：input_layernorm 经 CustomOp/IrOp：默认编译在 lowering 用 fake 实参选 native 并 codegen，eager 实参或显式配置可选专用 provider；q k 经 native/codegen 或条件 rope kernel 交给 10 的 attention，post_attention_layernorm 再次经过同一条 norm 路径，然后分流到稠密 activation 或 FusedMoEKernel；MoE 权重先由 17 的 quant method 调 oracle 选 backend，再经布局转换进入 kernel。闭环是模型代码里真实存在的 for layer: hidden_states, residual = layer(positions, hidden_states, residual)——本层输出与 norm 更新后返回的 residual 回到下一层入口（是否原地取决于 provider）；另有 use_output_alias 的自反边。虚线框是本轮未打开内部实现的外部库。 -->
 
 ```mermaid
 flowchart TB
@@ -104,11 +106,11 @@ flowchart TB
     WRK["WorkerBase.__init__<br/>生命周期内一次 set_default"]
     LAY["decoder 层入口<br/>layer positions hidden_states residual"]
     COP["CustomOp<br/>RMSNorm 的 _forward_method"]
-    IRO["IrOp<br/>dispatch 与 _filter_priority_impls"]
+    IRO["IrOp 语义节点与选择<br/>eager 实参 或 lowering fake 实参"]
     IMP["IrOpImpl<br/>vllm_c aiter oink native"]
-    DEV["norm 设备算子<br/>torch.ops._C.fused_add_rms_norm"]
+    DEV["norm 执行产物<br/>默认 native 展开后 codegen<br/>选中 vllm_c 才用 _C.fused_add_rms_norm"]
     P15["15 多模态执行<br/>RopeState 与 positions"]
-    ROPE["rope 设备 kernel<br/>RotaryEmbedding 或 fused_qk_norm_rope"]
+    ROPE["rope 语义与执行产物<br/>默认 native/codegen<br/>条件路径为平台或融合 kernel"]
     P10["10 Attention Backend<br/>注意力计算"]
     ACT["稠密 MLP 激活<br/>SiluAndMul 等 CustomOp"]
     P17["17 量化设计<br/>quant method"]
@@ -127,17 +129,17 @@ flowchart TB
     CFG -->|compute_hash 含各 impl 的 uuid 经 KernelConfig 并入 VllmConfig.compute_hash| P19
     CFG -->|rms_norm 与 fused_add_rms_norm 两个 priority 列表| WRK
     WRK -->|_filter_priority_impls 截断后的 _priority_impls| IRO
-    P21 -->|torch.ops.vllm_ir.fused_add_rms_norm 节点| IRO
+    P21 -->|lowering 以 fake args 选择 provider| IRO
     LAY -->|hidden_states 与 residual 进 input_layernorm| COP
-    COP -->|maybe_inplace 的 x x_residual weight epsilon| IRO
-    IRO -->|IrOpImpl 即 dispatch 的返回值| IMP
-    IMP -->|原地更新 x 与 x_residual| DEV
+    COP -->|norm 输入与参数| IRO
+    IRO -->|eager 或编译期 dispatch 得到 IrOpImpl| IMP
+    IMP -->|native 展开或调用专用实现 编译期 inplace 有保护 clone| DEV
     DEV -->|input_layernorm 输出经 qkv_proj 得到 q k| ROPE
     P15 -->|positions 张量| ROPE
-    ROPE -->|原地旋转后的 q k| P10
+    ROPE -->|旋转后的 q k 是否原地取决于路径| P10
     P10 -->|attn 输出与 residual 进 post_attention_layernorm| COP
-    DEV -->|post_attention_layernorm 输出 稠密层| ACT
-    DEV -->|post_attention_layernorm 输出 MoE 层| MK
+    DEV -->|norm 输出给稠密 MLP| ACT
+    DEV -->|norm 输出给 MoE| MK
     P17 -->|FusedMoEConfig 与 weight_key activation_key| ORC
     ORC -->|Fp8MoeBackend 或 UnquantizedMoeBackend| CONV
     P17 -->|加载后的 w13 w2 与 w13_scale w2_scale| CONV
@@ -154,7 +156,7 @@ flowchart TB
     R1112 -->|token_lora_mapping| LORA
     LORA -->|base_output 上就地累加 delta 回到所在 linear 层| LAY
     ACT -->|down_proj 后的 hidden_states 与本层 residual 交下一层| LAY
-    MK -->|receiver 返回的 hidden_states 与本层 residual 交下一层| LAY
+    MK -->|receiver 输出与 residual 交下一层| LAY
     classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
     classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
     classDef external fill:#ffffff,stroke:#64748b,color:#0f172a,stroke-dasharray:5 3
@@ -169,7 +171,7 @@ flowchart TB
 
 ### 1.5 本页拥有的核心流程
 
-下表穷尽本页拥有的 20 条流程。**枚举依据**不是主观挑选：① 来自 `CustomOp.dispatch_forward` 的六条平台分支加一条 disabled 分支；②③⑳ 来自 `IrOpPriorityConfig` 的 2 个字段与 `IrOp.register_impl` 的 `supported` / `supports_args` 两个门；④⑤ 来自 `vllm/kernels/vllm_c.py` 注册到这两个 IR op 的 impl 加 `_C` 侧两个 quant 入口；⑥⑦ 来自 `vllm/model_executor/layers/rotary_embedding/` 下的 3 个 `@CustomOp.register`（`rotary_embedding`、`apply_rotary_emb`、`dual_chunk_rotary_embedding`，逐个处理见 §5.2）、`csrc/libtorch_stable/` 下三个 fused qk-norm+rope kernel 文件，以及 `vllm/model_executor/layers/fused_qk_norm_rope.py` 的 Triton 版；⑧⑨ 来自 `activation.py` 的 16 个 `@CustomOp.register` 与 `vllm/model_executor/layers/fused_moe/activation.py::_APPLY_MOE_ACTIVATIONS` 的 11 个枚举值；⑩ 来自 `fused_moe/oracle/` 目录；⑰ 来自 `convert_to_fp8_moe_kernel_format` 与 `convert_to_unquantized_kernel_format` 的分支集合。第四列是一个具体的返回值、字段翻转或原地更新，不是“处理完成”。
+下表列出本页拥有的 20 条流程。**枚举依据**不是主观挑选：① 来自 `CustomOp.dispatch_forward` 的六条平台分支加一条 disabled 分支；②③⑳ 来自 `IrOpPriorityConfig` 的 2 个字段与 `IrOp.register_impl` 的 `supported` / `supports_args` 两个门；④ 来自 `vllm/kernels/vllm_c.py` 的 layernorm impl，⑤ 来自 `rms_quant_fusion.py::FUSED_OPS` 的四个 `_C` 入口（static FP8 无/有 residual、dynamic per-token、per-group）；⑥⑦ 来自 `vllm/model_executor/layers/rotary_embedding/` 下的 3 个 `@CustomOp.register`（`rotary_embedding`、`apply_rotary_emb`、`dual_chunk_rotary_embedding`，逐个处理见 §5.2）、`csrc/libtorch_stable/` 下三个 fused qk-norm+rope kernel 文件，以及 `vllm/model_executor/layers/fused_qk_norm_rope.py` 的 Triton 版；⑧⑨ 来自 `activation.py` 的 16 个 `@CustomOp.register` 与 `vllm/model_executor/layers/fused_moe/activation.py::_APPLY_MOE_ACTIVATIONS` 的 11 个枚举值；⑩ 的九个 quant-specific oracle 与枚举名在 §7.4 列全，本页重点展开 unquantized/fp8；⑰ 来自 `convert_to_fp8_moe_kernel_format` 与 `convert_to_unquantized_kernel_format` 的分支集合。第四列是一个具体的返回值、字段翻转或原地更新，不是“处理完成”。
 
 | 功能 | 要解决的问题 | 设计与实现入口 | 产出的可观察变化 |
 |---|---|---|---|
@@ -177,12 +179,12 @@ flowchart TB
 | ② `IrOp` provider dispatch | 同一语义 op 在不同实参下要选不同实现 | `vllm/ir/op.py::IrOp.dispatch` | 返回第一个 `supports_args` 为真的 `IrOpImpl`；末项不覆盖时抛 `RuntimeError("Priority set incorrectly…")` |
 | ③ 静态可用性求值与 priority 过滤 | 进程里根本没装的库不该进候选表 | `IrOp.register_impl(supported=…)`；`IrOp._filter_priority_impls` | 不支持的 provider 从 `_priority_impls` 移除；首个 `supports_all_args` 之后截断；无全覆盖实现时追加 `native` 并 `warning_once` |
 | ④ vLLM C add+norm 设备算术 | 一次 launch 同时交付更新残差与归一化输出 | `csrc/libtorch_stable/layernorm_kernels.cu::fused_add_rms_norm` | `x` 与 `x_residual` 两个 tensor 被原地更新并原样返回 |
-| ⑤ norm+quant 三阶段 | 高精度 norm 输出不必落全局显存 | 同目录 `csrc/libtorch_stable/quantization/fused_kernels/fused_layernorm_dynamic_per_token_quant.cu::rms_norm_dynamic_per_token_quant` 与 `rms_norm_per_block_quant` | `out`（FP8/INT8）与 `scales` 写满，`residual` 就地更新；guard 不过时是 `_C` 入口的 `STD_TORCH_CHECK` 异常 |
+| ⑤ norm+quant | 高精度 norm 输出不必落全局显存 | `csrc/libtorch_stable/layernorm_quant_kernels.cu::rms_norm_static_fp8_quant`、`fused_add_rms_norm_static_fp8_quant`；`csrc/libtorch_stable/quantization/fused_kernels/fused_layernorm_dynamic_per_token_quant.cu::rms_norm_dynamic_per_token_quant`、`rms_norm_per_block_quant` | static FP8 消费既有 scale；两个 dynamic 入口写 `out` 与 `scales`，有 residual 时就地更新。dynamic kernel 支持 INT8，但当前 pass 只产出 FP8 替换；各自 guard 见 §4.3 |
 | ⑥ rope 设备 kernel | 同一套 cos/sin 表要覆盖 NEOX 与 GPT-J 两种通道排列 | `vllm/model_executor/layers/rotary_embedding/base.py::RotaryEmbedding.forward_cuda / forward_hip / forward_xpu / forward_cpu`；`csrc/libtorch_stable/pos_encoding_kernels.cu::rotary_embedding`；`vllm/model_executor/layers/rotary_embedding/common.py::ApplyRotaryEmb.forward_cuda / forward_hip` | `RotaryEmbedding`：`query` 与可选 `key` 被原地旋转并原样返回，`key is None` 时 XPU 路径改走 `forward_native`；`ApplyRotaryEmb`：返回新的旋转后张量，输入不变 |
 | ⑦ qk-norm + rope 融合 kernel | q/k 的 RMSNorm 与旋转都是逐 head 的，可以合成 warp 内的工作 | `csrc/libtorch_stable/fused_qknorm_rope_kernel.cu::fused_qk_norm_rope`（入口按 SM 与 `num_tokens × (heads_q + heads_k)` 在 1-head 与 N-head 两个 kernel 间自动选择） | 同一个 `qkv` 张量的 Q、K 段被原地归一化并旋转，V 段不动；`head_dim` 不在 {64,128,256} 时抛 `Unsupported head dimension` |
 | ⑧ activation family（层级） | 同一激活在不同平台要有不同实现，且不能被静默换成别的函数 | `vllm/model_executor/layers/activation.py` 的 16 个 `@CustomOp.register` | gated 变体返回形状 `x.shape[:-1] + (d,)` 的新张量；其中 `FatreluAndMul`、`SiluAndMulWithClamp`、`MulAndSilu` 三个在特定平台的 `__init__` 里把 `_forward_method` 改成 `forward_native` |
 | ⑨ MoE 内部 activation 派发 | expert GEMM 之间的激活不走层级 CustomOp，另有一套 enum 派发 | `vllm/model_executor/layers/fused_moe/activation.py::apply_moe_activation` 与 `_apply_moe_activation_masked` | `output` 就地写满并被返回；masked 变体走 `torch.ops._C.masked_moe_activation` |
-| ⑩ MoE oracle 选 family | `moe_backend` 一个字符串不足以决定合法实现 | `vllm/model_executor/layers/fused_moe/oracle/unquantized.py::select_unquantized_moe_backend`；`vllm/model_executor/layers/fused_moe/oracle/fp8.py::_get_priority_backends` | 返回 `(UnquantizedMoeBackend, experts_cls)` 且 `logger.info_once` 打出候选表；全失败抛 `NotImplementedError` |
+| ⑩ MoE oracle 选 family | `moe_backend` 一个字符串不足以决定合法实现 | §7.4 的九个 oracle；重点为 `vllm/model_executor/layers/fused_moe/oracle/unquantized.py::select_unquantized_moe_backend` 与 `fp8.py::select_fp8_moe_backend` | 通常返回对应 backend 枚举与 experts 类；拒绝/兜底随 oracle 不同，不能统一成一种异常 |
 | ⑪ slot 分组：align 或 naive | 按 expert 成组才能让 tile 内共用同一权重 | `vllm/model_executor/layers/fused_moe/fused_moe.py::_prepare_expert_assignment` → `vllm/model_executor/layers/fused_moe/moe_align_block_size.py::moe_align_block_size` | 返回 `sorted_token_ids` / `expert_ids` / `num_tokens_post_padded` 三元组；naive 分支的第一项为 `None` |
 | ⑫ Triton 两次 GEMM 与 grid 逐格决策 | 每个 `(pid_m, pid_n)` 要独立决定早退、置零、gather 与取哪块 scale | `vllm/model_executor/layers/fused_moe/fused_moe.py::fused_moe_kernel` / `invoke_fused_moe_triton_kernel` | `c_ptr` 对应 tile 被写入或被 `write_zeros_to_output` 置零；`pid_m*BLOCK_SIZE_M >= num_tokens_post_padded` 时该 program 直接 `return` |
 | ⑬ MoE meta 参数三级选择 | tile/stage 参数随 shape 变，又不能每次现场 autotune | `vllm/model_executor/layers/fused_moe/fused_moe.py::try_get_optimal_moe_config` → `get_moe_configs` / `get_default_config` | 返回含 `BLOCK_SIZE_M/N/K`、`GROUP_SIZE_M`、`SPLIT_K`（可能还有 `num_warps`/`num_stages`）的 dict；命中 tuned 文件时 `logger.info_once` 打出文件路径 |
@@ -196,18 +198,18 @@ flowchart TB
 
 ### 1.6 基础与条件：哪些流程普通路径也会走
 
-“基础”指未量化、无 LoRA、单卡、默认 `moe_backend=auto` 的普通文本推理也会经过；“条件”指启用某项功能或命中某个模型形态才出现。
+“基础”以未量化、无 LoRA、单卡的普通 CUDA 文本模型、默认 O2/Inductor 为参照；语义运算存在，不代表同名专用 C kernel 必然执行。“条件”指显式启用、融合改写或命中某个模型/设备形态后才选择相应实现。
 
 | 类别 | 流程 | 触发条件 | 本页位置 |
 |---|---|---|---|
-| 基础 | ①②③ | 恒走（CustomOp 被禁时 ① 走 disabled 分支，②③ 仍在 IR 层生效） | §3.1～§3.4 |
-| 基础 | ④ | CUDA/ROCm 且 `variance_size is None`、weight dtype 匹配 | §4.3 |
-| 基础 | ⑥ | 除少数无 rope 架构外恒走 | §5.1、§5.2 |
-| 基础 | ⑧ | 稠密 MLP 恒走 | §6.1 |
-| 基础 | ⑨⑩⑪⑫⑬⑭⑮ | MoE 模型恒走（非 MoE 模型整条不存在） | §6.2、§7.1～§7.7 |
+| 基础 | ①②③ | ① 默认 disabled 后进入语义实现；RMSNorm 的②③在 IR 注册/priority 安装与编译期 lowering 生效，不是每个运行步都做 Python dispatch | §3.1～§3.4 |
+| 条件 | ④ vLLM C add+norm | 非 codegen 时的默认 priority，或显式把 `vllm_c` 放前且 predicate 通过；仅关闭 torch-wrap 不会自动改变 Inductor 的 native priority | §4.3 |
+| 条件 | ⑥ rope 专用 kernel | `rotary_embedding` 被显式启用或由融合配置追加启用项；默认 native/codegen 保留旋转语义，平台分支还须自身条件成立 | §5.1、§5.2 |
+| 条件 | ⑧ activation 专用 kernel | 相应 CustomOp 启用且所选平台方法使用设备 op；默认稠密 MLP 的 native 激活可由编译器生成代码 | §6.1 |
+| 条件 | ⑨⑩⑪⑫⑬⑭⑮ | 模型使用 MoE 才有 oracle；⑪⑫⑬为所选 Triton 路径，⑭⑮为 modular 路径，不是所有 MoE family 都经过 | §6.2、§7.1～§7.7 |
 | 基础 | ⑳ | worker 初始化恒走 | §12、§13 |
-| 条件 | ⑤ norm+quant | 下游 GEMM 吃 FP8/INT8，且 IR 侧已把 quant 合进 norm | §4.3 |
-| 条件 | ⑦ qk-norm+rope 融合 | 模型有 q/k norm 且 `pass_config.enable_qk_norm_rope_fusion` 打开，由 `QKNormRoPEFusionPass` 改写出 `torch.ops._C.fused_qk_norm_rope`（开关取值归 19，pass 归 21）；`fused_qk_norm_rope` 入口再按 SM 9.0 阈值在 1-head 与 N-head kernel 间选择 | §5.3 |
+| 条件 | ⑤ norm+quant | FP8 static/per-token/per-group 模式命中 `RMSNormQuantFusionPass`；INT8 仅为 dynamic kernel 能力，当前无 pass 替换键 | §4.3 |
+| 条件 | ⑦ qk-norm+rope 融合 | 模型有 q/k norm 且 `pass_config.enable_qk_norm_rope_fusion` 打开**只是入场券**；`QKNormRoPEFusionPass` 自己还有两道门，任一不满足就 warning 后整体不启用：`model_config.dtype` 必须是 `bfloat16` / `float16`，且**每一个** attention 层的 `head_size` 都要落在 `SUPPORTED_FUSED_QK_NORM_ROPE_HEAD_DIMS = (64, 128, 256)` 内（有一层不合就整体退回未融合路径）。通过后才由它改写出 `torch.ops._C.fused_qk_norm_rope`（开关取值与解析归 21 §9.1，range 端点消费归 19 §4.2）；`fused_qk_norm_rope` 入口再按 SM 9.0 阈值在 1-head 与 N-head kernel 间选择 | §5.3 |
 | 条件 | ⑪ 的 naive 分支 | `expert_map is None` 且 `num_tokens × topk × 4 <= global_num_experts`，且排除 WNA16 block 量化 | §7.2 |
 | 条件 | ⑦ 的 Triton 版 `fused_qk_rmsnorm_rope_gate` | 模型代码直调，不经 pass：`qwen3_next.py` 的 `use_fused_qk_norm_rope_gate` 五条件（`attn_output_gate`、`is_neox_style`、CUDA、支持的 dtype、纯文本或支持 M-RoPE） | §5.3 |
 | 条件 | ⑥ 的 `ApplyRotaryEmb` | `MRotaryEmbedding` / `XDRotaryEmbedding` 调用基类构造的 `self.apply_rotary_emb`；或 15 个模型文件直接构造（如 `qwen2_vl.py`、`qwen2_5_vl.py`、`glm4_1v.py`、`siglip2navit.py` 等多模态/视觉编码器文件） | §5.2 |
@@ -228,7 +230,7 @@ flowchart TB
 | `CustomOp` 子类 | 稳定 layer 调用 + build platform → native 或平台方法 | 类级语义、`enabled()` 判定、对象构造时固定的平台路径 | 同一对象每步按 shape 动态换 provider（源码明说不支持动态 platform dispatch） |
 | `IrOp` / `IrOpImpl` | 语义 op + priority + 当前 tensors → compatible impl | provider 注册表、`supported` 静态门、`supports_args` 动态门、native 兜底、`uuid()` cache 身份 | 图中 pattern 为什么/何时被改写（归 21） |
 | `IrOpPriorityConfig` / Platform | 平台与用户意图 → 每个 op 一个 provider 名字列表 | 平台默认的产生与追加、`compute_hash`、worker 安装点 | 编译模式本身（归 19） |
-| MoE oracle（`unquantized.py` / `fp8.py`） | `FusedMoEConfig` + quant key + activation format → backend 与 experts 类 | 候选顺序、带注释的重排修补、`is_supported_config` 的 11 项求交结果 | checkpoint 如何形成 pack/scale（归 17）；collective 的全局语义（归 18） |
+| MoE oracle（重点为 `unquantized.py` / `fp8.py`） | `FusedMoEConfig` + quant key + activation format → backend 与 experts 类 | 候选顺序、前置过滤、带注释的重排修补；通用 11 项能力检查加 experts 类覆写 | checkpoint 如何形成 pack/scale（归 17）；collective 的全局语义（归 18） |
 | `FusedMoEKernel` 与两个 impl | `topk_ids`/`topk_weights` 或 router logits → 可见输出 | modular/monolithic 不可混搭、三段执行顺序、deferred finalize 的双重条件 | 路由算法本身与 EP 通信（归 18） |
 | workspace allocator | problem size + provider 报告的三个 shape → 三块 buffer | scratch 上界、复用顺序、alias 四条件、capture 期地址稳定 | workspace 在 CUDA Graph 里怎样被冻结（归 19） |
 | 布局转换器（`convert_to_*_kernel_format`、`gptq_marlin_repack`） | 已量化的 `w13/w2` 与 scale → Kernel 内布局 | tile 内字节顺序、`is_shuffled` 标记、padding 与 swap 的执行 | 这些字节代表什么数（归 17） |
@@ -239,8 +241,8 @@ flowchart TB
 | 相邻页 | 进入本页的对象 | 离开本页的对象 |
 |---|---|---|
 | [[17_vllm_quantization_analysis\|量化设计]] | `process_weights_after_loading` 之后的 `w13_weight`/`w2_weight` 与 `w13_weight_scale`/`w2_weight_scale`；Marlin 的 `qweight`、`g_idx`、permutation | 本页给出的 Kernel 内 tile/warp 布局与 shuffle 结果，以及 `Fp8MoeBackend` 各分支的性能理由 |
-| [[21_vllm_ir_and_fusion_passes_analysis\|IR 与融合 Pass]] | `torch.ops.vllm_ir.fused_add_rms_norm` 等节点、`maybe_inplace` 的 alias 承诺 | `IrOp.dispatch` 选中的 `IrOpImpl` 与其 inplace 声明 |
-| [[19_vllm_compilation_cudagraph_analysis\|编译与 CUDA Graph]] | `CompilationConfig.mode` / `backend` 决定的「是否 codegen」，以及 `pass_config` 上那几个融合开关的取值 | 被最终选中或生成的 provider/Kernel；`IrOpPriorityConfig.compute_hash()` 进 compile cache key |
+| [[21_vllm_ir_and_fusion_passes_analysis\|IR 与融合 Pass]] | `torch.ops.vllm_ir.fused_add_rms_norm` 等节点、`maybe_inplace` 的 alias 承诺，以及 `PassConfig` 开关取值与解析（§9.1） | `IrOp.dispatch` 选中的 `IrOpImpl` 与其 inplace 声明；新增/OOT provider 的注册与容差对拍合同见本页 §3.5 |
+| [[19_vllm_compilation_cudagraph_analysis\|编译与 CUDA Graph]] | `CompilationConfig.mode` / `backend` 决定的「是否 codegen」，以及 range 端点消费（§4.2） | 被最终选中或生成的 provider/Kernel；`IrOpPriorityConfig.compute_hash()` 进 compile cache key |
 | [[18_vllm_distributed_inference_analysis\|分布式推理]] | `_select_experts` 返回的 `topk_ids`（物理 ID）与 `topk_weights` | 单卡上 token 打包、专家计算与 combine 的结果；`intermediate_size_per_partition` 这类 local shape 作为兼容性输入 |
 | [[10_vllm_attention_backends_analysis\|Attention Backend]] | attention backend 已声明的 KV layout 与 metadata 能力 | 具体 op、provider 选择及内部计算与性能边界（含 rope 设备 kernel 这一半） |
 | [[15_vllm_multimodal_execution_analysis\|多模态执行]] | `RopeState` 算出的 `positions` 张量（含 M-RoPE 的多行坐标） | 消费该张量的 rope 设备 kernel 的索引规则与融合形态 |
@@ -261,12 +263,12 @@ flowchart TB
 | 层 | 输入 → 输出 | 拥有的决策 | 不拥有 |
 |---|---|---|---|
 | layer / `CustomOp` | 稳定 layer 调用 + build platform → native 或平台方法 | 类级语义、CUDA/HIP/XPU/CPU/TPU/OOT 方法；对象构造时固定平台路径 | 同一对象每步按 shape 动态换 provider |
-| `IrOp` provider | 同一个语义 op + priority + 当前 tensors → compatible impl | provider priority、静态可用性、每次调用的 argument predicate、native fallback | 图中 pattern 为什么/何时被改写 |
+| `IrOp` provider | 同一个语义 op + priority + 当前 tensors → compatible impl | provider priority、静态可用性、eager 真实实参或 lowering fake 实参的 predicate、native fallback | 图中 pattern 为什么/何时被改写 |
 | Kernel family / oracle | dtype/quant/layout + local shape + hardware + parallel/routing feature → concrete Kernel class/config | tile/layout、workspace、实现能力与 family 内候选顺序 | checkpoint 如何形成 pack/scale；collective 的全局语义 |
 
 `CustomOp` 被禁用时走可选编译的 `forward_native`；启用时按当前 build platform 绑定 `forward_hip/cpu/tpu/xpu/oot/cuda`，源码明确说明这里不支持动态 platform dispatch。其注释还指出：在 opaque custom op 内部编译 native 并不能得到跨 op fusion，所以能展开时仍应展开。这解释了为何“专用 Kernel 边界”和“编译器可见边界”要同时保留，而不能把所有算子都包成 opaque op。
 
-`IrOp` 则在 priority 中逐项检查 `supports_args`；没有显式 priority 时用 native，priority 中没有全参数 provider 时会自动在末尾补 native 并告警。平台默认还会考虑执行上下文：CUDA 在 Inductor 编译时默认 `["native"]`，非 codegen 时默认 `["vllm_c","native"]`，`VLLM_USE_OINK_OPS` 时把 `oink` 插到前面；ROCm 只在 `cudagraph_mode != NONE`、`VLLM_ROCM_USE_AITER`、`VLLM_ROCM_USE_AITER_RMSNORM` 与 `not on_rdna4()` 四条件同时成立时把 AITER RMSNorm 提到默认前面。这是 provider 选择的执行上下文，不是 IR pass 顺序；后者仍由 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] 拥有。
+还有一批**存在但未接线**的实现：`vllm/kernels/helion/ops/` 下已有 `fused_qk_norm_rope`、`silu_mul_fp8`、`rms_norm_dynamic_per_token_quant` 等 Helion 预调参 kernel，包内自带 `register.py` / `config_manager.py` 等注册设施，`tests/kernels/helion/` 下也有若干直接引用；**判据是产品侧没接线**——`vllm/kernels/__init__.py` 只 `from . import aiter_ops, oink_ops, vllm_c`，不导入 `helion`，也没有任何平台把它们写进默认 priority，因此它们目前不参与下面的选择。`IrOp` 则在 priority 中逐项检查 `supports_args`；没有显式 priority 时用 native，priority 中没有全参数 provider 时会自动在末尾补 native 并告警。平台默认还会考虑执行上下文：CUDA 在 Inductor 编译时默认 `["native"]`，非 codegen 时默认 `["vllm_c","native"]`，`VLLM_USE_OINK_OPS` 时把 `oink` 插到前面；ROCm 只在 `cudagraph_mode != NONE`、`VLLM_ROCM_USE_AITER`、`VLLM_ROCM_USE_AITER_RMSNORM` 与 `not on_rdna4()` 四条件同时成立时把 AITER RMSNorm 提到默认前面。**XPU 也有自己的 `get_default_ir_op_priority`**，形状与 CUDA 那条同构：`backend == "inductor"` 且 `mode != NONE` 时取 `["native"]`，否则取 `["vllm_c", "native"]`，没有 AITER/oink 这类额外插入。这是 provider 选择的执行上下文，不是 IR pass 顺序；后者仍由 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] 拥有。
 
 **一个容易误读的规模事实**：`IrOpPriorityConfig` 当前只有 **2** 个字段（`rms_norm`、`fused_add_rms_norm`）。也就是说，第二层（IR provider priority）今天只覆盖 RMSNorm 一族；rope、activation、MoE 这三族**没有** IR priority，它们分别停在第一层（`CustomOp` 平台绑定）或第三层（oracle）。把“三层”读成“每个算子都有三层”是错的。
 
@@ -285,6 +287,16 @@ flowchart TB
 dispatch 热路径要求 priority 最后一项支持所有实参，否则抛 `RuntimeError("Priority set incorrectly: the last implementation must support all args…")`——注释直接写明这是 internal bug。安装 priority 的 `_filter_priority_impls` 做三件事：跳过 `supported` 为假的项；**遇到第一个 `supports_all_args` 为真的实现就截断**（后面的项永远选不到，留着只会误导）；一路走完仍没有全覆盖实现时追加 `native` 并 `warning_once`。
 
 测试同时固定两种行为：静态 unsupported provider 在设置 priority 时被过滤；只支持偶数 shape 的 provider 对奇数 shape 自动落到 native。所以 fallback 不是捕获任意 Kernel error 后重试；它是在 launch 前依据已声明谓词选择同语义实现。
+
+### 3.5 新增与 OOT provider：注册、导入、缓存与容差要一起接上
+
+新增实现使用 `IrOp.register_impl(provider, supported=…, supports_args=…, inplace=…)`；`provider` 必须是合法且不重复、不占保留字的名字。`IrOpImpl.__init__` 用 `infer_schema` 检查实现与 native 的参数名、类型、默认值和返回 schema 一致，不符即 `ValueError`。`supports_args` 还须保持相同参数数目、名字与默认值，不能有 keyword-only 参数；`inplace=True` 只允许用于 op 自身声明 `allow_inplace` 的情形。这里验证接口形状与声明，**不自动证明数值等价或声明的 alias 安全**。
+
+OOT 平台覆写 `vllm/platforms/interface.py::Platform.import_ir_kernels`，在其中导入自己含注册装饰器的模块；默认实现导入 `vllm.kernels`。实际导入点在 `IrOpPriorityConfig._iter_op_priorities`，设置 priority 和计算相应身份之前先让平台实现进入注册表。平台还应通过 `get_default_ir_op_priority` 提供候选顺序，用户可以覆盖；只是注册名字而未把它放进 priority，不会让它自动胜出。`docs/design/vllm_ir.md` 的 “Out-of-Tree Implementations” 给出相同接入意图，实际 schema、导入和配置合同以这些实现为准。
+
+`IrOpImpl.uuid` 对实现所在源码文件求 hash；priority 配置把列表中实现的 UUID 纳入身份，21 的 lowering pass 走同一条口径——`VllmIRLoweringPass.uuid` 遍历 `IrOp.registry` 的每个 op，把该 op 的 `get_priority()` 列表本身与**列表中每个** provider 的 `uuid()` 都拼进 key，而不是只取某次 lowering 实际选中的那一个（选择由 `supports_args` 在 lowering 期逐节点决定，早于它的 cache key 无法预知）。`tests/ir/test_op.py::test_uuid_and_oot` 动态导入外部实现，修改文件后重新注册得到不同 UUID，还原文件后恢复原 UUID。它验证源码身份变化，不是运行中热替换已安装 priority 的承诺；worker 生命周期内的安装规则仍见图 2。
+
+数值验收从 native 与 provider 分别执行开始。`IrOp.get_tolerance(dtype)` 优先取该 op 的 dtype override，再取 `DEFAULT_TOLERANCES`；未知 dtype 没有声明则 `ValueError`。`tests/ir/ir_test_utils.py::assert_close` 对 tensor 按**实际输出 dtype**取该容差，调用 `torch.testing.assert_close`，并递归检查 tuple/list 输出；失败会提示可使用 `override_tolerance`。`tests/kernels/ir/test_layernorm.py` 的 provider 对拍先过滤静态/实参支持，再比较 norm 与 residual 输出，并核对 priority dispatch 与直接实现一致。容差是测试的允许误差，不参与运行时 provider 选择；通过 schema 检查也不能代替这一步。
 
 ## 4. 代表族一：residual + RMSNorm（再接 quant）
 
@@ -306,7 +318,7 @@ residual add 与 RMSNorm 都逐元素读取同一 token row；若分开执行，
 
 ### 4.3 一次 residual + RMSNorm 怎样落到设备 Kernel
 
-这里有两次不同的 dispatch，不能合并理解：`CustomOp` 决定 model layer 走哪个平台入口，`IrOp` 再为这一组真实实参选择 provider。以已启用 CustomOp、非 batch-invariant、带 residual 的 CUDA 调用为例。
+这里先解释 **torch-wrap 关闭的 eager 调用**：已启用 CustomOp、非 batch-invariant、带 residual，且 priority 允许选择 vLLM C。`CustomOp` 决定 model layer 的平台入口，`IrOp` 再用真实实参选 provider。默认 `VLLM_COMPILE` 路径不同：`maybe_inplace` 先保留为 IR 节点，21 的 functionalization/lowering 以 fake 实参选择实现；选中 inplace provider 时 `IrOpImpl.func_impl_fn` 先 clone activation 输入以保持 functional 语义，后续只有满足 donation 等条件才可能消除保护 clone。默认 CUDA priority 为 native，不能把下面的 eager walk 当作普通 decoder 必经的 C kernel 调用。
 
 **触发**：模型子层调用 `RMSNorm(x, residual)`。
 
@@ -317,13 +329,24 @@ residual add 与 RMSNorm 都逐元素读取同一 token row；若分开执行，
 3. **决定 provider**。`IrOpInplaceOverload._inner_call()` 把真实 dtype、shape、stride 和可选参数交给 `IrOp.dispatch()`；dispatcher 按 priority 调 `supports_args`，返回第一个兼容实现，最后没有全覆盖实现则视为内部配置错误。所以 fallback 发生在 launch 前，不是设备 Kernel crash 后重跑 reference。
 4. **流向设备**。若命中 vLLM C provider，谓词先确认没有 `variance_size` override 且 weight dtype 兼容；ROCm 非 contiguous 会在 provider 内转 native-copy 路径，高维 ROCm contiguous 输入先 `view` 成 2D、执行后恢复原 shape；其余支持情形才调用 `torch.ops._C.fused_add_rms_norm()`。
 
-**完成点**：`torch.ops._C.fused_add_rms_norm` 返回后，`x` 与 `x_residual` 这两个 tensor 已被**原地**更新并原样返回给调用者——没有第三个输出张量，也没有 copy。
+**完成点**：本节命中 vLLM C 的 CUDA eager 分支把 `x` 与 `x_residual` 作为原地写目标并返回同一对张量；没有第三个输出张量或 provider 保护 copy。host 调用返回只表示设备工作已提交，设备完成仍遵守 stream 顺序。ROCm native-copy 分支与编译期 functional 包装都有前述 copy，不能套用这里的存储结论。
 
-这条链之所以分两层，是因为平台/build 决定“哪些入口存在”，而每次调用的 stride、dtype 与可选参数决定“这次哪个实现合法”。把 capability 检查塞进设备 Kernel 只能更晚失败；把 provider 固定在 model layer 又会失去按实参安全 fallback 的能力。
+这条链之所以分两层，是因为平台/build 决定“哪些入口存在”，而 eager 调用或编译 lowering 可见的 stride、dtype 与可选参数决定“这次哪个实现合法”。把 capability 检查塞进设备 Kernel 只能更晚失败；把 provider 固定在 model layer 又会失去按实参安全 fallback 的能力。
 
 设备内部还有一层“同 family 内退化”，不是退回 native。`csrc/libtorch_stable/layernorm_kernels.cu::fused_add_rms_norm` 用 `constexpr int vector_width = 8`、`req_alignment_bytes = vector_width * 2 = 16`：hidden size、input stride、residual stride 均整除 8 且 input/residual（有 weight 时还有 weight）指针对齐 16 bytes 时可选向量化；不满足则用 generic 版本。每个 CUDA block 处理一个 token，线程分担 hidden 维的平方和，CUB block reduction 得到均方再同步。`max_block_size` 为 `batch_invariant ? 1024 : (num_tokens < 256 ? 1024 : 256)`；batch-invariant 模式固定 1024 且**显式关闭向量分支**（判定式里带 `!batch_invariant_launch`），以固定求和次序，说明更高 occupancy 和可复现性可能冲突。
 
-norm+quant 有两个 `_C` 入口，共享一组 guard 又各有硬约束。共享部分：输出只接受当前平台 FP8（`is_fp8_ocp()` 决定 `e4m3fn` 还是 `e4m3fnuz`）或 INT8，`out` 须 contiguous，`input.stride(-1) == 1`，`weight.scalar_type() == input.scalar_type()`，`scales` 为 FP32，`residual` 存在时 dtype 与 input 一致且 contiguous，`scale_ub` 只允许 FP8 输出。
+norm+quant 的编译替换集合以 `vllm/compilation/passes/fusion/rms_quant_fusion.py::FUSED_OPS` 为准，共有四个 `_C` 入口：
+
+| 量化模式与 residual | 目标入口 | scale 与输出合同 |
+|---|---|---|
+| static FP8，无 residual | `rms_norm_static_fp8_quant` | 消费既有单 tensor FP32 scale；归一化后按该 scale 写 FP8 out，不计算 absmax |
+| static FP8，有 residual | `fused_add_rms_norm_static_fp8_quant` | 同样消费既有 scale，并更新 residual；与无 residual 入口分开 |
+| dynamic per-token，无/有 residual | `rms_norm_dynamic_per_token_quant` | 计算每 token scale，写 out/scales；residual 是可选参数 |
+| dynamic per-group，无/有 residual | `rms_norm_per_block_quant` | 64/128 分组对应两个 FP8 quant key；目标 op 存在时才加入映射 |
+
+前两项实现于 `csrc/libtorch_stable/layernorm_quant_kernels.cu`。无 residual 入口显式检查 out contiguous；fused-add 入口还检查 residual contiguous、residual/input dtype 相同和 weight/input dtype 相同。它们通过 FP8 dtype dispatch 限制输出格式，不能套用下面 dynamic 入口的 INT8 能力、scale 输出或 `scale_ub` 合同。该文件的 static kernel 先归约 RMS，再按传入 scale 量化，不需要动态 absmax 阶段。
+
+后两个 dynamic 入口共享一组 guard，又各有硬约束：输出只接受当前平台 FP8（`is_fp8_ocp()` 决定 `e4m3fn` 还是 `e4m3fnuz`）或 INT8，`out` 须 contiguous，`input.stride(-1) == 1`，`weight.scalar_type() == input.scalar_type()`，`scales` 为 FP32，`residual` 存在时 dtype 与 input 一致且 contiguous，`scale_ub` 只允许 FP8 输出。**这些是设备入口能力；当前 `FUSED_OPS` 没有 INT8 替换键。** ROCm AITER 的其他 RMSNorm+quant 替换族由 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] §6.1 说明。
 
 groupwise 入口 `rms_norm_per_block_quant` 另有**四条可精确复述的硬 guard**，不是“满足向量化整除条件”这种含糊话：
 
@@ -380,20 +403,20 @@ rope 这一族的变体集合以 `CustomOp` 注册表为枚举依据，`vllm/mod
 | `apply_rotary_emb` | `vllm/model_executor/layers/rotary_embedding/common.py::ApplyRotaryEmb` | 输入已按位置取好的 `x`、`cos`、`sin`，**返回新张量**；不持有 cache、不读 positions | 展开平台阶梯与调用关系（下文） |
 | `dual_chunk_rotary_embedding` | `vllm/model_executor/layers/rotary_embedding/dual_chunk_rope.py::DualChunkRotaryEmbedding` | 输入 `positions`、`query`、`key` 与可选 `offsets`，为 Dual Chunk Attention 算分块旋转 | **已点名、未展开**：`vllm/model_executor/layers/rotary_embedding/__init__.py::get_rope` 只在给了 `dual_chunk_attention_config` 时构造它；它的 `forward_cuda` 直接 `return self.forward_native(...)`，没有设备 kernel，因此不属于本页的 kernel 账本 |
 
-三者都只走 §3.2 的**第一层**，没有第二层（`IrOpPriorityConfig` 里没有 rope 字段）。
+三者都只走 §3.2 的**第一层**，没有第二层（`IrOpPriorityConfig` 里没有 rope 字段）。下面的平台方法以 CustomOp 已启用为前提；默认 CUDA O2 的 disabled 分支走 native，不能把 `forward_cuda` 内部默认与全局默认混为一谈。
 
 **`RotaryEmbedding` 的四个平台方法**（方法定义在 `RotaryEmbedding` 上；`use_flashinfer` / `use_aiter` 两个开关在基类 `RotaryEmbeddingBase.__init__` 里设定）：
 
-- `forward_cuda`：`self.use_flashinfer` 为真走 `torch.ops.vllm.flashinfer_rotary_embedding`（该 op 由 `common.py` 用 `direct_register_custom_op` 注册，`mutates_args=["query", "key"]`），否则 `ops.rotary_embedding`。两条都是**原地**更新 `query`/`key` 后把同一对张量返回。`use_flashinfer` 在当前基线被注释掉了（构造函数里的判定式整段是注释，只留 `if not hasattr(self, "use_flashinfer"): self.use_flashinfer = False`），注释给的理由是 FlashInfer 只支持 head_size ∈ {64,128,256,512} 且曾经失败——所以**默认路径就是 `_C`**，子类可以自己设 `use_flashinfer`。
+- `forward_cuda`：`self.use_flashinfer` 为真走 `torch.ops.vllm.flashinfer_rotary_embedding`（该 op 由 `common.py` 用 `direct_register_custom_op` 注册，`mutates_args=["query", "key"]`），否则 `ops.rotary_embedding`。两条都是**原地**更新 `query`/`key` 后把同一对张量返回。`use_flashinfer` 在当前基线被注释掉了（构造函数里的判定式整段是注释，只留 `if not hasattr(self, "use_flashinfer"): self.use_flashinfer = False`），注释给的理由是 FlashInfer 只支持 head_size ∈ {64,128,256,512} 且曾经失败——所以**已启用 CustomOp 的 `forward_cuda` 内默认是 `_C`**，子类可以自己设 `use_flashinfer`。
 - `forward_hip`：`self.use_aiter`（`rocm_aiter_ops.is_triton_rotary_embed_enabled()`）为真走 AITER Triton op，否则**直接调用 `self.forward_cuda`**。这是同一族内的退化，不是退回 native。
 - `forward_xpu`：`key is None` 时退 `forward_native`，否则仍调 `ops.rotary_embedding`。源码在 `forward_static` 里注明 key 可能为 None 的场景之一是 cross-layer KV sharing。
 - `forward_cpu`：恒调 `ops.rotary_embedding`。
 
 `RotaryEmbedding.forward_native` → `forward_static` 走 `cos_sin_cache.index_select(0, positions)` 取表，再对 `query_rot` 调 `ApplyRotaryEmb.forward_static`（这里是**静态方法直调**，不经 `ApplyRotaryEmb` 的 CustomOp 派发），最后 `cat` 回 `query_pass`。语义与设备 kernel 相同但会 materialize 拼接结果——这正是设备 kernel 要省掉的那部分。
 
-**完成点**：四条路径都以「`query`（与非 None 的 `key`）被原地旋转，函数返回同一对张量对象」结束；没有任何一条返回新分配的输出。
+**完成点**：CUDA 的设备路径与 CPU 路径原地旋转并返回同一对张量；HIP 有两支，`use_aiter` 时走独立实现 `rocm_aiter_triton_rotary_embedding` 后返回同一对张量，否则才回落 `forward_cuda`，两支都是原地；XPU 的 `key is None` fallback、disabled/native 路径会 materialize 新结果。不能把设备分支的原地合同外推到所有 CustomOp 路径。
 
-**`ApplyRotaryEmb` 是另一个协议槽，而且是多模态侧实际大量用到的那一个。** 它不管位置，只做「给定 cos/sin，旋转 x」这一步；`RotaryEmbeddingBase.__init__` 会实例化一个 `self.apply_rotary_emb = ApplyRotaryEmb(is_neox_style=...)`，由 `vllm/model_executor/layers/rotary_embedding/mrope.py` 与 `xdrope.py` 两个子类在自己的 forward 里调用；`vllm/model_executor/models/` 下另有 15 个模型文件直接构造它，名单里以视觉编码器与多模态模型为主（`qwen2_vl.py`、`qwen2_5_vl.py`、`glm4_1v.py`、`ernie45_vl.py`、`siglip2navit.py`、`dots_ocr.py` 等）。它的平台阶梯：
+**`ApplyRotaryEmb` 是另一个协议槽，而且是多模态侧实际大量用到的那一个。** 它不管位置，只做「给定 cos/sin，旋转 x」这一步；`RotaryEmbeddingBase.__init__` 会实例化一个 `self.apply_rotary_emb = ApplyRotaryEmb(is_neox_style=...)`，由 `vllm/model_executor/layers/rotary_embedding/mrope.py` 与 `xdrope.py` 两个子类在自己的 forward 里调用；`vllm/model_executor/models/` 下另有 15 个模型文件直接构造它，名单里以视觉编码器与多模态模型为主（`qwen2_vl.py`、`qwen2_5_vl.py`、`glm4_1v.py`、`ernie45_vl.py`、`siglip2navit.py`、`dots_ocr.py` 等）。**还有一个容易漏掉的兄弟目录**：新基线另有 `vllm/models/`（按模型分子目录，如 `deepseek_v4/`、`minimax_m3/`、`glm5next/`、`kimi_k3/`），其中 `minimax_m3/common/vision_tower.py` 与 `glm5next/nvidia/multimodal.py` 同样直接构造 `ApplyRotaryEmb`；§5.3 的两个 KV-insert 变体 kernel 也由该目录下的模型代码调用。两个目录并存，按文件名找模型时不能只看 `model_executor/models/`。它的平台阶梯：
 
 - `forward_native` / `forward_static`：NEOX 用 `torch.chunk(x, 2)` 切两半，GPT-J 用 `x[..., ::2]` / `x[..., 1::2]` 取奇偶；算完 NEOX `cat`、GPT-J `stack(...).flatten(-2)`——与 §5.1 的两种配对规则一一对应。`enable_fp32_compute=True` 时先把 x/cos/sin 升到 FP32 再 cast 回原 dtype。
 - `forward_cuda`：调 `vllm.vllm_flash_attn.layers.rotary.apply_rotary_emb`，`interleaved = not self.is_neox_style`；3 维输入先 `unsqueeze(0)` 再还原。
@@ -432,11 +455,39 @@ N=1 时 `launchFusedQKNormRopeNTokenHeads` 直接委托给 1-head kernel。所�
 
 所以「NEOX 还是 GPT-J」不只是一个下标约定：在融合 kernel 里它决定了要不要付两次 warp 同步加一轮 shuffle。另外 `laneId < rotary_lanes`（`rotary_lanes = rotary_dim / numElemsPerThread`）之外的 lane 只做归一化不做旋转，对应 `rotary_dim < head_dim` 的部分旋转模型。
 
+下面把同一对号的两条数据路径画出来；`n0…n63` 是 head 内 RMSNorm 后的值，选合法 `head_dim=64`、部分旋转 `rot_dim=8`，每 lane 持有两个连续通道。这里只展开对号 1，其余三对同理；不是把 head 缩成不受支持的 8 维。
+
+<!-- RoPE figure spec：问题是相同 rot_dim 与对号为何改变通信代价；输入为同一 64 维 head 的归一化值，旋转前 8 通道，每 lane 2 个连续元素。Mermaid 展示配对关系和计算次序，不将节点排成需要精确二维坐标的寄存器格。对号 1 在 NEOX 为 ch1/ch5、lane0/lane2，pairOffset=2；GPT-J 为 ch2/ch3、均在 lane1。中间态明确标 c1/s1 和 shuffle，输出给两对旋转结果并回到原通道；其余 56 通道只归一化，V 不变。蓝色算术、橙色通信成本；边为参与计算的数据，不是调用关系。锚点：pos_encoding_kernels.cu::apply_token_rotary_embedding 与 fused_qknorm_rope_kernel.cu::fusedQKNormRopeKernel。 -->
+
+```mermaid
+flowchart TB
+    N["相同输入：64 维 head 已归一化<br/>只旋转 ch0…ch7；每 lane 两个连续通道<br/>两路均用对号 1：c1 = cos[1]，s1 = sin[1]"]
+    NX["NEOX：前后半区配对<br/>ch1 在 lane0；ch5 在 lane2"]
+    GJ["GPT-J：相邻通道配对<br/>ch2 与 ch3 都在 lane1"]
+    SH["跨 lane 取伙伴<br/>syncwarp → shuffle XOR 2"]
+    NR["n1 与 n5 组成旋转对<br/>ch1′ = n1·c1 − n5·s1<br/>ch5′ = n5·c1 + n1·s1<br/>算完再 syncwarp"]
+    GR["本 lane 直接计算，无 shuffle<br/>ch2′ = n2·c1 − n3·s1<br/>ch3′ = n3·c1 + n2·s1"]
+    O["各自写回原 Q/K 通道<br/>其余旋转对同理；ch8…ch63 只归一化；V 不变"]
+    N -->|n1 与 n5| NX
+    N -->|n2 与 n3| GJ
+    NX -->|pairOffset = (8/2)/2 = 2| SH
+    SH -->|伙伴寄存器值| NR
+    GJ -->|相邻寄存器值| GR
+    NR -->|NEOX 输出| O
+    GR -->|GPT-J 输出| O
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class N,NX,GJ,O neutral
+    class NR,GR acc1
+    class SH acc2
+```
+
 **完成点**：`qkv` 张量的 Q 段与 K 段被原地覆盖为「归一化后再旋转」的值，V 段一个字节不动；kernel 没有输出张量。
 
-qk-norm+rope 的融合实现不止这一个。同目录另有 `fused_deepseek_v4_qnorm_rope_kv_insert_kernel.cu` 与 `fused_minimax_m3_qknorm_rope_kv_insert_kernel.cu` 两个更长的变体，把 KV 写入也并进来；本轮只打开了上面这一个的完整实现，另外两个仅确认存在。还有一个**不在 `_C` 里的 Triton 版**：`vllm/model_executor/layers/fused_qk_norm_rope.py::fused_qk_rmsnorm_rope_gate`（`@triton.jit` 的 `_fused_qk_rmsnorm_rope_gate_kernel`），模块 docstring 说它把 `split -> GemmaRMSNorm -> RoPE -> gate chunk` 收成一次 Triton launch，当前供 Qwen3.5 的 `attn_output_gate` 路径使用，支持 2D M-RoPE 位置（`mrope_section` 必须三段且和为 `rotary_dim // 2`）。它由模型代码直接调用而不经 pass：`vllm/model_executor/models/qwen3_next.py` 在 `use_fused_qk_norm_rope_gate`（`attn_output_gate`、`is_neox_style`、CUDA、支持的 dtype、纯文本或支持 M-RoPE 五条件同时成立）为真时于 `_project_qkv_gate` 里调它。**本页点名它、未展开其 Triton 内部。**
+qk-norm+rope 的融合实现不止这一个。同目录另有 `fused_deepseek_v4_qnorm_rope_kv_insert_kernel.cu` 与 `fused_minimax_m3_qknorm_rope_kv_insert_kernel.cu` 两个更长的变体，把 KV 写入也并进来。其入口由模型直接调用：`vllm/models/deepseek_v4/attention.py::_fused_qnorm_rope_kv_insert` 按 cache dtype 调对应 `_C` op，`vllm/models/minimax_m3/nvidia/model.py::MiniMaxM3Attention.forward` 调 `ops.fused_minimax_m3_qknorm_rope_kv_insert`；这里核实调用边界，不展开这两个 kernel 的内部。还有一个**不在 `_C` 里的 Triton 版**：`vllm/model_executor/layers/fused_qk_norm_rope.py::fused_qk_rmsnorm_rope_gate`（`@triton.jit` 的 `_fused_qk_rmsnorm_rope_gate_kernel`），模块 docstring 说它把 `split -> GemmaRMSNorm -> RoPE -> gate chunk` 收成一次 Triton launch，当前供 Qwen3.5 的 `attn_output_gate` 路径使用，支持 2D M-RoPE 位置（`mrope_section` 必须三段且和为 `rotary_dim // 2`）。它由模型代码直接调用而不经 pass：`vllm/model_executor/models/qwen3_next.py` 在 `use_fused_qk_norm_rope_gate`（`attn_output_gate`、`is_neox_style`、CUDA、支持的 dtype、纯文本或支持 M-RoPE 五条件同时成立）为真时于 `_project_qkv_gate` 里调它。**本页点名它、未展开其 Triton 内部。**
 
-**谁决定要不要用融合形态不归本页，而且是两对不同的 pass/开关，不要混成一对**。`vllm/compilation/passes/pass_manager.py` 里：`pass_config.enable_qk_norm_rope_fusion` 为真时装 `QKNormRoPEFusionPass`，它的目标 op 是 `torch.ops._C.fused_qk_norm_rope.default`——**这才是本节展开的那个 kernel**；`pass_config.fuse_qk_norm_rope_kvcache` 为真时装的是 `QkNormRopeKvCacheFusionPass`，目标 op 是 `torch.ops.vllm.fused_qk_norm_rope_and_unified_kv_cache_update.default`，即把 KV 写入也并进来的那一族（该 pass 自己限定 head_dim ∈ {64,128,256}）。pass 本身归 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]]，开关取值归 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]；本页只拥有被生成/选中的 kernel 本身，并且本轮只核实了不含 KV 写入的那一个。
+**两对 pass/开关通向不同后端，不能按名字串成一族。** `pass_manager.py` 中 `enable_qk_norm_rope_fusion` 装入 `QKNormRoPEFusionPass`，目标 `_C.fused_qk_norm_rope.default` 才是本节展开的 CUDA kernel。`fuse_qk_norm_rope_kvcache` 装入 `QkNormRopeKvCacheFusionPass`，目标 `vllm.fused_qk_norm_rope_and_unified_kv_cache_update.default` 是 ROCm AITER 路径（pass 限定 head_dim ∈ {64,128,256}，配置在非 ROCm 上强制关闭）：`fused_qk_norm_rope_and_unified_kv_cache_update_impl` 从 attention context 取 layer/cache/slot mapping → attention backend impl 的 `do_qk_norm_rope_kvcache_update` → `vllm/_aiter_ops.py::rocm_aiter_ops.do_qk_norm_rope_kvcache_update` → `rocm_aiter_ops.fused_qk_norm_rope_and_cache` → 外部 AITER `fused_qk_norm_rope_cache_pts_quant_shuffle`。中间那一层是两个 backend 共用的静态方法，它做两件事：`kv_cache_dtype` 以 `fp8` 开头时把 K/V cache `view` 成平台 fp8 dtype；再按 `cos_sin_cache.shape[-1]` 是否等于 `head_dim` 决定向 kernel 传 `0` 还是实际 `rotary_dim`，这是部分旋转（注释举 GLM-4.7）的入口。已核实 Aiter FlashAttention 与 Aiter Unified 两个 backend；`use_shuffle_layout` 由调用方给定，unified 读 NHD 必须传 `False`（其 docstring 明说）。该 pass **不落到**上述 DeepSeek/MiniMax C kernel。外部 AITER 算法内部未展开。pass 模式、开关取值与解析归 [[21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] §6.1、§9.1；range 端点消费归 [[19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] §4.2，本页只接实现端点。
 
 ## 6. 代表族三：activation 有两套派发，不是一套
 
@@ -461,14 +512,14 @@ $$
 
 ### 6.2 第二根轴：MoE 内部的 enum 派发
 
-MoE 的 expert GEMM 之间**不走**上面那 16 个 `CustomOp`。`vllm/model_executor/layers/fused_moe/activation.py` 另有一套以 `MoEActivation` 枚举驱动的派发，`apply_moe_activation()` 一个 `if/elif` 链落到 `torch.ops._C.silu_and_mul` / `gelu_and_mul` / `gelu_tanh_and_mul` / `situ_and_mul` / `swigluoai_and_mul` 等。它的变体集合由两个 frozenset 给出：`_APPLY_MOE_ACTIVATIONS` 共 **11** 项（SILU、GELU、GELU_TANH、SITU、SWIGLUOAI、SWIGLUOAI_UNINTERLEAVE、SWIGLUSTEP、SILU_NO_MUL、GELU_NO_MUL、GELU_TANH_NO_MUL、RELU2_NO_MUL），`_MASKED_MOE_ACTIVATION_NAMES` 是同样 11 项到字符串名的映射，供 `torch.ops._C.masked_moe_activation` 使用。
+MoE 的 expert GEMM 之间**不走**上面那 16 个 `CustomOp`。`vllm/model_executor/layers/fused_moe/activation.py` 另有一套以 `MoEActivation` 枚举驱动的派发，`apply_moe_activation()` 一个 `if/elif` 链落到 `torch.ops._C.silu_and_mul` / `gelu_and_mul` / `gelu_tanh_and_mul` / `situ_and_mul` / `swigluoai_and_mul` 等。它的变体集合由两个容器给出（两者都是 11 项，但类型不同，别按同一种读）：`frozenset` 的 `_APPLY_MOE_ACTIVATIONS` 共 **11** 项（SILU、GELU、GELU_TANH、SITU、SWIGLUOAI、SWIGLUOAI_UNINTERLEAVE、SWIGLUSTEP、SILU_NO_MUL、GELU_NO_MUL、GELU_TANH_NO_MUL、RELU2_NO_MUL），`dict` 的 `_MASKED_MOE_ACTIVATION_NAMES` 是同样 11 项到字符串名的映射，供 `torch.ops._C.masked_moe_activation` 使用；`apply_moe_activation_masked_supported()` 就是对它做 `in` 判断。
 
 两条子路径值得分清：
 
-- `valid_token_counts is not None` 时走 `_apply_moe_activation_masked`，把「一个计数掩一整块 `[T, D]`」或「每 expert 一个计数掩 padded `[E, T, D]` 的各自前缀」交给 masked op。SWIGLUOAI 在这条路上把 `clamp_limit` 硬编码为 `7.0`、`alpha` 硬编码为 `1.702`；SWIGLUSTEP 硬编码 `clamp_limit = 7.0`；SWIGLUOAI_UNINTERLEAVE 则 `assert config.clamp_limit is not None`。
+- `valid_token_counts is not None` 时走 `_apply_moe_activation_masked`，把「一个计数掩一整块 `[T, D]`」或「每 expert 一个计数掩 padded `[E, T, D]` 的各自前缀」交给 masked op。传下去的 op 名先取自 `_MASKED_MOE_ACTIVATION_NAMES`（取不到即 `NotImplementedError`），随后同一条 `if/elif` 链还会改写它和两个参数：**SILU 带 `clamp_limit` 时名字被换成 `"silu_with_clamp"`**，SWIGLUOAI 把 `clamp_limit` 硬编码为 `7.0`、`alpha` 硬编码为 `1.702`，SWIGLUSTEP 硬编码 `clamp_limit = 7.0`，SWIGLUOAI_UNINTERLEAVE 则 `assert config.clamp_limit is not None`；`clamp_limit is None` 时传 `0.0`，所以 masked 路径没有“不带 clamp”这个独立 op。
 - 普通路径下 SILU 若带 `clamp_limit`，转到 `silu_and_mul_with_clamp()` 这个模块级函数：XPU 用 PyTorch 三步算；给了 `topk_ids` 与 `expert_map` 时走 `swiglu_limit_func`（带专家掩码的 Triton 版）；其余走 `torch.ops._C.silu_and_mul_with_clamp(output, input, clamp_limit, 1.0, 0.0)`。
 
-`TritonExperts.activation` 在这之上再加一层：`activation == SILU 且 activation_config.clamp_limit is not None` 时直接调 `swiglu_limit_func` 提前返回；`SWIGLUOAI_UNINTERLEAVE` 则先 `assert activation_config.clamp_limit is not None`（注释说明它经 `apply_moe_activation()` 落到 `torch.ops._C.silu_and_mul_with_clamp`），其余交给父类。**这三处 clamp 实现都是已核实的**，也正因为如此，§7.4 那条 contradiction 才只能说“Triton 路径已核实”，不能推广。
+`TritonExperts.activation` 在这之上再加一层：`activation == SILU 且 activation_config.clamp_limit is not None` 时直接调 `swiglu_limit_func` 提前返回；`SWIGLUOAI_UNINTERLEAVE` 则先 `assert activation_config.clamp_limit is not None`（注释说明它经 `apply_moe_activation()` 落到 `torch.ops._C.silu_and_mul_with_clamp`），其余交给父类。**这三处 clamp 实现都是已核实的**；provider 选择侧还存在 §7.4 的 experts 覆写与 oracle 前置门，不能只凭通用 11 项或这一条执行路径推广全部后端的支持范围。
 
 ## 7. 代表族四：fused MoE 是组合收益，不是单个巨型 Kernel
 
@@ -537,6 +588,20 @@ MoE 同时包含 routing、token 重排/通信、两次 expert GEMM、activation
 
 ### 7.4 oracle 不是按名称选，而是对部署谓词求交
 
+首先选的是 quant-specific oracle，不是把全部 backend 混进一个池。冻结基线 `vllm/model_executor/layers/fused_moe/oracle/` 的九类入口如下；表中“存在、未展开”是本页覆盖边界，不是把 provider 选择重新委托给量化页。
+
+| oracle 文件与稳定入口 | 返回枚举 | 本页覆盖 |
+|---|---|---|
+| `unquantized.py::select_unquantized_moe_backend` | `UnquantizedMoeBackend` | 展开 priority、LoRA/环境前置分支、显式 batched 规范化与失败 |
+| `fp8.py::select_fp8_moe_backend` | `Fp8MoeBackend` | 展开 quant-specific priority、环境/布局分支与格式转换 |
+| `int8.py::select_int8_moe_backend` | `Int8MoeBackend` | 存在、未展开 |
+| `int_wna16.py::select_wna16_moe_backend` | `WNA16MoEBackend` | 存在、未展开 |
+| `mxfp4.py::select_mxfp4_moe_backend`、`select_deepseek_v4_mxfp4_moe_backend` | `Mxfp4MoeBackend` | 存在、未展开 |
+| `mxfp8.py::select_mxfp8_moe_backend` | 复用 `Fp8MoeBackend` | 存在、未展开；不虚构独立 enum |
+| `nvfp4.py::select_nvfp4_moe_backend` | `NvFp4MoeBackend` | 存在；下文仅核实 batched 名字规范化与 clamp 前置门 |
+| `w4a8.py::select_w4a8_moe_backend` | `W4A8MoeBackend` | 存在、未展开；当前单候选 `CUTLASS` |
+| `w4a8_int8.py::select_w4a8_int8_moe_backend` | `W4A8Int8MoeBackend` | 存在、未展开；当前单候选 `CPU_INT4` |
+
 MoE Kernel 的通用 `FusedMoEExperts.is_supported_config` 按顺序做 **11** 项检查，任何一项失败都返回 `(False, "kernel does not support …")`：
 
 1. `_supports_current_device()` —— 当前平台与 compute capability。
@@ -559,7 +624,7 @@ MoE Kernel 的通用 `FusedMoEExperts.is_supported_config` 按顺序做 **11** �
 | dtype/quant/layout | provider 必须消费既有 weight/activation quant key 与 activation format | FP8 oracle 先构造 14 项 quant-specific priority，再按 DeepEP layout、Hopper TP/EP 与平台重排 |
 | local shape | TP 改写 partition 后的 intermediate size 可能触发对齐 guard | `_trtllm_bf16_lora_supported` 要求 `intermediate_size_per_partition % 128 == 0`，注释举了 `768 → 192 at tp=4` 会在运行期崩，因此回 Triton |
 | routing/parallel | monolithic router、EP/DP、all-to-all 与 batched activation format 必须一起兼容 | oracle 从 `use_batched_activation_format` 先决定 standard/batched activation format，再逐 class 调 `is_supported_config` |
-| feature contract | clamp、LoRA、batch invariance 或 deferred finalize 不能被静默遗漏 | config 注释声称应过滤不支持 SwiGLU clamp 的 backend，但通用实现没有对应字段检查，见下文冲突 |
+| feature contract | clamp、LoRA、batch invariance 或 deferred finalize 不能被静默遗漏 | 通用 11 项之外还存在 experts 覆写与 oracle 前置过滤，见下文 clamp 边界 |
 
 **auto 分支**依 priority 逐个 backend、逐个 kernel 类调用 `is_supported_config`，返回第一个 compatible candidate 并 `logger.info_once` 打出「Using X … out of potential backends: [...]」；全都失败才抛 `NotImplementedError`。
 
@@ -567,14 +632,19 @@ MoE Kernel 的通用 `FusedMoEExperts.is_supported_config` 按顺序做 **11** �
 
 > `activation_format == BatchedExperts` 且 `requested_backend == TRITON` 时，`requested_backend` 被就地改成 `BATCHED_TRITON`，再进 `_return_or_raise`。
 
-也就是说，`moe_backend=triton` 在 batched activation format 下**会被静默换成用户没有指定的 `BATCHED_TRITON` family**。可观察后果有两个：其一，若 `BATCHED_TRITON` 也不兼容，抛出的 `ValueError` 里写的是 `BATCHED_TRITON` 而不是用户输入的 `triton`；其二，成功时 `_make_log_backend` 打的也是改写**后**的名字，日志里根本看不到 `TRITON` 这个词。正确的断言应当是：**显式 family 不兼容时不会退到下一个 priority 候选，而是硬失败；唯一的名称改写是 batched activation format 下的 `TRITON → BATCHED_TRITON`。**
+也就是说，未量化 `moe_backend=triton` 在 batched activation format 下**会无单独通知地换成 `BATCHED_TRITON` family**。失败 `ValueError` 与成功日志都使用改写后的名称。**在 unquantized oracle 的这条显式分支内**，这是唯一的名称改写；改写后 family 不兼容不会继续 auto priority，而是硬失败。它不是所有 quant-specific oracle 的统一规则：FP8 的显式 batched 路径还有 `DEEPGEMM → BATCHED_DEEPGEMM`、`VLLM_CUTLASS → BATCHED_VLLM_CUTLASS`，连同 `TRITON → BATCHED_TRITON` 共三条；NVFP4 另有 `FLASHINFER_CUTEDSL → FLASHINFER_CUTEDSL_BATCHED`。FP8 显式选择还受 `allow_vllm_cutlass` 检查，auto 前有 DeepGEMM/AITER 环境变量强制选择或摘除候选的分支。必须先定位 quant oracle，再读名字规范化与失败合同。
 
 除此之外还有三条特例，同样不能用“任何显式名字不兼容都报错”一句话覆盖：LoRA 分支在整个显式/auto 循环**之前**就返回（`_trtllm_bf16_lora_supported` 通过则用 `TrtLlmBf16LoRAExperts`，否则 Triton）；`moe_backend=humming` 对未量化层当作 auto 处理（注释：humming 是 quantization-only，被 `modules_to_not_convert` 排除的层 fall through 到 auto 而不是报错）；`VLLM_ROCM_USE_AITER` 或 `VLLM_ROCM_USE_AITER_MOE` 被显式 set 时，另有一段先于 auto 循环的处理，要么把 AITER 从候选里摘掉，要么直接 `_return_or_raise(AITER)`。
 
 新基线 unquantized oracle 还会因 DP 场景的已知问题后移 FlashInfer CUTLASS（注释：`Qwen3.5 has crash with FLASHINFER_CUTLASS BF16 if DEP`），并把 `activation == SWIGLUOAI` 下两个 FlashInfer 候选都后移（注释：unquantized FlashInfer 把 SWIGLUOAI 别名成普通 Swiglu）；这是带注释的选序修补，不是通用性能定理。测试固定了两种代表 fallback：FlashInfer TRT-LLM monolithic 不支持但 modular 支持时留在同 family 改选 modular；DeepEP high-throughput 与该 BF16 path 不兼容时，auto 退到 Triton。
 
-> [!contradiction] clamp 配置注释与通用能力检查不一致
-> `FusedMoEConfig.swiglu_limit` 的注释称「When set, backends that do not implement the clamp are filtered out by `FusedMoEExperts.is_supported_config` so the oracle cannot silently select one and drop the clamp」；但当前通用函数的 11 项检查（device / act_and_mul / activation / quant scheme / parallel config / routing method / router-logits dtype / hidden shape / activation format / batch invariance / LoRA）**没有任何一项读 `moe_config.swiglu_limit`**。已读的 Triton 路径确实在 `TritonExperts.activation` 中实现 clamp（`activation == SILU and clamp_limit is not None` 走 `swiglu_limit_func`，`SWIGLUOAI_UNINTERLEAVE` 另有 `assert clamp_limit is not None`），不能由此推广到所有 provider。另需注意 clamp 的真实来源比这条注释多一个：`vllm/model_executor/layers/fused_moe/activation.py::ApplyMoEActivationConfig.from_configs` 先读 `FusedMoEQuantConfig.gemm1_clamp_limit`，为 `None` 才回落到 `FusedMoEConfig.swiglu_limit`（`gemm1_alpha`/`gemm1_beta` 同理优先于 `swiglu_alpha`/`swiglu_beta`）。旧页将注释写成统一运行时保证，现予纠正：选择特定 clamp 模型时还需核对 provider 的实际激活参数与 reference；本页没有认证外部 family 的全部 clamp 组合。
+**clamp 能力检查有三层，不能从基类未读取字段推出“没有过滤”。** `FusedMoEExperts.is_supported_config` 的通用 11 项没有直接读取 `swiglu_limit/alpha/beta`，但 oracle 调用的是候选类的方法，存在实际覆写：
+
+- `experts/trtllm_fp8_moe.py::TrtLlmFp8ExpertsBase.is_supported_config` 先做通用检查；任一 SwiGLU 参数非 None 时，只允许 MXFP8 static/dynamic 或 FP8 block128 static/dynamic quant pair，且 activation 必须是 `SILU` 或 `SWIGLUOAI_UNINTERLEAVE`，否则返回不支持原因。
+- `experts/aiter_mxfp8_moe.py::AiterMxfp8Experts.is_supported_config` 另查 flydsl 可用性、`SWIGLUOAI_UNINTERLEAVE` 及与硬编码值相符的 alpha/beta。
+- `oracle/nvfp4.py::select_nvfp4_moe_backend` 在 auto 候选进入 class 检查前按 `swiglu_limit` 过滤 clamp 白名单；显式分支在名字规范化后对不在白名单的 family 抛 `ValueError`。
+
+参数落地是另一项证据：`ApplyMoEActivationConfig.from_configs` 先读 quant config 的 `gemm1_clamp_limit/alpha/beta`，为 None 才回落到模型 `swiglu_limit/alpha/beta`；`TritonExperts.activation` 对带 clamp 的 SILU 调 `swiglu_limit_func`，对 `SWIGLUOAI_UNINTERLEAVE` 则要求 clamp 非 None 后进入公共 activation。故配置注释应理解为能力检查链的意图，不能冒充“基类统一检查全部 clamp 组合”，也不能反向断言 provider 覆写不存在。本页未认证外部 family 的全部数值组合，具体模型仍需按最终 activation config 与 reference 对拍。
 
 当前 Triton 实现也包含更窄的融合：gated SiLU、FP8 W8A8、block shape 为 `[128,128]`、无 LoRA 且未用 E8M0 时，将 SiLU+Mul+FP8 block quant 合为 `silu_and_mul_per_block_quant`；其他情况仍分开 activation 与 quant。LoRA 需要高精度 activation 参与低秩增量，正是不能无条件丢弃该中间态的具体原因。Triton family 当前还拒绝按 32 补齐后专家数达到 1024 的配置；拒绝发生在 oracle 能力检查，不必等到 align kernel 出错。
 
@@ -623,7 +693,7 @@ monolithic 路径则由 `apply_monolithic()` 把 router logits 直接交给 mono
 
 ## 8. 代表族五：量化权重在 Kernel 内到底怎么摆
 
-[[17_vllm_quantization_analysis|量化设计]] 负责「这些字节代表什么数」，并在两处明确把「Kernel 内部的 shuffle 布局、backend 选择的性能理由」与「完整 warp/tile 布局」交给本页。本节兑现这两条。
+[[17_vllm_quantization_analysis|量化]] 负责「这些字节代表什么数」，并在两处明确把「Kernel 内部的 shuffle 布局、backend 选择的性能理由」与「完整 warp/tile 布局」交给本页。本节兑现这两条。
 
 ### 8.1 Marlin：repack 之后每条 lane 拿到哪些字节
 
@@ -664,7 +734,7 @@ lane 的持有规则是三行索引算术：
 
 lane→scale 槽位的映射在这四种情形下不同（`/4`、`/8`、`%4`），host 侧那两组置换就是为了让每条 lane 读到的槽位落在它需要的那一格。注意 `tb_n_warps = thread_n_blocks / (is_a_8bit ? 2 : 4)` 是 **GEMM kernel 的 tile 配置**，与 §8.1 那个固定 4 warp / 64 列的 repack tile 不是同一层——repack 决定字节顺序，GEMM 决定谁来读。
 
-`marlin_make_workspace_new` 分配的**不是 GEMM 的 scratch**。它的 `size = num_compute_units(device) * max_blocks_per_sm` 个 `int32`，注释写明「we use the num of threadblocks as workspace size」；`marlin.cu` 里 `int* locks = (int*)workspace;`，`marlin_template.h` 用它做 `barrier_acquire(&locks[locks_off], slice_idx)` / `barrier_release(&locks[locks_off], last)`，即 **split-K stripe 之间的跨 threadblock 归约屏障**。入口另有 `STD_TORCH_CHECK(workspace.numel() >= min_workspace_size)`（`min_workspace_size = sms`）。还有一条与 [[19_vllm_compilation_cudagraph_analysis|CUDA Graph]] 相关的约束写在注释里：weight reload 时必须复用已有 storage，否则 capture 到的 workspace 地址失效；device/dtype/numel 任一不符就 `ValueError`。
+`marlin_make_workspace_new` 分配的**不是 GEMM 的 scratch**。它的 `size = num_compute_units(device) * max_blocks_per_sm` 个 `int32`，注释写明「we use the num of threadblocks as workspace size」；`marlin.cu` 里 `int* locks = (int*)workspace;`，`marlin_template.h` 用它做 `barrier_acquire(&locks[locks_off], slice_idx)` / `barrier_release(&locks[locks_off], last)`，即 **split-K stripe 之间的跨 threadblock 归约屏障**。入口另有 `STD_TORCH_CHECK(workspace.numel() >= min_workspace_size)`（`min_workspace_size = sms`）。本页只拥有这块缓冲在 Kernel 内的用途；它不是 19 页的通用 `WorkspaceManager` 槽。weight reload 时复用旧 workspace、`g_idx_sort_indices` 如何保持或更换地址，以及 device/dtype/numel 不相容为何报错，由 [[17_vllm_quantization_analysis#6.2 reload 与 CUDA Graph：本页负责哪一半|量化执行 §6.2]] 独占说明；19 只提供“capture 依赖地址稳定”的通用前提。
 
 顺带接住 17 §7 那条谓词：**group 128、全局 K=384、local K=192 会失败，而单纯的 tile 不对齐可以 padding**。源码给的两处依据是：
 
@@ -694,7 +764,7 @@ FlashInfer 那条最能说明「布局约束怎样反向改写模型形状」，
 2. **非 block quant**：`align_moe_weights_for_fi(min_alignment = 16 if is_gated else 128)` 补齐，并把结果**写回 `layer.moe_config.intermediate_size_per_partition`**。随后对除 MXFP8 + TRT-LLM 外的所有路径（MXFP8 + CUTLASS 同样会走到这里），`is_act_and_mul` 为真时统一 `swap_w13_to_w31`（block quant 时 scale 一并翻），注释「FI kernels require W31 layout rather than W13」。与 §7.4 那条 LoRA 专用的 128 门对照：那条门在**选择期**不满足就换 family；这里在**加载期**补齐后改写 local shape。补齐后的权重张量本身变宽，之后 `workspace_shapes` 读到的 N 来自 `moe_problem_size` 对 `w1`/`w2` 张量形状的解析，而不是这个回写的配置字段。
 3. **DeepSeek FP8 + TRT-LLM**：`_shuffle_deepseek_fp8_moe_weights` 产出 4D 的 **BlockMajorK** 布局 `(E, K/block_k, Mn, block_k)`，`epilogue_tile_m = 64`、`block_k = 128`。注释解释了为什么用一次 gather 而不是逐 expert 循环：行置换只依赖 `(M, epilogue_tile_m)`，算一次就能对所有 expert 用；顺着 BlockMajorK 视图 gather 还能把 `convert_to_block_layout` 折进同一个 kernel，逐 expert 循环对这么宽的 MoE 要「约 24k 次微小 launch，每次还带一次 host 往返」，耗时以分钟计。
 4. **FP8 per-tensor + TRT-LLM**（`is_trtllm and not block_quant`）：先断言两个 input scale 存在，再 `rotate_weights_for_fi_trtllm_fp8_per_tensor_moe(w13, w2, is_gated)`，注释说该 kernel 需要权重重排并注册 alpha scale。
-5. **block scale clamp**：`w13_scale.clamp_(min=1e-10)`。注释说明这是绕开一个具体缺陷——某些 FP8 模型的死专家块 scale 约 `1e-23`，Hopper（SM 9.0）上 CUTLASS kernel 会产出 NaN 而不是近零。
+5. **block scale clamp**：`w13_scale.clamp_(min=_FI_CUTLASS_MIN_BLOCK_SCALE)` **与 `w2_scale.clamp_(...)` 两个都做**（`_FI_CUTLASS_MIN_BLOCK_SCALE = 1e-10`，仅在 `block_quant` 为真时）。注释说明这是绕开一个具体缺陷——某些 FP8 模型的死专家块 scale 约 `1e-23`，Hopper（SM 9.0）上 CUTLASS kernel 会产出 NaN 而不是近零。
 
 未量化侧的对照是 `convert_to_unquantized_kernel_format`，只有三条分支：AITER 走同一个 `shuffle_weights` 并打 `is_shuffled`；FlashInfer CUTLASS 在 gated 时 `swap_w13_to_w31`；FlashInfer TRT-LLM 先 `align_moe_weights_for_fi(min_alignment=128)`（注释：BlockMajorK 用 `block_k=128`）写回 `intermediate_size_per_partition`，再 `convert_moe_weights_to_flashinfer_trtllm_block_layout`；其余走末尾的 `.contiguous()`，**唯一例外**是 `TRITON` + ROCm + `VLLM_ROCM_MOE_PADDING` 时提前原样返回，注释「Skip .contiguous(): it would undo the ROCm MoE weight padding」。
 
@@ -723,6 +793,41 @@ FlashInfer 那条最能说明「布局约束怎样反向改写模型形状」，
 
 原 mapping 是 `[0,0,0,-1,-1,2,2,2,2]`。`LoRAKernelMeta.prepare_tensors()` 对 token indices 做稳定排序，得到索引次序 `[3,4,0,1,2,5,6,7,8]`；对应 slot 依次为 `-1,0,2`，counts 为 `2,3,4`，prefix boundaries 为 `0→2→5→9`。Kernel 因而可以按连续区间选择 A/B 权重；`-1` 区间跳过 LoRA，保留已经算好的 base output。
 
+<!-- LoRA figure spec：问题是逐 token slot mapping 如何形成批量低秩计算，又如何保留输出原行号。输入固定原文九个 token，stable sort 产出索引 [3,4,0,1,2,5,6,7,8]，unique slots [-1,0,2]、counts [2,3,4]、prefix [0,2,5,9]。三个分支表示索引数组的半开区间，不画成物理 activation 重排；-1 早退保留 y[3,4]，slot0 与 slot2 按 ram gather 原 x，shrink 将缩放后的 XA 写 FP32 scratch 原行，expand 读取同一原行并默认 add_inputs 累加 y。蓝色低秩算术、橙色 scratch 成本；边标原行号与数据。锚点 LoRAKernelMeta.prepare_tensors、_lora_shrink_kernel、_lora_expand_kernel、kernel_utils.py::do_shrink_kernel/do_expand_kernel、PunicaWrapperGPU.add_lora_linear。 -->
+
+```mermaid
+flowchart TB
+    M["原 token 行 0…8<br/>slot = 0,0,0,-1,-1,2,2,2,2"]
+    S["稳定排序只生成索引<br/>3,4,0,1,2,5,6,7,8<br/>slots = -1,0,2；counts = 2,3,4"]
+    P["prefix = 0 → 2 → 5 → 9<br/>在索引数组上切三个半开区间"]
+    Z["区间 [0,2)：slot -1<br/>ram = 3,4；shrink 与 expand 早退"]
+    A["区间 [2,5)：slot 0<br/>ram = 0,1,2；选择 A0/B0"]
+    B["区间 [5,9)：slot 2<br/>ram = 5,6,7,8；选择 A2/B2"]
+    H["shrink：按 ram gather 原 x<br/>低秩乘法 XA 并乘 scale"]
+    F["FP32 scratch：仍以原 token 行寻址<br/>每 slice 为 9 × rank；不存排序后的行号"]
+    E["expand：同一 ram 读 scratch 并乘 B<br/>默认 add_inputs：累加回 y 的原行"]
+    O["原序输出 y[0…8]<br/>行 0,1,2 加 slot0 增量；行 5,6,7,8 加 slot2 增量<br/>行 3,4 保持 base output"]
+    M -->|逐 token mapping| S
+    S -->|counts 累加| P
+    P -->|前两项索引| Z
+    P -->|接着三项索引| A
+    P -->|末四项索引| B
+    A -->|x 的原行 0,1,2| H
+    B -->|x 的原行 5,6,7,8| H
+    H -->|原行 ram 的低秩值| F
+    F -->|同一 ram| E
+    E -->|原行增量| O
+    Z -->|不改 y 的行 3,4| O
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class M,S,P,Z,A,B,O neutral
+    class H,E acc1
+    class F acc2
+```
+
+`lora_shrink_op.py::_lora_shrink_kernel` 与 `lora_expand_op.py::_lora_expand_kernel` 都从该区间加载原行索引 `ram`；`kernel_utils.py` 的两段计算直接用 `ram` 构造输入与输出地址。因此分组的是**调度索引**，并没有先把 x 搬成三个连续 activation 矩阵；也无需最后再做一次逆排序。
+
 这里的 0 和 2 是**驻留槽位**，不是用户提交的任意 adapter ID。adapter 下载、包装、装入和外部 ID→slot 的所有权归 [[09_vllm_model_library_analysis|模型库与 LoRA 接合]]；runner 怎样把请求行展开成逐 token mapping 归 [[11_vllm_model_runner_v1_analysis|Model Runner V1]] 与 [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。本页从已准备好的 slot mapping 接手，只解释设备计算。
 
 ### 9.2 shrink 与 expand 中间为什么保留 FP32 scratch
@@ -748,7 +853,21 @@ FlashInfer 那条最能说明「布局约束怎样反向改写模型形状」，
 
 ## 10. 调用树
 
-三条本页拥有的多跳路径。分支条件写在注释里；这是源码阅读索引，不是发布用图。
+三条本页拥有的多跳路径。先区分 RMSNorm 的默认编译路径与 eager provider walk；这是源码阅读索引，不是发布用图。
+
+```text
+默认 CUDA O2 / VLLM_COMPILE / Inductor
+|-- custom_ops 自动 none -> RMSNorm.forward_native
+|   `-- ir.ops.fused_add_rms_norm.maybe_inplace
+|       `-- ir_enable_torch_wrap=True -> 保留 torch.ops.vllm_ir 节点
+`-- 编译阶段：functionalization / VllmIRLoweringPass.lower_matched_op（过程归 21）
+    |-- node.meta["val"] fake 实参 -> IrOp.dispatch
+    |-- 默认 priority [native] -> 展开 reference -> Inductor codegen
+    `-- [显式 priority 选中 inplace provider] IrOpImpl.func_impl_fn
+        `-- clone activation 输入 -> impl_fn；clone 是否可消除须满足 donation 等条件
+```
+
+下面 RMSNorm 树限定 **torch-wrap 关闭的 eager 调用**；带 residual 的 CUDA 非 batch-invariant 路径使用真实实参做 provider 派发。后两棵 MoE/LoRA 树保留其各自条件，不是上面默认编译分支的无条件后继。
 
 ```text
 RMSNorm(x, residual)                                   # 模型子层
@@ -814,8 +933,8 @@ BaseLinearLayerWithLoRA.apply(x, bias)
 
 1. **先固定语义**：output、可见 residual、dtype/scale/layout、router/reduce 状态与 alias 必须由 native/reference 或上层合同定义；provider 无权改写。
 2. **过滤静态可用性**：平台、compute capability、扩展库与 build 决定 family 是否进入候选；unsupported provider 在 priority 安装时就过滤（§3.3）。
-3. **过滤部署能力**：量化 key、parallel/routing、LoRA、batch invariance、activation format 与 hidden shape 共同决定 MoE class 能否实例化（§7.4 那 11 项）。
-4. **检查每次调用实参**：普通 `IrOp` 再按 dtype、shape、stride 等 `supports_args` 选择 provider。
+3. **过滤部署能力**：量化 key、parallel/routing、LoRA、batch invariance、activation format 与 hidden shape 共同决定 MoE class 能否实例化（§7.4 的通用 11 项、experts 覆写与 oracle 前置门）。
+4. **检查可用实参**：`IrOp` 在 eager 用真实 tensor，在编译 lowering 用 fake tensor 的 dtype、shape、stride 等调用 `supports_args`；编译产物不必每 token 重跑 Python provider 扫描。
 5. **在 compatible 集合内比较性能**：用真实 prefill/decode、TP/EP-local shape、CUDA Graph/async 条件测端到端，不用单个名字或单点 microbenchmark 替代部署分布。
 
 第 5 步是本页依据 benchmark 结构给出的**分析建议**：RMSNorm benchmark 显式扫 shape/dtype/residual，MoE benchmark 的配置键显式包含 `M/E/N/K/topk/dtype/block_shape`。这里要避免两个方向的误读。源码**没有**实现一个统一的 runtime autotuner，所以不能声称 vLLM 会为每次调用现场测出全局最快 Kernel；但它也**不是**对 shape 无动于衷——§7.5 那三级（`override_config` → tuned json 最近 M 查表 → 带注释的启发式）就是它实际做的 shape 相关配置选择，只不过发生在离线与查表，不发生在运行期计时。
@@ -827,7 +946,7 @@ BaseLinearLayerWithLoRA.apply(x, bias)
 | provider 静态不可用 | 从 priority 移除，再看下一项 | 当前进程根本没有可调用实现 |
 | 当前实参不兼容 | 调用前选下一 provider，通常最终 native | 同一 op 的 shape/dtype/stride 局部边界 |
 | auto MoE family 不兼容 | oracle 尝试下一 compatible family | 部署策略允许自动选择，语义与 quant/layout 合同仍不变 |
-| 显式 family 分支不兼容，或 auto 全候选失败 | `ValueError` / `NotImplementedError` | 静默改 family 会违背用户意图；没有同合同实现时不存在安全 fallback。**唯一的例外是 §7.4 那条 `TRITON → BATCHED_TRITON` 的无日志改写** |
+| 显式 family 分支不兼容，或 auto 全候选失败 | 通常 `ValueError` / `NotImplementedError`，以具体 oracle 为准 | 名字规范化后，显式分支一般不继续 auto priority；unquantized/FP8/NVFP4 的 batched 改写不同，见 §7.4。unquantized 还有 LoRA、humming、AITER 前置分支；FP8 在非 CUDA/ROCm 上无候选可返回 `NONE, None`，不能用一个失败合同覆盖九类 oracle |
 
 fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 oracle，对每个支持 provider 比较两个输出；不兼容参数先 skip，不把 crash 当作选择逻辑。MoE selection 测试则分别覆盖 platform 默认、显式 family、monolithic→modular 和跨 family fallback。
 
@@ -853,16 +972,16 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 | `moe_backend` | 从 `KernelConfig` 传下来的字符串，oracle 的第一个读入 | §7.4 |
 | `activation` | `MoEActivation` 枚举，进 `_supports_activation` 与 `apply_moe_activation` | §6.2、§7.4 |
 | `is_act_and_mul`（**`@property`，不是字段**，返回 `self.activation.is_gated`） | 决定 `is_supported_config` 第 2 项与 `swap_w13_to_w31` 是否执行 | §7.4、§8.3 |
-| `swiglu_limit` / `swiglu_alpha` / `swiglu_beta` | 经 `ApplyMoEActivationConfig.from_configs` 进 `clamp_limit` / `alpha` / `beta`，**但只在 `FusedMoEQuantConfig` 对应的 `gemm1_*` 为 `None` 时才生效**；`swiglu_limit` 的注释与实现不一致，见 §7.4 的 contradiction | §6.1、§6.2、§7.4 |
+| `swiglu_limit` / `swiglu_alpha` / `swiglu_beta` | 经 `ApplyMoEActivationConfig.from_configs` 进 `clamp_limit` / `alpha` / `beta`，**但只在 `FusedMoEQuantConfig` 对应的 `gemm1_*` 为 `None` 时才生效**；基类之外的 experts 覆写与 oracle 前置门见 §7.4 | §6.1、§6.2、§7.4 |
 | `activation_situ_beta` / `activation_situ_linear_beta` | 经同一个 `from_configs` 原样进 `ApplyMoEActivationConfig`，供 `apply_moe_activation` 的 SITU 分支使用（masked 与普通两条路径在 SITU 下都断言 `activation_situ_beta is not None`） | §6.2 |
 | `routing_method` | 进 `_supports_routing_method`；monolithic family 会覆写该谓词 | §7.4 |
 | `router_logits_dtype` | 进 `_supports_router_logits_dtype` | §7.4 |
 | `defer_moe_finalize` / `defer_moe_finalize_max_num_tokens` | 完成点能否外移，以及消费方容量（负数为无界） | §7.7 |
 | `intermediate_size_per_partition` | LoRA 分支 128 对齐门在选择期读取；FlashInfer 转换在加载期**回写**它 | §7.4、§8.3 |
 | `is_lora_enabled` | `is_supported_config` 第 11 项，也是 oracle 的前置分支条件 | §7.4 |
-| `FusedMoEQuantConfig.gemm1_clamp_limit` / `gemm1_alpha` / `gemm1_beta` | 在 `from_configs` 里**优先于** `swiglu_*`；clamp 可能来自 quant config 而非模型 config | §7.4 contradiction 块 |
+| `FusedMoEQuantConfig.gemm1_clamp_limit` / `gemm1_alpha` / `gemm1_beta` | 在 `from_configs` 里**优先于** `swiglu_*`；clamp 可能来自 quant config 而非模型 config | §7.4 clamp 能力与参数落地 |
 
-`FusedMoEConfig` 其余 18 个字段本页只作为输入读取、不拥有语义：并行轴（`moe_parallel_config`、`num_local_experts`、`num_logical_experts` 等）归 [[18_vllm_distributed_inference_analysis|分布式推理]]；hidden/intermediate 的 padding 派生量（`hidden_dim_unpadded`、`intermediate_size_per_partition_unpadded`、`intermediate_pad`）归 [[17_vllm_quantization_analysis|量化设计]]；`num_experts`、`experts_per_token`、`hidden_dim`、`intermediate_size`、`device`、`in_dtype`、`max_num_tokens`、`has_bias`、`skip_final_all_reduce` 是层构造输入；`rocm_aiter_fmoe_enabled` / `aiter_fmoe_shared_expert_enabled` 两个 ROCm 开关本轮未追踪其读者。**`max_capture_size` 不归本页**：它由 `vllm/model_executor/layers/fused_moe/layer.py` 从 `compilation_config.max_cudagraph_capture_size` 填入，全仓唯一读者是 `vllm/model_executor/layers/quantization/mxfp4.py` 两处把它拷进 `self.max_capture_size`，本页的 kernel 与 LoRA 补齐都不读它（LoRA 用的是 `LoRAKernelMeta.captured_lora_counts`）。`FusedMoEQuantConfig` 其余 6 个字段（`_a1`、`_a2`、`_w1`、`_w2`、`is_scale_swizzled`、`mx_alignment`）归 17。
+`FusedMoEConfig` 其余 18 个字段本页只作为输入读取、不拥有语义：并行轴（`moe_parallel_config`、`num_local_experts`、`num_logical_experts` 等）归 [[18_vllm_distributed_inference_analysis|分布式推理]]；hidden/intermediate 的 padding 派生量（`hidden_dim_unpadded`、`intermediate_size_per_partition_unpadded`、`intermediate_pad`）归 [[17_vllm_quantization_analysis|量化]]；`num_experts`、`experts_per_token`、`hidden_dim`、`intermediate_size`、`device`、`in_dtype`、`max_num_tokens`、`has_bias`、`skip_final_all_reduce` 是层构造输入；`rocm_aiter_fmoe_enabled` / `aiter_fmoe_shared_expert_enabled` 两个 ROCm 开关本轮未追踪其读者。**`max_capture_size` 不归本页**：它由 `vllm/model_executor/layers/fused_moe/layer.py` 从 `compilation_config.max_cudagraph_capture_size` 填入，全仓唯一读者是 `vllm/model_executor/layers/quantization/mxfp4.py` 两处把它拷进 `self.max_capture_size`，本页的 kernel 与 LoRA 补齐都不读它（LoRA 用的是 `LoRAKernelMeta.captured_lora_counts`）。`FusedMoEQuantConfig` 其余 6 个字段（`_a1`、`_a2`、`_w1`、`_w2`、`is_scale_swizzled`、`mx_alignment`）归 17。
 
 **第三块，Triton meta 参数与 tuning。**
 
@@ -901,13 +1020,13 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 
 | 流程 | 主要代价 | 可引用的量化锚点 |
 |---|---|---|
-| ①②③ 三层选择 | 每次调用一次 `_priority_impls` 线性扫加一次 `supports_args` | 平台默认最长 3 项（oink 或 aiter + vllm_c + native），用户显式 priority 可更长；`_filter_priority_impls` 在首个全覆盖实现处截断 |
+| ①②③ 三层选择 | eager 的每次 dispatch 扫 `_priority_impls` 并检查候选 `supports_args`；编译路径在 lowering 时选择，不是每 token 固定 Python 成本 | 默认 CUDA Inductor priority 是 native；其他配置可含 oink/aiter/vllm_c；用户 priority 可更长，`_filter_priority_impls` 在首个全覆盖实现处截断 |
 | ④ add+norm | 一次 launch，一次 CUB block reduce，residual 一写一读 | 本页 1×4 例子省下的中间态是 32 B（FP32）/ 16 B（FP16/BF16）；block 上限 1024 或 256 |
-| ⑤ norm+quant | 三阶段各重读一遍 input/residual，换掉高精度 y 的一次全局写与一次读 | 四条 groupwise 硬 guard 见 §4.3；per-token 入口 block 固定 `min(hidden_size, 1024)`，per-block 入口 block 上限 512 或 256 |
-| ⑥ rope | `RotaryEmbedding`：一 block 一 token，`min(num_heads*rot_dim/2, 512)` 线程，无归约、原地；`ApplyRotaryEmb`：外部 flash-attn rotary kernel，多一份输出张量 | 每对通道 4 乘 2 加；`ApplyRotaryEmb` 在 HIP 上 `cdiv(seq_len, block_m)` 或 batch 超过 65535 就退 PyTorch |
+| ⑤ norm+quant | dynamic 三阶段重读 input/residual；static 消费既有 scale，不做动态 absmax。都避免高精度 y 的一次全局写与读 | 四条 groupwise 硬 guard 见 §4.3；per-token 入口 block 固定 `min(hidden_size, 1024)`，per-block 入口 block 上限 512 或 256 |
+| ⑥ rope | 专用设备路径的 `RotaryEmbedding`：一 block 一 token，`min(num_heads*rot_dim/2, 512)` 线程，无归约、原地；已启用 CUDA `ApplyRotaryEmb`：外部 flash-attn rotary kernel，多一份输出张量 | 每对通道 4 乘 2 加；`ApplyRotaryEmb` 在 HIP 上 `cdiv(seq_len, block_m)` 或 batch 超过 65535 就退 PyTorch |
 | ⑦ qk-norm+rope 融合 | 1-head：一 warp 一 (token, head)，无 shared memory；N-head：一 warp N 个 head，付 `smem_bytes` 的 shared memory 与 `cp.async` 装载，换 cos/sin 在 head 间复用 | 1-head 的 NEOX 分支额外付 2 次 `__syncwarp` + `numElemsPerThread` 次 `__shfl_xor_sync`；`head_dim ∈ {64,128,256}`；SM 9.0 上 `total_qk_units` 跨过 4096/8192 或 10240/40960 时切换 N |
-| ⑧⑨ activation | 一次 launch；gated 变体输出宽度减半 | 层级 16 个 CustomOp；MoE 侧 11 个枚举值 |
-| ⑩ MoE oracle | 构造期一次，`logger.info_once` | 未量化 CUDA 候选 4 项，FP8 候选 14 项；每项对每个 kernel 类做 11 项检查 |
+| ⑧⑨ activation | 专用 activation kernel 通常一次 launch；默认稠密层 native/codegen 不固定 launch 边界；gated 变体输出宽度减半 | 层级 16 个 CustomOp；MoE 侧 11 个枚举值 |
+| ⑩ MoE oracle | 构造期一次，`logger.info_once` | 未量化 CUDA 候选 4 项，FP8 候选 14 项；候选类做通用 11 项与各自覆写，前置门可提前排除或返回 |
 | ⑪ align | 一次排序 kernel；padding 到 `BLOCK_SIZE_M` 的倍数 | 本页例子：4 个有效 slot 占 8 个 tile 位；哨兵 = `topk_ids.numel()` |
 | ⑫ Triton GEMM | 两次 GEMM 的必需算术，加 padding tile 的空转 | grid 大小 = `cdiv(EM, BLOCK_SIZE_M) * cdiv(N, BLOCK_SIZE_N)`；早退与置零两条分支都不做 K 循环 |
 | ⑬ meta 参数 | 首次一次 json 读盘（`lru_cache` 之后为字典查找）；命中不了退启发式；每次 launch 前再做一次 dict 拷贝与后处理 | tuned 表按最近 M 取；`get_default_config` 的 tile 台阶与 `invoke_fused_moe_triton_kernel` 的 `SPLIT_K=1` / `BLOCK_SIZE_K` 截断见 §7.5 |
@@ -949,7 +1068,11 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 |---|---|
 | RMSNorm 数值和层入口 | `vllm/ir/ops/layernorm.py::fused_add_rms_norm / rms_norm`；`vllm/model_executor/layers/layernorm.py::RMSNorm.forward_native / forward_cuda`；`tests/kernels/ir/test_layernorm.py::TestFusedAddRMSNorm.test_native_semantics / test_impls` |
 | 本地 add+norm 设备算术 | `vllm/kernels/vllm_c.py::fused_add_rms_norm`；`csrc/libtorch_stable/layernorm_kernels.cu::fused_add_rms_norm / fused_add_rms_norm_kernel` |
-| norm+quant 两个入口与三阶段 | `csrc/libtorch_stable/quantization/fused_kernels/fused_layernorm_dynamic_per_token_quant.cu::rms_norm_dynamic_per_token_quant / rms_norm_per_block_quant / rms_norm_per_block_quant_dispatch`；同目录 `csrc/libtorch_stable/quantization/fused_kernels/layernorm_utils.cuh::compute_rms / compute_dynamic_per_token_scales / norm_and_quant`；`csrc/libtorch_stable/quantization/fused_kernels/quant_conversions.cuh::float_to_int8_rn / ScaledQuant`；`tests/kernels/core/test_fused_quant_layernorm.py::test_rms_norm` |
+| 默认编译与 OOT 注册 | `vllm/config/vllm.py::VllmConfig.__post_init__`；`vllm/compilation/passes/ir/lowering_pass.py::VllmIRLoweringPass.lower_matched_op`；`vllm/ir/op.py::IrOpImpl.__init__ / func_impl_fn / uuid`、`IrOp.get_tolerance`；`vllm/platforms/interface.py::Platform.import_ir_kernels`；`tests/ir/test_op.py::test_uuid_and_oot`；`tests/ir/ir_test_utils.py::assert_close` |
+| KV-cache 融合的真实端点 | `vllm/compilation/passes/fusion/qk_norm_rope_kvcache_fusion.py::fused_qk_norm_rope_and_unified_kv_cache_update_impl`；`vllm/v1/attention/backends/rocm_aiter_fa.py::AiterFlashAttentionImpl.do_qk_norm_rope_kvcache_update`；`vllm/v1/attention/backends/rocm_aiter_unified_attn.py::RocmAiterUnifiedAttentionImpl.do_qk_norm_rope_kvcache_update`；`vllm/_aiter_ops.py::rocm_aiter_ops.do_qk_norm_rope_kvcache_update / rocm_aiter_ops.fused_qk_norm_rope_and_cache` |
+| quant-specific oracle 与覆写 | 九类入口见 §7.4；`vllm/model_executor/layers/fused_moe/experts/trtllm_fp8_moe.py::TrtLlmFp8ExpertsBase.is_supported_config`；`vllm/model_executor/layers/fused_moe/experts/aiter_mxfp8_moe.py::AiterMxfp8Experts.is_supported_config`；`vllm/model_executor/layers/fused_moe/oracle/nvfp4.py::select_nvfp4_moe_backend` |
+| LoRA 原行寻址 | `vllm/lora/ops/triton_ops/lora_shrink_op.py::_lora_shrink_kernel`；`vllm/lora/ops/triton_ops/lora_expand_op.py::_lora_expand_kernel`；`vllm/lora/ops/triton_ops/kernel_utils.py::do_shrink_kernel / do_expand_kernel` |
+| norm+quant 四入口：static 与 dynamic | `csrc/libtorch_stable/layernorm_quant_kernels.cu::rms_norm_static_fp8_quant / fused_add_rms_norm_static_fp8_quant`；`csrc/libtorch_stable/quantization/fused_kernels/fused_layernorm_dynamic_per_token_quant.cu::rms_norm_dynamic_per_token_quant / rms_norm_per_block_quant / rms_norm_per_block_quant_dispatch`；同目录 `csrc/libtorch_stable/quantization/fused_kernels/layernorm_utils.cuh::compute_rms / compute_dynamic_per_token_scales / norm_and_quant`；`csrc/libtorch_stable/quantization/fused_kernels/quant_conversions.cuh::float_to_int8_rn / ScaledQuant`；`tests/kernels/core/test_fused_quant_layernorm.py::test_rms_norm` |
 | 三层 provider 选择与静态可用性 | `vllm/model_executor/custom_op.py::CustomOp.dispatch_forward / maybe_compile`；`vllm/ir/op.py::IrOp.dispatch / _filter_priority_impls / register_impl / IrOpInplaceOverload._inner_call`；`vllm/kernels/oink_ops.py::has_oink_op / oink_add_rms_supported / _can_view_as_2d / _is_oink_stride_compatible_2d`；`vllm/kernels/aiter_ops.py::rms_add_no_var_16bit_only`；`tests/ir/test_op.py::TestIrOpImplDispatch.test_supports_args_runtime_dispatch_and_warning` |
 | 平台默认与 cache 身份 | `vllm/platforms/cuda.py::CudaPlatformBase.get_default_ir_op_priority`；`vllm/platforms/rocm.py::RocmPlatform.get_default_ir_op_priority`；`vllm/config/kernel.py::IrOpPriorityConfig.compute_hash / _iter_op_priorities / set_default`、`KernelConfig.set_platform_defaults / compute_hash`；`vllm/v1/worker/worker_base.py::WorkerBase.__init__`；图 2 的层循环：`vllm/model_executor/models/qwen3_moe.py::Qwen3MoeModel.forward / Qwen3MoeDecoderLayer.forward` |
 | rope 设备 kernel 与融合形态 | `vllm/model_executor/layers/rotary_embedding/base.py::RotaryEmbeddingBase.__init__`、`RotaryEmbedding.forward_static / forward_native / forward_cuda / forward_hip / forward_xpu / forward_cpu`；`vllm/model_executor/layers/rotary_embedding/common.py::ApplyRotaryEmb.forward_static / forward_native / forward_cuda / forward_hip / forward_cpu`；`vllm/model_executor/layers/rotary_embedding/dual_chunk_rope.py::DualChunkRotaryEmbedding.forward_cuda`；`vllm/model_executor/layers/rotary_embedding/__init__.py::get_rope`；`csrc/libtorch_stable/pos_encoding_kernels.cu::apply_token_rotary_embedding / apply_rotary_embedding / rotary_embedding_kernel / rotary_embedding`；`csrc/libtorch_stable/fused_qknorm_rope_kernel.cu::fusedQKNormRopeKernel / fusedQKNormRopeKernelNTokenHeads / launchFusedQKNormRope / launchFusedQKNormRopeNTokenHeads / fused_qk_norm_rope`；`vllm/_custom_ops.py::fused_qk_norm_rope`；`vllm/compilation/passes/fusion/qk_norm_rope_fusion.py::QKNormRoPEFusionPass`；`vllm/compilation/passes/fusion/qk_norm_rope_kvcache_fusion.py::QkNormRopeKvCacheFusionPass`；`vllm/model_executor/layers/fused_qk_norm_rope.py::fused_qk_rmsnorm_rope_gate`；`vllm/model_executor/models/qwen3_next.py::Qwen3NextAttention._project_qkv_gate` |
@@ -967,9 +1090,9 @@ fallback 之后仍必须过 reference。融合 RMSNorm 测试以 native 为 orac
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化设计]] — 拥有 weight/scale/zero 与 pack ABI；本页从已提交的表示接手 Kernel family 选择与 Kernel 内布局（§8 兑现它交来的 Marlin warp/tile 与 FP8 shuffle 两条）。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|vLLM 量化]] — 拥有 weight/scale/zero 与 pack ABI；本页从已提交的表示接手 Kernel family 选择与 Kernel 内布局（§8 兑现它交来的 Marlin warp/tile 与 FP8 shuffle 两条）。
 - [[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 拥有 pattern、alias/functionalization、pass 顺序与 lowering；本页只解释其产物怎样选择 provider。
-- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 解释 native/codegen、opaque op、workspace 地址与 capture/replay 的生命周期边界，以及融合开关的取值；本页拥有被它最终选中或生成的那个 Kernel。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 解释 native/codegen、opaque op、workspace 地址与 capture/replay 的生命周期边界（range 消费见 §4.2）；融合开关取值与解析归 21 §9.1；本页拥有被它最终选中或生成的那个 Kernel。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — attention metadata/KV layout 的能力协商在此；本页不把 attention backend 重列成 Kernel family，但接下了它与 15 共同指来的 rope 设备 kernel。
 - [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 拥有 TP/DP/EP 与 collective 顺序；本页从 `topk_ids`/`topk_weights` 接手，只使用 local shape 和 parallel feature 作为 Kernel compatibility 输入。
 - [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|vLLM 模型库]] — 拥有 LoRA 层包装、adapter 装入和驻留槽位；本页只消费已准备好的逐 token slot mapping。

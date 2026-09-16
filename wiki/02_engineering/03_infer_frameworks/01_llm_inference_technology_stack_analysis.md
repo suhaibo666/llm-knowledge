@@ -105,7 +105,7 @@ vLLM 不是一个单纯的 PagedAttention kernel。当前源码把一条完整�
 ## 五、建议学习路径
 
 1. 先读 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，把离线与在线拓扑分开。
-2. 再读 [[vllm/06_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]，跟一次 `schedule → execute → sample → update`。
+2. 再读 [[vllm/02_vllm_architecture_overview_analysis|vLLM 软件架构]]，先建立六个职责模块与它们的协作边界；随后 [[vllm/06_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]] 跟一次 `schedule → execute → sample → update`。
 3. 用 [[vllm/01_vllm_feature_optimizations_guide|vLLM 使用指南]] 跑通离线推理与流式服务；建立 benchmark 基线和做单变量实验时转 [[vllm/04_vllm_performance_tuning_guide|性能调优指南]]，启动失败、报错或输出异常时转 [[vllm/05_vllm_debugging_troubleshooting_guide|调试与故障排查]]。
 4. 按瓶颈进入 scheduler、KV、attention、quantization、speculative decoding、distributed 和 compilation 专题。
 5. 比较编译实现时转 [[02_engineering/03_infer_frameworks/sglang/index|SGLang 编译 Pass]]；理解分离式推理的数据平面时转 [[mooncake_analysis|Mooncake 分离式推理]]。

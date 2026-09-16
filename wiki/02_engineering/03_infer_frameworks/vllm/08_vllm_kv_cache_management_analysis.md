@@ -4,10 +4,10 @@ title: "vLLM KV Cache 管理：请求怎样分块、共享前缀并安全归还�
 
 # vLLM KV Cache 管理：请求怎样分块、共享前缀并安全归还容量
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（main 快照，2026-09-07 UTC）。
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从分页与共享原理走到建池、分配、执行交付和安全回收，再解释子模块数据交互及 partial、hybrid、CPU tier 扩展。
 > **适用范围**：V1 单 Engine 的 BlockPool、prefix cache、hybrid group、partial CoW 与 native CPU tier；请求调度策略见 07，设备执行见 11/12，跨 Engine 传输见 22。
-> **最近更新**：2026-09-11。按特性分析重整主线，补齐子模块责任与周边数据交互。
+> **最近更新**：2026-09-16。补齐回收型准入上限、HMA 选择与 hash 合同、Mamba align 状态轮换、投机尾部缓存登记，以及 GPU profiling 到 KV 预算的启动闭环；保留原有分页、CoW、packing 与 CPU tier 内容。
 
 ## 1. 特性概览：把有限显存变成可增长、可共享的请求状态
 
@@ -78,7 +78,21 @@ free queue 是侵入式双向链表，命中位于中间的零引用块时可 O(
 
 prefix hash 链接父 hash、当前完整 hash 单元的 tokens，以及必要的额外语义键：MM 内容标识和位置、LoRA 名称、首块 cache salt、prompt embedding 的分片摘要。再加 group id，才能区分不同 group 对同一 prefix 保存的状态。实现允许一个 hash 对应多个物理对象；块变满时不必为去重改写已经交给 runner 的 block table。这保留普通表的追加方式，代价是相同内容可能短时重复占块。
 
-hash 也有明确的版本边界：`_gen_lora_extra_hash_keys()` 放入的是 **LoRA 名称**，没有权重内容版本；KV hash 也没有 `weight_version`。`OpenAIServingModels.unload_lora_adapter()` 删除前端映射，不替这条路径清除 Engine KV。因此同名 LoRA 换内容，或仅改变一个 version 字符串，不会自动隔离旧 KV；一致性仍要由外部权重更新与清缓存流程保证，见 [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|LoRA]]、[[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|权重装载与更新]]。
+**生成合同与时机。** `EngineCore.__init__` 只在 `enable_prefix_caching` 为真或存在 KV connector 时建立 `request_block_hasher`；两者都没有就不计算请求块 hash，但仍可分页分配。输入是 `Request.all_token_ids`、已有 `block_hashes`、`hash_block_size`、算法与 extra keys；输出只含新产生的完整 hash 单元的 `BlockHash`，追加到原链。`Request.__init__` 首次调用 `update_block_hashes()`；`append_output_token_ids()` 追加真实输出后再次调用。未凑满 hash 单元的尾 token 暂不产出 hash；hash 粒度不必等于各 group 的物理块长。
+
+`get_request_block_hasher()` 从 `len(block_hashes) × hash_block_size` 续算，逐单元调用 `hash_block_tokens()`：将父 hash（首单元用 `NONE_HASH`）、当前 token tuple 和 extra keys 一起序列化并散列。例：hash 粒度 4、已有 10 个 token 时产生截至 4、8 的两个链节点；追加到 12 时只新增第三个，它包含第二个 hash，因而识别的是整个 12-token 前缀，而非孤立的最后四个 token。group id 是池检索时再组合的命名空间，不是把同一 Request 的 token 链按 group 重算。
+
+| `CacheConfig.prefix_caching_hash_algo` | 序列化与 hash | 范围与成本 |
+|---|---|---|
+| `sha256`（默认） | Pickle + SHA-256 | 密码学 hash；序列化兼容性仍需一致，不承诺跨语言字节完全相同 |
+| `sha256_cbor` | canonical CBOR + SHA-256 | 用于可复现、跨语言的序列化合同 |
+| `xxhash` / `xxhash_cbor` | Pickle / canonical CBOR + xxHash128 | 依赖可选 `xxhash` 包；速度取舍伴随非密码学碰撞风险，不能把内容隔离当作无条件保证 |
+
+首节点的种子也属于内容合同。`resolve_none_hash_seed()` 优先用显式 `PYTHONHASHSEED`；否则 SHA 系列用固定默认种子，非密码学算法用 `os.urandom(32).hex()` 的进程随机值。`init_none_hash()` 再散列种子得到 `NONE_HASH`，对非密码学随机种子发出跨进程不可复现警告。因此 canonical CBOR 只固定序列化，**不会自动消除 xxhash 的随机首节点差异**；跨实例复用还要统一算法、种子、token/extra keys 与模型内容。`get_none_hash_seed()` 可供 P2P 握手读取已解析种子；具体交换协议归 22。hash 生成只建立内容身份，不证明对应 GPU 状态已经可读。
+
+源码路线：`vllm/config/cache.py::CacheConfig.prefix_caching_hash_algo` → `vllm/v1/engine/core.py::EngineCore.__init__` → `vllm/v1/request.py::Request.update_block_hashes / append_output_token_ids` → `vllm/v1/core/kv_cache_utils.py::get_request_block_hasher / hash_block_tokens / generate_block_hash_extra_keys / resolve_none_hash_seed / init_none_hash`。
+
+hash 也有明确的版本边界：`_gen_lora_extra_hash_keys()` 放入的是 **LoRA 名称**，没有权重内容版本；KV hash 也没有 `weight_version`。`OpenAIServingModels.unload_lora_adapter()` 删除前端映射，不替这条路径清除 Engine KV。因此同名 LoRA 换内容，或仅改变一个 version 字符串，不会自动隔离旧 KV；一致性仍要由外部权重更新与清缓存流程保证，见 [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|运行时 LoRA resolver 与插件]]、[[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|权重装载与更新]]。
 
 ## 3. 完整工作流程：先建立容量，再让请求使用和归还
 
@@ -164,6 +178,60 @@ $S$ 是单层单 token 的 K 与 V 合计，$P$ 是单层 page，$C$ 是均匀�
 
 源码：`vllm/v1/kv_cache_interface.py::AttentionSpec.state_content_size_bytes`、`unpadded_page_size_bytes`、`page_size_bytes`；`vllm/v1/core/kv_cache_utils.py::_get_kv_cache_bytes_per_block`、`get_kv_cache_config_from_groups`、`get_kv_cache_configs`；`vllm/v1/worker/utils.py::allocate_kv_cache`；`vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory`。
 
+#### 3.1.3 GPU profiling → KV 字节预算 → 全 worker 共同块数
+
+**目的与 I/O。** `Worker.determine_available_memory()` 在模型加载后将初始化显存快照、一次 dummy profile 的消耗和配置变为一个整数 KV 字节预算；它不返回块数，更不在这里创建请求块。`EngineCore._initialize_kv_caches()` 汇集各 worker 的预算与 spec，再由 planner 生成 `KVCacheConfig`，最后把共同块数写入 `cache_config.num_gpu_blocks`。这一流程拥有容量推导；profile 中的编译、graph capture 生命周期继续由 19 展开。
+
+普通 profiling 路径不能简单写成“显存乘比例，再减权重”。设总显存 T、利用比例 u、初始化空闲字节 F₀、profile 后空闲字节 F₁、profile 后的 torch 峰值 P 和当前 allocated A、实际纳入预算的 graph 估计 G、前端多模态预留 M，所有内存量按字节计：
+
+$$
+\begin{aligned}
+D_{\mathrm{requested}} &= \lceil Tu\rceil, \\
+D_{\mathrm{consumed}} &= F_0-F_1, \\
+D_{\mathrm{transient}} &= P-A, \\
+D_{\mathrm{nonKV}} &= D_{\mathrm{consumed}}+D_{\mathrm{transient}}, \\
+D_{\mathrm{KV}} &= D_{\mathrm{requested}}-D_{\mathrm{nonKV}}-G-M.
+\end{aligned}
+$$
+
+`request_memory()` 先要求 F₀ 至少覆盖 requested，否则启动报错。`memory_profiling()` 用 free-memory 差计持久消耗，再补 torch 临时峰值余量；这样兼容绕开 PyTorch reserved 统计的 allocator，也避免把已计入持久消耗的权重或 activation 再扣一次。初始化快照在 NCCL 初始化后取得；公式的基线不是“这张 GPU 完全空载”。未触发 ROCm fallback 时还断言 F₀≥F₁，防止 profiling 期间其他进程释放显存破坏测量假设；ROCm 的 `maybe_rocm_profiling_fallback()` 有专门替代计数，不能把 F₀−F₁ 强行用于该分支。
+
+CUDA-like（含 ROCm）且 graph mode 非 NONE 时调用 `profile_cudagraph_memory()`；是否将估计计入 G 由 `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS` 控制，基线默认 1，关闭则 G=0，XPU 不走此估计。末尾 `reserve_mm_ipc_gpu_memory()` 对所有预算路径扣 M：原始帧池预算，加 GPU video backend 的每 API 进程 decoder/context 开销；没有 MM 配置或预留为零时原样返回，扣后不剩容量时抛 `ValueError`。它不是把已存在的 API 显存当作可用 KV。
+
+**手算一条普通路径。** 假定 T=80 GiB、u=0.9、F₀=76 GiB、F₁=50 GiB、P=8 GiB、A=3 GiB、G=2 GiB、M=1 GiB：requested=72、持久消耗=26、临时余量=5、nonKV=31，最终 KV=38 GiB。接上 §3.1.1 的 640 KiB/pool id，向下取整得到 62,259 个 id，单 worker 的可用上界还须扣 null id，成为 62,258；这是教学输入，不是硬件测量。
+
+<!-- Figure spec：预算转换图以 80GiB 总量与 0.9 比例得到 72GiB 开始，普通 profile 分支按 26+5+2 得到 MM 前 39GiB；显式预算或通过身份/空闲门的 startup plan 是另一条输入，同样保留 profile_run 编译但不做预算测量。两条支路汇入 MM 预留扣除；普通数例 39−1=38GiB，除以 640KiB 得 62259 个 pool id，再示例另一 worker 60000，共同最小60000，其中59999非null。边传字节或块数；蓝色容量转换、橙色保留成本；不把节点数量解释为 launch 或时间。 -->
+```mermaid
+flowchart TB
+    I["普通预算：80 GiB × 0.9 = 72 GiB<br/>初始 free 76 GiB，满足 requested 门"]
+    P["profile：free 差 26 GiB<br/>临时峰值余量 8−3 = 5 GiB<br/>计入 graph 估计 2 GiB"]
+    X["另一预算路径：显式 kv_cache_memory_bytes<br/>或身份与 free 门通过的 startup plan<br/>仍执行 profile_run，跳过预算测量"]
+    K["MM 前 KV 预算<br/>普通例：72−26−5−2 = 39 GiB"]
+    M["扣前端 MM 预留<br/>普通例：39−1 = 38 GiB"]
+    B["按本 worker 布局除以每 id 字节<br/>38 GiB / 640 KiB 向下取整 = 62,259"]
+    J["跨 worker 取最小并重规划布局<br/>若另一 worker 为 60,000，共同取 60,000<br/>含 null；非 null id 上界 59,999"]
+    I -->|requested 字节| P
+    P -->|扣非 KV 与 graph| K
+    X -->|指定的 KV 字节| K
+    K -->|同一预留规则| M
+    M -->|可分配字节预算| B
+    B -->|本地候选块数| J
+    classDef normal fill:#fff,stroke:#64748b,color:#0f172a
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef orange fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class I,X normal
+    class K,B,J blue
+    class P,M orange
+```
+
+**显式值与 startup plan 是两条有条件的测量旁路。** 非零 `kv_cache_memory_bytes` 直接作为 MM 前预算，仍调用 `model_runner.profile_run()` 完成所需编译，但不运行 `memory_profiling` 或 graph 内存估计；该预算不按 utilization 重新计算，先前初始化阶段的 free/requested 检查仍存在。`VLLM_ENABLE_STARTUP_PLAN` 默认 0；开启且没有显式 KV 字节值时，`maybe_apply_startup_plan()` 尝试读取缓存。fingerprint 包含 config hash、vLLM/torch/CUDA build、设备名/总量/能力、rank/world size；仅 schema/fingerprint 匹配、预算为正且当前初始 free≥记录基线才写回 `kv_cache_memory_bytes`，之后进入同一显式值分支。文件缺失、不可读或门不通过则完整 profiling；driver-only 变化不在 key，故不能称此缓存为绝对 OOM 保证。`compile_or_warm_up_model()` 在正常 profile/capture 后计算带 150 MiB 余量的建议值，再由 `maybe_save_startup_plan()` 原子保存；plan 不是恢复 KV 内容或省掉所有模型初始化。
+
+**字节预算怎样落成块数。** `get_kv_cache_configs()` 先做全局分组与 PP-local 投影，按各 worker 的真实 `_pool_bytes_per_block()` 计算；普通情形为最大组的层 page 总量，特殊 alias 布局见 §5.2。可用内存检查/`max_model_len=-1` 的 auto-fit 先留出 null block，配置分配仍包含它。`num_gpu_blocks_override` 会把有效预算改为 override×每 id 字节，使 auto-fit、容量门和最终配置保持一致，但显式覆盖并不证明物理 GPU 真的够用。各 worker 先得到本地块数，最终取最小值，并为较大者重新生成匹配的 size/stride/offset；不能只改 `num_blocks` 而留下旧布局。若 auto-fit 缩短模型长度，Core 将新长度广播回 worker。
+
+支持范围：本节展开 GPU Worker 的预算分支，未外推 CPU/TPU 等 worker。无 cache-bearing spec 的 attention-free 模型不 profile KV，返回空 group、仅保留 null 所需的 `num_blocks=1`；Elastic EP scale-up launch 使用预先取得的预算而不重新 profile，此处只接其容量输入，扩缩容编排不归本页。容量通过不保证未来任意 workload 都不 OOM，实际形状、其他进程显存变化、graph 与 workspace 仍需匹配测量范围。
+
+源码路线：`vllm/v1/worker/utils.py::request_memory` → `vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory` → `vllm/utils/mem_utils.py::memory_profiling` / `vllm/v1/worker/startup_plan.py::maybe_apply_startup_plan` → `vllm/multimodal/gpu_ipc_memory.py::reserve_mm_ipc_gpu_memory` → `vllm/v1/engine/core.py::EngineCore._initialize_kv_caches` → `vllm/v1/core/kv_cache_utils.py::get_kv_cache_configs / get_kv_cache_config_from_groups / generate_scheduler_kv_cache_config`。验证入口：`tests/v1/worker/test_gpu_worker.py::test_startup_plan_fingerprint_sensitivity / test_startup_plan_apply_gate`；本轮只阅读这些测试，不声称已运行 GPU profiling。
+
 ### 3.2 运行期入口：先判断哪里能续算
 
 沿用 A/B：A 已保存前 10 个 token，B 的前 8 个 token 与它相同，B 总输入也为 10 个 token。Scheduler 用 B 的 `Request` 查询 `get_computed_blocks()`；其中 `block_hashes` 描述内容身份，返回值是按 group 组织的 `KVCacheBlocks`、可复用 token 数以及稀疏缓存可能需要保住的 `shared_prefix_boundary`。**查询得到候选，不会在这一步替请求取得活跃引用**；真正保护命中发生在分配阶段。
@@ -204,15 +272,52 @@ flowchart TB
 
 full-sequence admission 是更早的可选门，会在上述回收之前预测整个序列是否可接纳；其 watermark 条件、reserved blocks 和抢占选择归 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|调度器]]。通过该门后，manager 才以 `max(0, total_computed_tokens − num_in_flight_tokens)` 调用各组 `remove_skipped_blocks()`。回收以完整物理块为单位，保留 null 槽的位置，不能压缩逻辑历史后让位置错位。
 
+**回收型 spec 的 admission cap 归本页，而非调度队列策略。** 它解决“启动按窗口峰值建池，运行准入却按整段 prompt 预留，导致本来可分段执行的长请求永远进不来”的不一致。输入为模型长度上限 M、该 spec 的块长 B、窗口 W 或 chunk 长 Q、额外保留尾部 E，以及最大在途 token 数 I；输出是每请求最多实占多少块的准入上限。`VllmConfig.max_in_flight_tokens` 定义 I 为 `max_concurrent_batches × max_num_batched_tokens`，不是当前请求的 `num_in_flight_tokens`。
+
+两个 spec 的精确公式是：
+
+$$
+\begin{aligned}
+N_{\mathrm{SWA}} &= \left\lceil\frac{\min(W-1+E+I,M)}{B}\right\rceil+1, \\
+N_{\mathrm{chunk}} &= \left\lceil\frac{\min(Q+I,M)}{B}\right\rceil.
+\end{aligned}
+$$
+
+滑窗多出的 1 块防止窗口起点落在块中间；chunk 不套这个加一规则。两者的 `max_memory_usage_bytes()` 都复用本公式乘 `page_size_bytes`，使建池容量与准入规则来自同一个 spec 方法。教学例取 B=16、W=Q=64、E=0、M=1024、两批在途且每批最多 128 token，I=256：SWA 上限为 `ceil(319/16)+1=21` 块，chunk 上限为 `ceil(320/16)=20` 块；没有本地命中或已有表时，1024-token prompt 的整段需求由 64 块截到该上限，而 full-attention 组仍需 64 块。
+
+调用链是 `KVCacheManager.allocate_slots(full_sequence_must_fit=True)` → coordinator 的 `get_num_blocks_to_allocate(apply_admission_cap=True)` → `SingleTypeKVCacheManager.get_num_blocks_to_allocate()` 将 `ceil(num_tokens/B)` 截到 cap，再计已有表、被跳过历史、本地命中及需占用的 free 候选。`apply_admission_cap=True` 在基线里有**两个**调用点，不是一个：一是这里 `allocate_slots(full_sequence_must_fit=True)` 的整段准入门；二是 `vllm/v1/core/sched/scheduler.py::Scheduler._request_remaining_blocks`，其结果经 `_inflight_prefill_reserved_blocks()` 汇总成异步 load 分配时使用的 `reserved_blocks`（该预留量的调度语义归 07）。因此**在途 prefill 的预留估算也是按截断后的 cap 算的，不是按整段未截断长度**。窗口回收后的本步实际分配才不传 True，不能用 cap 少分本步将写入的 slots。各组仍联合计数，full 组超池照样拒绝；cap 不保证整个 hybrid 请求必能进入，也不替代 watermark、reserved 或抢占策略。
+
+支持范围由 `get_manager_for_kv_cache_spec()` 的 `isinstance(SlidingWindowSpec, ChunkedLocalAttentionSpec)` 注入确定；R-SWA 不设独立 cap，仍按 full-attention 容量界。SWA 的启动容量计算还断言 DCP=1。若 HMA 关闭后 spec 已提升为 full allocation，就不再使用原 sliding cap。`KVCacheManager` 未获 `max_in_flight_tokens` 时回退到 M，相当于保留此前未截断的保守行为。
+
+源码：`vllm/config/vllm.py::VllmConfig.max_in_flight_tokens`；`vllm/v1/kv_cache_interface.py::SlidingWindowSpec.max_admission_blocks_per_request / ChunkedLocalAttentionSpec.max_admission_blocks_per_request`；`vllm/v1/core/single_type_kv_cache_manager.py::get_manager_for_kv_cache_spec / SingleTypeKVCacheManager.get_num_blocks_to_allocate`；`vllm/v1/core/kv_cache_manager.py::KVCacheManager.allocate_slots`。回归入口：`tests/v1/core/test_prefix_caching.py::test_can_fit_full_sequence_full_attention_still_gates_oversized`。
+
 #### 3.3.2 命中块为什么也会消耗 free 容量
 
 本步主模型目标长度是总 computed 加新 token，slot 目标再加 lookahead，并以 `max_model_len` 截断；不能按整个未来生成上限无条件占满。coordinator 汇总各组 `get_num_blocks_to_allocate()`。它考虑当前块、local hit、external computed slots、新 token、lookahead、窗口回收和 partial CoW；有的 manager 会在预测时记录 checkpoint 计划，但这一阶段不建立新块引用。一个 ref 为 0 的命中块虽然不用重算，却已在 free queue 中；新请求 touch 它后便不能再作新块分配，必须计入本次容量占用。partial tail 私有化还要多算目标块。
 
 容量通过后必须**先 touch 全部组的本地命中，再为各组分配 external computed slots**。若按“组 0 touch→组 0 allocate→组 1 touch”循环，组 0 可能取走组 1 尚在 free queue 的命中块。两阶段安排先把所有命中从可驱逐集合中拿走，再扩大各组表。跨组 local/external 混合回归测试断言所有新 owner 的非 null id 不冲突且引用为正。
 
-随后才扩展本步 slots，并调用 `cache_blocks()`。可登记长度最多到 `request.num_tokens`，不把可能被拒绝的 draft 当成稳定内容；多模块投机路径还会扣除可能再次 prefill 的尾部，见 [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]]。
+随后才扩展本步 slots，并调用 `cache_blocks()`。可登记长度最多到 `request.num_tokens`，不把可能被拒绝的 draft 当成稳定内容；多模块投机尾部还须按 coordinator/group 的实际规则限制，见本页 §3.3.3。draft 如何产生和接受归 [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]]。
 
 **这里的 finalized 指 token 内容不会因 draft rejection 回滚，不表示 GPU KV 已写完。** `cache_blocks()` 就在 `allocate_slots()` 内，发生在 forward 之前。普通 attention 的 hash 可以供同一步后续请求查询并共享；设备是否可读依赖当步执行和后续 stream 顺序。Mamba 有不同限制：`cached_blocks_this_step` 记录当步新增/迁移的边界 hash；若另一个请求命中的尾块属于该集合，其需求预测直接返回 `num_gpu_blocks + 1`，让本步容量检查失败，下一步清集合后再尝试。CPU hash 登记不能充当设备完成事件。
+
+#### 3.3.3 投机尾部：有 slot、token 已确定、可登记 hash 是三条不同边界
+
+这一规则避免把将被 rejection 回退或多模块 MTP 再 prefill 的状态暴露为可复用内容。输入是目标进度、`request.num_tokens`、prefill lookahead 和各 group 的 EAGLE 标记；输出是传给各 manager 的可缓存 token 上界，之后仍由整块/partial/retention 规则决定实际登记哪些 hash。普通 `allocate_slots()` 先取 `C = min(total_computed_tokens + num_new_tokens, request.num_tokens)`，与已分配的 `num_tokens_need_slot` 不同；缓存关闭或 `delay_cache_blocks=True` 时跳过这次登记。
+
+`Scheduler.__init__` 对 EAGLE 设置 `num_prefill_lookahead`：多模块 MTP 为 `num_spec_tokens`，其他 EAGLE 为 1，非 EAGLE 保持 0。coordinator 保存 `R = max(0, num_prefill_lookahead−1)`。不能把“所有组统一 C−R，再加一块”当成实现；冻结基线分支如下：
+
+| 消费者 | 给 manager 的 token 上界 | 边界 |
+|---|---|---|
+| 基类 `KVCacheCoordinator.cache_blocks` | `max(0, C−R)` | 扣掉可能再次 prefill 的尾 token |
+| Hybrid 的普通组 | `A(C)` | A 在 fine-grained partial hits 开启时原样返回，否则向下对齐 scheduler block；此覆写分支没有统一扣 R |
+| Hybrid 中 `manager.use_eagle` 且 `A(C)>0` 的组 | 令 F=`max(0,C−R)`，取 `min(F, A(F)+manager.block_size)` | EAGLE 查询需多看一个 group 块再 drop，因而允许多登记一个边界块，但绝不超过 F；不是对任意 EAGLE 方法、任意组都加一块 |
+
+例如 C=70、R=2、scheduler block=32、group block=8、partial hits 关闭：基类上界 68，hybrid 普通组 64；EAGLE 组为 `min(68,64+8)=68`。这个数字仍是上界；8-token 整块 manager 不会凭空登记覆盖到 72 的块。C=72、R=0 时 EAGLE 组才可到 72，普通组仍到 64。`test_eagle_swa_alignment_caches_extra_block` 验证额外 tail 块让 SWA+EAGLE 在共同对齐边界可命中。
+
+再 prefill 还影响释放而不只是 hash：`get_kv_cache_configs()` 对多模块 MTP 将每个 `SlidingWindowSpec.extra_retained_tokens` 设为 `num_speculative_tokens−1`；`SlidingWindowManager.get_num_skipped_tokens()` 用 `max(0, computed−window+1−extra_retained_tokens)` 推迟回收。多保留的 token 不因此参与 attention 窗口，它们用于再填充；也已计入 §3.3.1 的容量上限。align Mamba 的 checkpoint 物理槽仍有 multi-module MTP 的显式 TODO，不能由这组通用规则宣称全部组合均已验证。
+
+源码：`vllm/v1/core/kv_cache_manager.py::KVCacheManager.allocate_slots` → `vllm/v1/core/kv_cache_coordinator.py::KVCacheCoordinator.__init__ / cache_blocks` 与 `HybridKVCacheCoordinator._align_cacheable / cache_blocks` → `vllm/v1/core/single_type_kv_cache_manager.py::SlidingWindowManager.get_num_skipped_tokens`；额外保留量由 `vllm/v1/core/kv_cache_utils.py::get_kv_cache_configs` 写入。
 
 ### 3.4 执行交付：从新增 id 到 attention 的 slot
 
@@ -296,12 +401,32 @@ BlockPool 不接收“本步算几个 token”的策略指令，只处理具体�
 
 | 选择轴与源码入口 | 条件与所选路径 | 改变什么 |
 |---|---|---|
+| `VllmConfig.__post_init__` → `get_kv_cache_groups()` | 先解析 `disable_hybrid_kv_cache_manager`；为 True 时先调用 `unify_hybrid_kv_cache_specs()`，再分组，详见 §4.5.1 | 决定能否保留不同层型的资源管理规则，不等于 prefix caching 开关 |
 | `get_kv_cache_coordinator()` | 关闭缓存 → `KVCacheCoordinatorNoPrefixCache`；开启且一组 → `UnitaryKVCacheCoordinator`；开启且多组 → `HybridKVCacheCoordinator` | 是否查询前缀、是否需要跨组协调；无缓存也能有多组 |
 | `get_manager_for_kv_cache_spec()` → `KVCacheSpecRegistry` | 由每个 group 的 spec 选择 manager，含平台自定义注册 | 本组历史保留、需求预测与命中算法，不由“是否 hybrid”一个开关决定 |
 | `get_kv_cache_groups()` | uniform spec/type、GLM5-Next 专用路径、packed、统一 page 或受限 full-allocation fallback | 启动期怎样把层放进 group、怎样解释物理页；不是请求队列策略 |
 | `VllmConfig` 的 offload 配置 | native 默认 `OffloadingConnector`；环境开关可选 Simple 实现；另有 lmcache backend | 在 GPU 本地池之外增加哪种内容层；本文展开 native 默认路径，其他后端由 [[22_vllm_disaggregated_kv_serving_analysis|KV Serving]] 承接 |
 
 内置 registry 除 full、sliding-window、Mamba 外，还注册 circular buffer、chunked-local、cross-attention、RSWA、sink full attention、MLA、hidden-state 和 k-pool tail；平台还能扩展。这里列出它们是为了标明选择边界：**并非每一种 spec 都支持 prefix 命中，也并非所有 state 都按 token 逐项保存。** 本文展开通用池合同、full/window/Mamba 的协作及既有模型布局案例；其余专用算法不作为本页的全覆盖承诺。MLA/RSWA 的计算与布局接口见 [[10_vllm_attention_backends_analysis|Attention Backend]]，hidden-state 的投机用途见 [[16_vllm_speculative_decoding_analysis|投机解码]]，encoder 输入来源见 [[09_vllm_model_library_analysis|模型库]]；后文保留 k-pool 的容量边界。
+
+#### 4.5.1 HMA 开关：改变分配规格，不改变 attention 的计算窗口
+
+**目的与 I/O。** HMA（hybrid KV cache manager）让不同层型按各自保留规则共享资源；兼容性门则防止把多组块表交给无法处理的部署。输入是 `SchedulerConfig.disable_hybrid_kv_cache_manager` 的三态值、平台能力、模型 `attention_chunk_size`、speculative 配置和 connector 配置；`VllmConfig.__post_init__` 输出解析后的布尔值。注意双重否定：True 是关闭 HMA，False 才是开启。
+
+| 输入或限制 | 解析行为 |
+|---|---|
+| 平台 `support_hybrid_kv_cache()` 为 False | 要求关闭；不只凭“GPU/非 GPU”的名字判断 |
+| chunked-local + `use_eagle()` | 要求关闭，当前组合不支持 |
+| chunked-local、非上述组合、`VLLM_ALLOW_CHUNKED_LOCAL_ATTN_WITH_HYBRID_KV_CACHE` 未开 | 要求关闭并警告延迟回退；该环境开关允许此分支继续使用 HMA |
+| 用户值为 None | 还检查 `KVConnectorFactory.supports_hma_config()`；不支持的 connector 配置自动关闭，否则依据前述限制决定 |
+| 用户显式 False，前述平台/chunked-local 限制要求关闭 | `ValueError`，不静默接受冲突 |
+| 用户显式 True | 尊重关闭，不重新开启 |
+
+connector 的 `supports_hma_config` 检查位于 **None 分支**，所以显式 False（即显式开启 HMA）不在这里被拒。但它**不是没有 gate，只是换了地方也换了后果**：`KVConnectorFactory.create_connector` 计算 `hma_enabled = not disable_hybrid_kv_cache_manager`，当 `hma_enabled and not cls.supports_hma_config(...)` 时直接 `raise ValueError("Connector ... does not support HMA but HMA is enabled")`——也就是 None 分支下是**静默自动关闭**，显式开启下是**建 connector 时启动硬失败**。跨 Engine 的 group 与协议兼容才由 22 的协议合同负责。MultiConnector 需要子 connector 都支持 HMA。默认解析且没有限制时 HMA 开启；没有多层型时，开启也不凭空造出多个 group。
+
+**对资源的实际变换。** planner 的 `get_kv_cache_groups()` 在禁用时先就地统一 spec 字典。已 uniform 的集合原样返回；混合 full 与 sliding/chunked-local 时，`_promote_local_kv_cache_specs()` 将 local spec 提升为 full-attention allocation（SWA MLA 对应 MLA），必要时统一块长和 page padding，并移除已经无意义的 `extra_retained_tokens`。结果不再按滑窗释放历史，所以容量/性能与 HMA 路径不同；模型仍按原窗口计算 attention，不是把模型语义改成 full attention。无法提升到统一类型（例如 full+Mamba 的 hybrid SSM）会抛 `ValueError`，不是所有混合模型都能以更多显存换取 fallback。
+
+因此下文 §5.2/§5.3 的多组资源优化以通过 HMA/分组合同为前提；“关闭 HMA”与“关闭 prefix cache”是不同轴，后者只关闭跨请求复用，并不取消多组分配。源码：`vllm/config/vllm.py::VllmConfig.__post_init__` → `vllm/v1/core/kv_cache_utils.py::get_kv_cache_groups / unify_hybrid_kv_cache_specs / _promote_local_kv_cache_specs`。
 
 ### 4.6 从真实入口到释放出口的调用路线
 
@@ -344,6 +469,8 @@ Scheduler.schedule
 |   +-- coordinator.allocate_new_blocks
 |   |   `-- 各 manager.allocate_new_blocks
 |   `-- coordinator.cache_blocks              [缓存开启且非延迟登记]
++-- kv_cache_manager.take_boundary_state_offloads  [取走并清空本步待交出的边界状态]
++-- kv_cache_manager.take_kv_cache_block_copies    [取走并清空本步 CoW 复制计划]
 `-- 组装并返回 SchedulerOutput
 
 EngineCore.step                               [普通同步反馈路径]
@@ -379,9 +506,11 @@ GPUModelRunner.execute_model                  [worker 端独立入口]
 
 ### 5.1 更细粒度复用：命中 6 个 token，为什么还要复制半个块
 
+**先限定支持范围。** 本节细粒度 partial hit/CoW 是含 Mamba `align` 组的 hybrid 路径，不是纯 full-attention 的默认行为。`HybridKVCacheCoordinator.enable_partial_hash_hits` 要求：非 DCP 时 Mamba block 大于 hash 粒度；DCP>1 时可相等（有效 attention 块另被放大）；所有可缓存 manager 还须支持 fine-grained lookup 或本身块长等于 hash 粒度，否则关闭并告警。`prefix_cacheable=False` 的 scratch 不参与这道能力限制。Hybrid coordinator 另要求 PCP=1；DCP>1 时只接受 full-attention 与 Mamba spec，不能将这里的 DCP 例子套给 SWA。单组 `UnitaryKVCacheCoordinator` 开缓存时要求 hash 粒度等于 block，不能套用下面的 6-token partial 命中算例。
+
 基本例子共享的是两个完整物理块，B 只写自己的新尾块。现在改变这一前提：想复用的边界落在物理块内部，而新请求仍要继续写。问题于是从“能否命中”变成“怎样保留命中内容，又不让续写污染旧缓存身份”；这就是 copy-on-write（CoW，写时复制）介入的原因。
 
-`get_computed_blocks()` 至多复用 `request.num_tokens−1`：缓存保存 attention state，不保存下一 token 的 logits，仍要有真实计算。普通对齐路径还会向下取 scheduler block 的整数倍，可能重算不只一个 token；prompt logprobs 等需实际计算的路径会跳过 prefix 读取。
+“至多复用 `request.num_tokens−1`、再向下对齐到块整数倍”这条上限规则已在 §3.2 展开（含 B 的 9→8 算例），此处不重述；prompt logprobs 等需实际计算的路径同样跳过 prefix 读取。
 
 “partial”相对于 group 物理块。假设 hash 粒度 2、group 块长 4，前 6 个 token 的 hash 已完整，但第二个物理块只覆盖了其中 2 个有效 token。`cache_partial_block()` 可以给该物理对象登记 6-token 边界的 hash，必要时用旁路 key 保存多个边界；没有另分 tensor。驱逐、reset、提升为更长/full hash 时必须移除旧的主/旁路键，防止旧 key 悬挂到已换内容的对象。
 
@@ -446,6 +575,46 @@ flowchart TB
 
 这不是所有 connector 都执行的保存动作。一个实际实现是 Mooncake store scheduler 的 `register_finished_partial_tail()`：校验边界、去重 id 后 `touch()` 精确源块，建立带 worker 完成计数的保存任务；它返回 `False` 允许请求正常清理，因为 job 已独立持有引用。直到所有 worker 的 `completed_saves` 到齐才释放 pin；`has_pending_push_work()` 让 Engine 即使没有活跃请求也继续处理未完成保存。网络协议归 22；本页只需要明确“请求完成”不等于“该物理块立刻可复用”。native CPU tier 是后面的另一条路径，不能用同名 offload 把两者的回调混为一谈。
 
+#### 5.1.3 Mamba align 的正常生命周期：长位置表只持有少量状态
+
+前两节解决 partial 命中的特殊续写；正常 align 路径的目的则是：保存可继续 recurrent 计算的上一状态及本步目标，不为每个历史位置永久持有一个 state。**输入**是 spec 的 block 长度、主模型本步终点、已安全处理进度、命中状态与 checkpoint/scratch 需求；**输出**是需领取的 pool id、含 null 的位置表、可复用 hash 与后续归还引用。分配返回的仍是 CPU 计划，不是已生成的 recurrent state。
+
+`MambaSpec.max_memory_usage_bytes()` 区分三种预算：`all` 按 `ceil(max_model_len / block_size) + num_speculative_blocks` 个 page；`align` 按 `2 + num_speculative_blocks + num_prefill_checkpoint_blocks` 个 page；`none` 按 `1 + num_speculative_blocks` 个 page。align 的**位置表长度**却仍按 `ceil(max_len / block_size) + num_speculative_blocks` 预留，因为旧位置变 null 而不是删列。这里的 page 是 recurrent state 的形状/精度所需字节，可被 padding，不是保存 block 内每个 token 的一份状态。
+
+处理链分为四个时点：
+
+1. **估算与分配**：align 用 `num_tokens_main_model` 而非额外 lookahead 终点定位 running state。普通无 partial/checkpoint 的新请求仅领一个当前 state 加 speculative scratch；跨新边界的老请求通常只需一个新 state，跳过的历史列补 null。若所需列已覆盖且无特殊工作，则无需新增块。`last_state_block_idx` 记下旧 running state；partial 和内部 checkpoint 各有自己的附加容量，不能一概写成“永远只领一块”。
+2. **执行交付与安全回收**：新旧状态在本步并存，runner 完成状态读取/写入；后续 `remove_skipped_blocks()` 用已安全处理进度回收。Mamba 的跳过量为 `processed_computed_tokens−1`，只需保留最后已算 token 的状态；align 另按 `last_state_block_idx` 补回收非连续 prefill 留下的更老状态，原列改为 null。没有用带在途部分的乐观进度提前回收。
+3. **缓存身份**：完整边界或允许的 partial checkpoint 给精确 state block 登记 hash；新登记和本步 CoW 生成的 hash 放入 `cached_blocks_this_step`。另一请求若本步正好命中这些新状态，估算返回 `num_gpu_blocks+1` 使其延后调度，下一步 `new_step_starts()` 才清集合。它是 Mamba 本步状态尚不可用的保护，不是所有 prefix hash 的通用设备完成事件。
+4. **请求清理**：`pop_blocks_for_free()` 清除分配标记、旧状态索引、checkpoint 位置和 producer 标记，并丢弃尚未交出的 boundary offer；请求引用归还走原有释放链。ref 归零可以保留缓存 hash，未来命中再 touch；已有执行/copy/connector pin 仍按各自完成条件释放。
+
+给定块长 1600、无 speculative scratch/内部 checkpoint/partial hit，且每步完成后才进入下一步：首次算到 1600 时表为 `[S0]`；跨到 3200 时同时保有 `[S0,S1]`；确认处理到 3200 后释放 S0 的请求引用，再跨到 4800 时得到 `[null,S1,S2]`。位置列从 1 增至 3，但这条路径同时持有的普通请求状态最多为 2。初次 prefill 若直接跳到 4800，历史两列也可直接补 null，不必曾经分配 S0/S1。
+
+<!-- Figure spec: 问题=align为何不按长位置表占用同等state；范围=串行完成、B1600、无partial/checkpoint/spec的单请求三步；节点=三次表快照和安全回收；边=时间与已处理进度，不表示GPU数据复制；必须看见S0引用归还后列0保留null、S1和S2并存，ref0可能仍cached；正文解释设备执行条件。 -->
+```mermaid
+flowchart TB
+    A["算到1600：表 S0<br/>请求持有1个状态"] --> B["跨到3200：表 S0 | S1<br/>旧状态与新目标并存，共2个"]
+    B --> C["已安全处理3200<br/>归还S0请求引用；列0改null"]
+    C --> D["跨到4800：表 null | S1 | S2<br/>3个位置列，仍只持有2个状态"]
+    C -.->|若无其他pin且已有hash| E["S0 ref0，可作为缓存命中或被驱逐<br/>不是释放GPU backing"]
+    classDef normal fill:#fff,stroke:#64748b,color:#0f172a
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef orange fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    class A,B normal
+    class D blue
+    class C,E orange
+```
+
+**内部 checkpoint 与 scratch 是有条件的扩展。** prefill checkpoint 候选为严格小于终点的最后 hash 边界；EAGLE drop 模式再退一个 hash 单元，最后截到零。backend 必须提供 `prefill_checkpoint_alignment`，query 起点须 hash 对齐，候选须严格位于 query 内、至少离起点一个 hash 单元，满足相对 backend 对齐，并且 checkpoint 列晚于 initial-state 列。manager 还检查预留列为空/未存在或可替换的 scratch，准入探测不写 `_checkpoint_positions`；实际分配才记下该步位置并为内部状态留块。
+
+用测试里的数判一次：`start=0、end=100、hash=8、Mamba block=64、alignment=16` 时，**checkpoint=96 有效**；**88 无效**——它虽然是 hash 边界，却不满足“相对起点 16 对齐”这一条；backend 没有声明 `prefill_checkpoint_alignment` 时也一律无效。另有一个层级陷阱：Kimi K3 KDA 构建 metadata 时用的是**该层 `kv_cache_spec.block_size`** 算 checkpoint 列并调同一校验器，不能拿全局配置块大小替所有层；Scheduler 当前只取第一个 Mamba spec 的 alignment，源码仍留着“不同 Mamba spec 各有对齐要求”的支持 TODO。
+
+具体回归例是 hash16、Mamba block32、终点120，启用一个内部 checkpoint：列2持有独立 checkpoint，列3是 running state。真正导出的是 state@112，`_cache_partial_tail_block()` 用 `replace_existing_hashes=True` 把临时 state@96 键替换为112，保留同一个请求表 owner；释放后重放120-token请求命中112，而不是错误命中96。该例覆盖 identity、清理与重命中，不证明 GPU kernel 在本机执行通过。
+
+跨边界时已有 speculative scratch 可移到表尾，旧槽变 null，**不另领物理块，也不由该函数复制 state**；但 `_relocate_speculative_block()` 要求块非 null、ref 为1且无 hash，额外 pin 的共享块会触发断言。checkpoint 分支可能重新分配 scratch，不能把重定位套到所有分支。`_cache_partial_tail_block()` 对 multi-module MTP 仍有显式保存 reserved slot 的 TODO，故本页只陈述现有分支，不声称所有 MTP/checkpoint 组合完备。DCP 不扩大 Mamba 自身的 block 粒度；能否进行细粒度联合命中另受 §5.1 的 coordinator 限制。07 负责挑选可执行的 checkpoint 对齐终点，11/12 负责实际状态导出，本页拥有它们对应的容量、位置表、身份和归还规则。
+
+源码路线：`vllm/v1/kv_cache_interface.py::MambaSpec.max_memory_usage_bytes`、`MambaSpec.max_num_blocks_per_req`、`get_mamba_prefill_checkpoint_position`、`is_mamba_prefill_checkpoint_valid` → `vllm/v1/core/single_type_kv_cache_manager.py::MambaManager.get_num_blocks_to_allocate`、`allocate_new_blocks`、`remove_skipped_blocks`、`cache_blocks`、`_cache_partial_tail_block`、`_relocate_speculative_block`、`pop_blocks_for_free`。验证入口：`tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py::test_internal_checkpoint_uses_partial_hash_lifecycle`、`tests/v1/core/test_single_type_kv_cache_manager.py::test_mamba_speculative_block_relocation_requires_exclusive_ownership`。
+
 ### 5.2 混合状态与布局：不同层的容量怎样统一计算
 
 前面用单个 group 建立了基本流程；现代模型却可能同时包含要保留全部历史的层、只读最近窗口的层和只需恢复 recurrent state 的层。若全部按 full attention 留历史，会失去各自的容量优势；若完全独立分配，又难以共同使用有限预算。因此要回到 §3.1 的启动阶段，把这些存储要求先规划成可共用物理池的 groups，再交给 §4 的管理链。这里的“回到启动期”是对既有基本流程的扩展，不是请求执行中重新布局整池。
@@ -496,7 +665,7 @@ DeepSeek V4 展示了为何“一个模型一类 KV cache”已经不够：
 
 ### 5.3 多组前缀复用：各自命中后，为什么还要反复缩短长度
 
-即使字节布局成立，所有组仍须能从同一个 token 边界恢复。scheduler 粒度取各有效 group block size 的公倍数；hash 粒度依可缓存组求公约数或验证显式配置，二者职责不同。`prefix_cacheable=False` 的 scratch **不参与 hash 对齐、命中查找和 fine-grained 能力限制**，但仍参与 pool 容量和 scheduler block 的共同约束。
+即使字节布局成立，所有组仍须能从同一个 token 边界恢复。scheduler 粒度取各有效 group block size 的公倍数；hash 粒度依可缓存组求公约数或验证显式配置，二者职责不同。**这里的「hash 粒度」就是配置键 `CacheConfig.prefix_match_unit`**——docstring 逐字写明它「equals to the `hash_block_size` used throughout the KV cache code」，默认 `None` 由上述求公约数推出，显式给值时要求每个 group 的 `block_size` 都能被它整除，且它「只控制匹配粒度，不控制多久存一次状态」。另一个容易与之混淆的键是 `CacheConfig.prefix_cache_retention_interval`（默认 0，从已弃用的 `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` 读取）：它同样以 token 计，但管的是**每隔多少 token 额外保留一个 SWA/Mamba checkpoint**——`0` 表示只保留语义 checkpoint（最新重放边界、共享前缀交汇点），正值才按该间隔额外留周期性 checkpoint。两者正好被 `prefix_match_unit` 的 docstring 那句「not how often states are stored」对开：一个定**匹配粒度**，一个定**存的疏密**，都不是时间维度的保留时长。`prefix_cacheable=False` 的 scratch **不参与 hash 对齐、命中查找和 fine-grained 能力限制**，但仍参与 pool 容量和 scheduler block 的共同约束。
 
 Hybrid coordinator 把相同 spec 的组批量查询，按 full attention 优先的顺序迭代候选长度。某组缩短候选后，需要让其它组重新确认；Mamba 可能只保存稀疏 checkpoint，某窗口也可能只在更短边界有完整 tail，不能把各组独立最长命中简单取 min 就当作最终答案。
 
@@ -518,9 +687,9 @@ flowchart TB
 
 候选只下降，因此能收敛；full 已经查出的连续结果可截短复用，简单 full + 另一类的组合还有少做一轮的优化。fine-grained 命中要求 Mamba align 且相关可缓存 manager 支持；允许在 group 物理块内部的 hash 边界返回实际 token 数，否则向下对齐 scheduler block。PCP 当前拒绝 hybrid，DCP hybrid 只接受 full/Mamba 组合；有效 attention block 还要考虑分片倍率，不能把 Mamba 的时间块也盲目乘上同一倍率。
 
-EAGLE 的命中裁剪受 `use_eagle_block_drop()` 和具体 group 标记控制，不能把“启用任意 EAGLE”直接等价为每组统一减一块。coordinator 针对候选验证需要的额外边界，并记录本轮已验证组；候选缩短后才重新验证，防止同一候选重复丢块。Mamba checkpoint 的调度对齐和 padding 演算见 07，本页保留的是多组最终能否从同一状态恢复。
+EAGLE 的命中裁剪受 `use_eagle_block_drop()` 和具体 group 标记控制，不能把“启用任意 EAGLE”直接等价为每组统一减一块。coordinator 针对候选验证需要的额外边界，并记录本轮已验证组；候选缩短后才重新验证，防止同一候选重复丢块。候选 checkpoint 是否有效由本页判定；**用它挑切分点并算 padding** 归 [[07_vllm_scheduler_analysis#5.4 Mamba split 保证缓存的是哪个位置的状态|Scheduler §5.4]]，本页保留的是多组最终能否从同一状态恢复。
 
-缓存保留策略同样影响可命中的边界。默认 `None` 保留密集可达 checkpoint；0 只保留当前恢复仍需的状态；正 interval 在 sliding-window/Mamba 中按分段边界保留，且必须是 scheduler block 的倍数。窗口要保留相应边界的完整 tail，Mamba 要保留状态 checkpoint；两者还保留当前 replay 所需部分和共享分叉点，不能因“只保留最近”删掉别的请求仍引用的状态。它们改变 hash 可达集合，不绕过 pool 引用规则。
+缓存保留策略同样影响可命中的边界。取 `None` 时保留密集可达 checkpoint——这是 `SingleTypeKVCacheManager.cache_blocks(retention_interval=None)` 的**形参**默认，不是上面那个配置键的默认（配置键 `prefix_cache_retention_interval` 默认是 0）；0 只保留当前恢复仍需的状态；正 interval 在 sliding-window/Mamba 中按分段边界保留，且必须是 scheduler block 的倍数。窗口要保留相应边界的完整 tail，Mamba 要保留状态 checkpoint；两者还保留当前 replay 所需部分和共享分叉点，不能因“只保留最近”删掉别的请求仍引用的状态。它们改变 hash 可达集合，不绕过 pool 引用规则。
 
 ### 5.4 CPU tier：GPU 淘汰后的内容，怎样重新变成可用状态
 
@@ -575,7 +744,7 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 | 分页与预分配 backing | 连续最大长度预留、请求增长搬迁 | 尾块空槽、block table、pool 管理；backing 长驻 | 块越大，短请求尾部浪费越明显；块越小，管理项更多 |
 | GPU prefix cache | 相同前缀的重复 prefill，活跃公共前缀的重复存储 | hash/key、引用、淘汰队列；内容可能重复落块 | 前缀少重复或被频繁驱逐时，收益受限；同名权重变更还需一致性管理 |
 | Window / checkpoint 保留 | 不再需要的历史容量 | 安全进度计算、保留掩码、恢复边界检查 | 在途步骤和共享分叉会延迟回收，不能按乐观进度直接清空 |
-| Partial CoW | hash 粒度内本来要重算的前缀 | 私有目标块、设备 copy、源/目标 pin | 短命中节省的计算可能不足以覆盖 copy 与临时占块；本页未测临界点 |
+| Partial CoW（受 §5.1 能力门约束） | 相对物理块边界本来要重算、但已形成完整 hash 单元的前缀 | 私有目标块、设备 copy、源/目标 pin | 短命中节省的计算可能不足以覆盖 copy 与临时占块；本页未测临界点 |
 | Hybrid 与 state packing | 不同历史长度/state 密度可按需持有容量 | padding、分组和投影、共同命中重查 | 最大组字节跨度与每请求 id 数共同限制并发；不支持的布局需 fallback 或拒绝 |
 | Native CPU tier | GPU 淘汰后的再次计算机会成本 | host 内存、GPU↔CPU 字节传输、job 元数据、完成等待 | 复用距离、复制链路与可隐藏窗口决定是否划算；GPU 容量仍是执行准入门 |
 | 安全释放与观测 | 避免在用内容被覆盖，保留可解释的状态信号 | 延迟队列、pin、完成汇总、事件统计 | 请求完成可能早于容量重新可用，usage 与活跃请求数不总同步 |
@@ -604,6 +773,10 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 | Mamba 请求结束但块未归零 | 可能还有执行保护或 connector 保存任务的独立 pin；完成消息不代表所有引用都消失 |
 | hybrid padding 或 group 变多 | 每 block 字节跨度、每请求所需 pool id 数都影响容量；PP 还要按局部投影与最小共同块数重算 |
 | CPU lookup 为 `HIT_PENDING` | 有容量和在途内容，不等于现在可加载；失败 store 会删除未完成条目 |
+| 日志报 HMA 被自动关闭（None 分支的 connector gate） | 各组不再按自己的窗口回收，SWA 层退化为全长持有：容量与性能都会变，但不会报错。显式开启（`disable_hybrid_kv_cache_manager=False`）遇到不支持的 connector 则是 `create_connector` 抛 `ValueError` 的启动硬失败，两种结局不能混为一谈（§4.5.1） |
+| 同一请求在 full 组被拒，SWA/chunked 组看起来还有余量 | 回收型组的准入上限被 cap 截短（§3.3.1），full 组仍要按整段长度计；各组联合计数，任一组超池即拒绝，不能只看剩余块数最多的那一组 |
+| 启动时 free 显存低于 startup plan 记录的基线 | plan 未被应用，回落到完整 profiling；本次容量因此可能与上次同配置启动不同（§3.1.3） |
+| `num_gpu_blocks_override` 生效 | `available_memory` 被按 override 反算改写，容量门与最终配置仍自洽，但它不再反映实测显存；此时用块数推断可用显存是错的（§3.1.3） |
 
 这些例子依据固定基线源码和已有回归测试重建，教学数字已明确标注；本页没有实跑 GPU kernel、跨 worker 传输或性能基准，不能据此给出实际命中率与时延结论。
 
@@ -623,6 +796,12 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 10. `vllm/v1/kv_offload/cpu/manager.py::CPUOffloadingManager.prepare_store`、`complete_store`、`prepare_load`、`complete_load`；`vllm/v1/kv_offload/cpu/gpu_worker.py::SingleDirectionOffloadingHandler.get_finished`：host 内容状态与设备完成。
 11. `vllm/v1/engine/core.py::EngineCore._initialize_kv_caches`、`__init__`、`step`；`vllm/v1/core/kv_cache_utils.py::generate_scheduler_kv_cache_config`；`vllm/v1/worker/gpu_worker.py::Worker.initialize_from_config`：启动两端配置与执行结果交付。
 12. `vllm/v1/core/kv_cache_coordinator.py::get_kv_cache_coordinator`、`KVCacheCoordinator.__init__`、`free`；`vllm/v1/core/single_type_kv_cache_manager.py::get_manager_for_kv_cache_spec`、`register_all_kvcache_specs`、`SingleTypeKVCacheManager.free`；`vllm/v1/core/sched/scheduler.py::Scheduler._get_local_prefix_cache_hit`、`_free_request`、`_free_request_blocks`、`_drain_deferred_frees`：选择、查询跳转、所有权及安全释放。
+13. `vllm/v1/kv_cache_interface.py::SlidingWindowSpec.max_admission_blocks_per_request`、`ChunkedLocalAttentionSpec.max_admission_blocks_per_request`；`vllm/config/vllm.py::VllmConfig.max_in_flight_tokens`；`vllm/v1/core/single_type_kv_cache_manager.py::SingleTypeKVCacheManager.get_num_blocks_to_allocate`：启动预算与 full-sequence admission 共用回收型容量上限，但本步实际分配不套 cap。
+14. `vllm/config/vllm.py::VllmConfig.__post_init__`；`vllm/distributed/kv_transfer/kv_connector/factory.py::KVConnectorFactory.supports_hma_config / KVConnectorFactory.create_connector`；`vllm/v1/core/kv_cache_utils.py::unify_hybrid_kv_cache_specs`、`_promote_local_kv_cache_specs`：HMA 三态解析与有限的 full-allocation fallback。hash 初始化/增量路线见 §2.3，Mamba align 状态生命周期与针对性测试见 §5.1.3。
+15. `vllm/v1/core/kv_cache_coordinator.py::KVCacheCoordinator.cache_blocks`、`HybridKVCacheCoordinator._align_cacheable`、`HybridKVCacheCoordinator.cache_blocks`；`vllm/v1/core/sched/scheduler.py::Scheduler.__init__`：普通 replay 尾、hybrid 对齐与 EAGLE 特殊边界，不能统一替换为一次减 lookahead。
+16. `vllm/v1/worker/gpu_worker.py::Worker.determine_available_memory`；`vllm/utils/mem_utils.py::memory_profiling`；`vllm/v1/worker/startup_plan.py::maybe_apply_startup_plan`；`vllm/v1/engine/core.py::EngineCore._initialize_kv_caches`；`vllm/v1/core/kv_cache_utils.py::get_kv_cache_configs`：实测显存到每 worker 字节预算、groups 和统一 pool 容量；计算及旁路限制见 §3.1.3。
+
+17. §5.1.3 与 §5.1.2 正文引用的两个回归入口，在此点名以便按名定位：`tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py::test_internal_checkpoint_uses_partial_hash_lifecycle`（内部 checkpoint 的 partial hash 生命周期）、`tests/v1/core/test_single_type_kv_cache_manager.py::test_mamba_speculative_block_relocation_requires_exclusive_ownership`（spec 块重定位要求独占所有权）。
 
 图解源材料归档：`raw/02_engineering/03_infer_frameworks/vllm/kv_cache_diagram_20260911/`。其中保存旧版 HTML 原件、对齐本页基线后的 HTML / Markdown 和六幅 SVG；本文维护容量与所有权解释，具体元素地址由 Attention Backend 页维护。
 
@@ -631,6 +810,6 @@ GPU pool 与 CPU tier 都要协调内容身份和使用期间的保护，但完�
 - [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] —— 决定 token/request admission、抢占与本页分配失败后的处理，并推导 Mamba checkpoint 对齐。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 将本页物理布局与 block table 转为 backend 参数，说明 manager/kernel 粒度转换。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照 compact row 与 stable row，并追踪 zero、CoW copy 和 forward 的设备顺序。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 展开 lookahead、draft rejection 与哪些 token 内容可以登记为缓存。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 展开 lookahead、draft 生成与 rejection；由本页 §3.3.3 闭合对应的 cache tail 登记边界。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] —— 展开跨 Engine connector、producer/consumer、lease 与远端保存完成。
 - [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 将 prefix hit、eviction、GPU/CPU usage 与 allocation failure 接到生产信号。

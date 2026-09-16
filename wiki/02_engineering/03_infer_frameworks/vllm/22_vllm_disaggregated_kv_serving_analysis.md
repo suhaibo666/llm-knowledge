@@ -4,10 +4,10 @@ title: "vLLM 分离式 KV Serving：用跨 Engine 协议交接可计算状态"
 
 # vLLM 分离式 KV Serving：用跨 Engine 协议交接可计算状态
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-06）
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：同一请求的 KV 如何跨 Engine 交接、取得可计算性，并解除源和目标的持有。
 > **适用范围**：V1 KV connector 的 Scheduler/worker 合同，NIXL pull/push、MoRIIO、Mooncake 直连与 Mooncake store 的不同实现，以及 `MultiConnector` 的组合语义；源码与测试静态核验，未实跑多机或外部传输服务。
-> **最近更新**：2026-09-14。按匹配、地址映射、提交与完成重写机制说明，并保留各数据面的释放与错误边界。
+> **最近更新**：2026-09-16。补清 NIXL HMA 失败仍被报告为接收完成的缺口，并保留匹配、地址映射、提交、释放与错误边界。
 
 ## 1. 十二个 prompt token，搬完三个 block 为什么还要再算一个 token
 
@@ -46,7 +46,7 @@ $$
 
 factory 通过注册名延迟导入类；配置了 `kv_connector_module_path` 时，外部模块优先于内建注册表，并要求类接受第三个构造参数 `kv_cache_config`。空模块路径会被拒绝，单纯把类名改成一个未注册名字也不能接入。冻结基线有 16 个注册名、15 个不同类，其中 `NixlConnector` 是 pull 的兼容别名；完整注册名、demo、offload 与第三方接入边界见 §14.5，字段默认值见 §11。
 
-选中家族后仍有下一层选择。MoRIIO 的 `read_mode` 决定 READ/WRITE，Mooncake store 的 `_select_store_layout` 决定 rank-local 或两种 TP-sharded payload；这会改变匹配返回值、等待点或地址分段，不能从 `kv_connector` 一个字符串推导全部行为。EC connector 由独立的 `ec_transfer_config` 选择，见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]；本地 CPU offload 见 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。实例发现与将请求送到匹配 P/D 的控制面由 [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]]解释。
+选中家族后仍有下一层选择。MoRIIO 的 `read_mode` 决定 READ/WRITE，Mooncake store 的 `_select_store_layout` 决定 rank-local 或两种 TP-sharded payload；这会改变匹配返回值、等待点或地址分段，不能从 `kv_connector` 一个字符串推导全部行为。EC connector 由独立的 `ec_transfer_config` 选择，见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]；本地 CPU offload 见 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。实例发现与“把请求送到 `transfer_mode` 匹配的 P/D 实例”这段路由，**本域目前没有 owner**：`examples/disaggregated/` 下的 proxy/router 参考实现在基线下没有任何页面展开，该缺口已提交 `planning-codebase-analysis` 裁决（§14.4 末行同样登记）。[[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有的是 **DP 副本内**的负载反馈与路由，不是 P/D 之间的路由。
 
 ## 3. 身份相同、协议兼容、布局可变换是三种检查
 
@@ -92,7 +92,7 @@ Scheduler 和 worker 各有一份 connector：前者决定哪个请求要哪些 
 
 这几步不能合并成“命中后把 computed 加 12”。分配时若立即把目标发布进 prefix cache，另一个请求就可能读到还没写入的内容；传输尚在读取 P 时若归还源 block，allocator 又可能让新请求覆盖它。图中的暂存状态同时保护这两个方向。
 
-<!-- Figure spec: 问题=12-token remote hit 如何从承诺变成可计算且安全回收；类型=状态/数据映射原理图；实体=P三源块、D三目标块、有效前缀计数与失败分支；关系=同一逻辑位置的复制及computed状态提交；图独有信息=allocation不发布cache、仅invalid41的一般恢复截回4而NIXL整组失败截回0、成功仍重算第12token；阅读顺序=左到右；无call graph；证据=Scheduler.schedule/_update_waiting_for_remote_kv/_update_requests_with_invalid_blocks与NixlPullConnectorWorker._read_blocks；数值=声明的单组同构算例；验证=Mermaid渲染和实图检查。 -->
+<!-- Figure spec: 问题=12-token remote hit 如何从承诺变成可计算且安全回收；类型=状态/数据映射原理图；实体=P三源块、D三目标块、有效前缀计数与失败分支；关系=同一逻辑位置的复制及computed状态提交；图独有信息=普通full-attention算例中allocation不发布cache、仅invalid41的一般恢复截回4、非HMA的NIXL整组失败截回0；右侧另切换为含非FullAttentionSpec的HMA变体，说明失败因缺invalid仍走正常晋升并缓存未确认有效的目标；成功仍重算第12token；阅读顺序=左到右；无call graph；证据=Scheduler.schedule/_update_waiting_for_remote_kv/_update_requests_with_invalid_blocks与NixlBaseConnectorWorker.__init__/_handle_failed_transfer/get_finished；数值=声明的单组同构算例与独立HMA变体；验证=Mermaid渲染和实图检查。 -->
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"primaryColor":"#ffffff","primaryTextColor":"#111827","primaryBorderColor":"#9ca3af","secondaryColor":"#f9fafb","tertiaryColor":"#f9fafb","lineColor":"#6b7280","clusterBkg":"#f9fafb","clusterBorder":"#9ca3af","edgeLabelBackground":"#ffffff","actorBkg":"#ffffff","actorBorder":"#9ca3af","actorTextColor":"#111827","actorLineColor":"#9ca3af","signalColor":"#374151","signalTextColor":"#111827","noteBkgColor":"#fff7ed","noteBorderColor":"#ea580c","noteTextColor":"#111827","labelBoxBkgColor":"#f9fafb","labelBoxBorderColor":"#9ca3af","labelTextColor":"#111827","loopTextColor":"#111827"}}}%%
 flowchart LR
@@ -101,19 +101,24 @@ flowchart LR
   end
   subgraph D["D：同一请求 R"]
     A["分配 40 / 41 / 42<br/>computed = 12 是承诺<br/>等待远端 KV"]
-    V["成功：缓存有效 KV<br/>computed 12 → 11"]
+    V["正常信号：缓存目标 KV<br/>computed 12 → 11"]
     C["重算位置 11<br/>得到 logits 后采样"]
     F["仅目标 41 被报告无效<br/>有效前缀 12 → 4<br/>不同于 NIXL 整笔失败"]
     R["recompute 策略<br/>接收收尾后<br/>重算剩余部分"]
-  H["本例 NIXL handle 失败<br/>整组 40 / 41 / 42 无效<br/>computed 12 → 0"]
+    H["非 HMA：NIXL handle 失败<br/>整组 40 / 41 / 42 无效<br/>computed 12 → 0"]
+    X["独立 HMA 变体：含非 full-attention spec<br/>handle 失败无 invalid block<br/>仍报 finished_recving"]
+    Y["Scheduler 按正常分支<br/>缓存未确认有效的目标块<br/>全命中时才 N → N-1"]
   end
   S -->|R 的远端源块元数据| A
   A -->|接收收尾且无 invalid| V
   V --> C
   A -->|仅 41 无效| F
-  F --> R
+  F -->|仅 recompute 策略| R
   A -->|整组目标被标无效| H
-  H --> R
+  H -->|仅 recompute 策略| R
+  A -->|HMA 失败例外| X
+  X -->|错误集为空| Y
+  Y --> C
   N["P 收到对应请求的通知<br/>或源持有期限到期"]
   S -.->|为 R 记录源持有期限| N
   classDef pending fill:#fff,stroke:#9ca3af,color:#111827;
@@ -121,10 +126,12 @@ flowchart LR
   classDef failed fill:#fff7ed,stroke:#ea580c,color:#111827;
   class A pending;
   class V,C ready;
-  class F,H failed;
+  class F,H,X,Y failed;
 ```
 
-图中失败分支是 **Scheduler 仅收到 `invalid_block_ids` 为 41 时的一般恢复规则示例**，并选择显式 `recompute` 策略；默认 `fail` 会终止请求。它不是当前 NIXL 整笔 handle 失败的重放：`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._handle_failed_transfer` 在本例非 HMA、无本地命中的条件下执行 `self._invalid_block_ids.put(set(meta.local_block_ids[0]))`，把该请求整组目标 `[40,41,42]` 标为 invalid，因此 computed 从 12 截回 **0**。一般规则按第一个 invalid block 前的连续有效前缀截断（`request.num_computed_tokens = idx * self.block_size`），不能保留其后的孤立"成功块"。
+图中左侧失败分支是 **Scheduler 仅收到 `invalid_block_ids` 为 41 时的一般恢复规则示例**，并选择显式 `recompute` 策略；默认 `fail` 会终止请求。非 HMA 的 NIXL 整笔 handle 失败由 `vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._handle_failed_transfer` 执行 `self._invalid_block_ids.put(set(meta.local_block_ids[0]))`，把该请求整组目标 `[40,41,42]` 标为 invalid，因此 computed 从 12 截回 **0**。一般规则按第一个 invalid block 前的连续有效前缀截断（`request.num_computed_tokens = idx * self.block_size`），不能保留其后的孤立"成功块"。
+
+右侧 HMA 分支不是左侧普通 full-attention 单组算例的同一配置：`NixlBaseConnectorWorker.__init__` 令 `_is_hma_required=True` 需要**两个条件同时成立**：`not scheduler_config.disable_hybrid_kv_cache_manager`，**且** cache groups 中存在非 `FullAttentionSpec`。也就是说显式关掉 hybrid manager 就退回下面那条普通的 invalid-block 合同，所以图在这里切换到独立的 hybrid 变体。该函数带 TODO，HMA 为真时跳过 `_invalid_block_ids`，但仍把 req_id 放入 `_failed_recv_reqs`；`get_finished` 随后又把这些 IDs 合入 `finished_recving`。Scheduler 因此看见“接收已收尾且没有 invalid block”，在 `_update_waiting_for_remote_kv` 的正常分支缓存未确认有效、可能尚未写完或未完成后处理的目标块，并且——**仅当 `num_computed_tokens == num_tokens` 即整段 prompt 全命中时**——把已承诺进度 N 改成 N−1 再继续（源码注释：要重算最后一个 token 才能采下一个）；非全命中时进度不动。这里不是把失败降级为重算，而是把失败误呈现成成功；当前源码没有 HMA 自动恢复或显式 fail 的保护。
 
 <!-- Figure spec: 问题=一次跨 Engine KV 交接从哪里出发、经过哪些边界、又从哪两条边回到起点；类型=闭环位置图；实体=Scheduler、scheduler connector、本地 allocator、worker connector、远端 Engine/store、executor 聚合；关系=每条边标注跨越该边界的真实对象名；图独有信息=两条回流边（晋升回 schedule、request_finished 回 scheduler connector）说明这不是单向流水；阅读顺序=自顶向下再回流；证据=Scheduler.schedule / ActiveKVConnector / KVOutputAggregator / Scheduler.update_from_output；验证=Mermaid 渲染。 -->
 ```mermaid
@@ -258,7 +265,8 @@ ActiveKVConnector.post_forward(finished_req_ids, wait_for_save)
 └─ clear_connector_metadata()
 
 ActiveKVConnector.no_forward(scheduler_output)           [0-token step]
-└─ pre_forward + post_forward，返回 connector-only ModelRunnerOutput（0-token step 仍推进 I/O）
+└─ pre_forward + post_forward(finished_req_ids, wait_for_save=False)，返回 connector-only ModelRunnerOutput
+   （0-token step 仍推进 I/O；`wait_for_save=False` 是关键差别——这一步不等 save 完成）
 
 Model Runner V1 的另一时机                               [vllm/v1/worker/gpu_model_runner.py]
 ├─ defer_kv_connector_finalize = self.speculative_config is not None        [GPUModelRunner.execute_model]
@@ -286,7 +294,9 @@ MRv1 的投机解码还需要保存 drafter 写出的 KV。完成集合仍在 ta
 
 选择 `recompute` 的失败路径沿用同一个接收收尾门，但复用的是截断后的前缀。`_update_requests_with_invalid_blocks` 已经把计数改到第一个 invalid block 之前，`failed_recving_kv_req_ids` 标记这次失败。`num_computed_tokens > 0` 时，只缓存那段有效前缀；若 `self.needs_kv_cache_zeroing` 为真，还要 `record_blocks_for_zeroing`，补上失败 load 曾跳过的清零。计数 `== 0` 时，`kv_cache_manager.free(request)` 归还整次分配后重来。两条路径最后都设置 `request.status = PREEMPTED if request.num_preemptions else WAITING`，让 R 重新参加准入。
 
-默认 `fail` 的请求终态不需要等这道门。`Scheduler.update_from_output` 先对 failed IDs 调 `finish_requests(...FINISHED_ERROR)`，将请求移出队列并生成 ERROR 输出，随后才消费本步 transfer 完成；只是目标 block 仍可能延迟到接收收尾后再释放。因此 `finished_recving` 证明的是接收可收尾，成功还需要错误集为空及设备后处理完成。它既不是独立成功标志，也不是所有失败请求进入终态的先决条件。队列与重新准入规则见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07]]。
+默认 `fail` 的请求终态不需要等这道门。`Scheduler.update_from_output` 先对 failed IDs 调 `finish_requests(...FINISHED_ERROR)`，将请求移出队列并生成 ERROR 输出，随后才消费本步 transfer 完成；只是目标 block 仍可能延迟到接收收尾后再释放。因此 `finished_recving` 证明的至多是 connector 报告接收可收尾，它既不是独立成功标志，也不是所有失败请求进入终态的先决条件。
+
+NIXL 的 HMA 失败暴露了更强的边界：`_handle_failed_transfer` 在 HMA 下不写 invalid block，却仍经 `_failed_recv_reqs` 让 `get_finished` 报 `finished_recving`。此时“错误集为空”也不能证明成功；Scheduler 会执行正常缓存分支，把未确认有效、可能尚未写完或未完成后处理的目标块发布为可用 KV，再在整段 prompt 全命中时把已承诺进度 N 改成 N−1 继续（非全命中不减）。非 HMA 的 invalid-block 恢复合同不能外推到 HMA，当前基线也没有在 Scheduler 侧识别这一缺口。队列与重新准入规则见 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|07]]。
 
 ### 5.4 `delay_free_blocks`、partial tail 与被拒请求的清理
 
@@ -309,7 +319,7 @@ NIXL pull 的具体实现（`vllm/distributed/kv_transfer/kv_connector/v1/nixl/p
 
 另有三个**不在对外返回字典中、但会被内部读取或置位**的键：`remote_block_size`（`vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py` 的 `ReqMeta` 会读它，供 push 侧异构 block size）、`_p_side_truncated`（Mamba P 侧截断的幂等标记，`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py::NixlBaseConnectorScheduler._truncate_mamba_request_for_prefill`）、`_remote_blocks_processed`（`vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py::NixlPullConnectorScheduler.update_state_after_alloc` 每次进入 recv 分支末尾都与 `do_remote_prefill = False` 一起置 True，但只在 bidirectional 的 `do_remote_decode` 条件里被读，用来防止同一请求触发第二次传输）。MoRIIO 与 Mooncake 直连另有各自的键（`transfer_id`、`remote_bootstrap_addr`、DP rank 相关字段）。
 
-**拒绝与 abort 的清理**是同一个函数里的另一支，也是最容易漏掉的一条：若 `request_finished` 时 `params["do_remote_prefill"]` **仍为 True**，说明 `update_state_after_alloc` 从未被调用——请求在被调度前就被中止了，典型情形是 D 侧服务层通过 `abort_immediately` 拒绝了它。此时 pull scheduler 塞一条**空 block 列表**进 `_reqs_need_recv[req_id] = (request, [], ())`，让 worker 仍然发出通知去让 P 释放它的 prefill blocks，否则那批 block 会一直搁浅到 lease 到期。非正常结束状态（不是 `FINISHED_LENGTH_CAPPED` / `FINISHED_STOPPED`）则进 `_reqs_not_processed` 并从 `_reqs_need_save` 里摘掉。push scheduler 与 Mooncake 直连的 `request_finished` 各有一份等价分支。
+**拒绝与 abort 的清理**是同一个函数里的另一支，也是最容易漏掉的一条：若 `request_finished` 时 `params["do_remote_prefill"]` **仍为 True**，说明 `update_state_after_alloc` 从未被调用——请求在被调度前就被中止了，典型情形是 D 侧服务层通过 `abort_immediately` 拒绝了它。此时 pull scheduler 塞一条**空 block 列表**进 `_reqs_need_recv[req_id] = (request, [], ())`，让 worker 仍然发出通知去让 P 释放它的 prefill blocks，否则那批 block 会一直搁浅到 lease 到期。非正常结束状态（不是 `FINISHED_LENGTH_CAPPED` / `FINISHED_STOPPED`）则进 `_reqs_not_processed` 并从 `_reqs_need_save` 里摘掉。push scheduler 与 Mooncake 直连的 `request_finished` 各有一份等价分支。**MoRIIO 这里更严**：它的 `request_finished` 只接受 `request.status == FINISHED_LENGTH_CAPPED` 这一种（`!= FINISHED_LENGTH_CAPPED` 即 `return False, None`），不像 NIXL 两种都收——正常 stop 结束的 P 侧请求在 MoRIIO 下不会进入 deferred-free 的传输路径（§6.3）。
 
 ## 6. 四类直连实现：五条数据路径如何归还完成证据
 
@@ -465,7 +475,9 @@ flowchart TB
 
 WRITE 失败也需要区分两种结束：`MoRIIOWriter._write_worker_loop/_process_deferred_tasks` 捕获异常或目标分配等待超时后调用 `_mark_request_done`，它生成 P 本地 ACK、清理 transfer 状态，**没有发送成功路径的 `write_done` 给 D**。已提交的部分 WRITE 没有在本仓库中被反向回滚。故 P 源可以解除持有，而 D 仍不能由这个本地 ACK 推导可计算；`completion_notified` 在外部 statuses 等待前就置位，也不能当作已发送通知的观测值。
 
-### 6.4 `MooncakeConnector`：请求面走 ZMQ，数据面走 RDMA WRITE
+**seal 路径上还有一处同步等待，它的失败不走上面那条 `_mark_request_done`。** 取走并清空 `transfer_statuses`、置 `completion_notified` 之后，代码会**同步**调用 `moriio_wrapper.waiting_for_transfer_complete(transfer_statuses)` 才去发通知；该函数以 1 ms 轮询等待，直到全部完成或超过 `transfer_timeout`（`kv_connector_extra_config` 的可配项，默认见 `MoRIIOConstants.DEFAULT_TRANSFER_TIMEOUT`），失败或超时即 `raise TransferError("N/M transfers failed…")`。这个异常**在本仓库内没有对应的捕获与恢复分支**，它发生时 `completion_notified` 已经置位、`transfer_statuses` 已被清空，因此既不会重试也不会再发通知——这是 §11 配置表里 `transfer_timeout` 真正的后果。
+
+### 6.4 `MooncakeConnector`：bootstrap 走 HTTP，请求面走 ZMQ，数据面走 RDMA WRITE
 
 D 知道需要什么内容，并不意味着必须由 D 的传输引擎执行 READ。Mooncake 直连把需求请求与字节写入分开：D 先发出目标信息，P 等源就绪后向 D 写入。它直接交接两个 Engine 的设备内容；§7 的 `MooncakeDistributedStore` 则先建立可供未来读者查找的共享对象，`vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py` 的模块说明也明确区分 direct P2P 与 shared KV cache pool。
 
@@ -687,7 +699,7 @@ worker 以 `max(old_expiry, now + lease_extension)` 续期。**TTL 重定位不�
 
 当 connector 确实上报目标 `invalid_block_ids` 时，宿主失败策略由 `KVTransferConfig.kv_load_failure_policy` 选择，**默认 `fail`**；§6 的 MoRIIO 与 Mooncake 直连缺口不能由这个配置自动补齐。`recompute` 先撤销失败 block 及其后续 computed 前缀，等待接收收尾后重算；`fail` 将受影响请求以 KV transfer error 结束。同步 load 还涉及已发布共享 prefix 的处理；详情由 `Scheduler._handle_invalid_blocks/_update_requests_with_invalid_blocks` 和对应测试约束，不能把异步算例外推到所有共享块。
 
-错误上报本身也受实现范围限制：`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._handle_failed_transfer` 对 HMA 仍有 TODO，只有非 HMA 分支向 invalid block 队列填入目标 IDs。首次 multi-read 失败可先报告请求失败，其他 handle 后续继续清理。因此"通用协议需要错误失效"是合同，不能写成"所有 hybrid group 的自动恢复已经完整实现"；也不能把失败 `finished_recving` 泛化为所有底层 handle 都已成功或清空。进程失联与具体故障观测归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|23]]。
+错误上报本身也受实现范围限制：`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._handle_failed_transfer` 对 HMA 仍有 TODO，只有非 HMA 分支向 invalid block 队列填入目标 IDs；两种分支都会把 req_id 放入 `_failed_recv_reqs`。`NixlBaseConnectorWorker.get_finished` 无条件将这批失败 IDs 合入 `done_recving`，但 HMA 分支没有对应 invalid blocks。结果是 Scheduler 把它当作“无错误的接收完成”，缓存未确认有效、可能尚未写完或未完成后处理的目标块并继续执行，而不是进入 `fail` 或 `recompute`。首次 multi-read 失败还可先报告请求，其他 handle 后续继续清理。因此"通用协议需要错误失效"是合同，不能写成"所有 hybrid group 的自动恢复已经完整实现"；失败 `finished_recving` 也不能泛化为底层 handle 成功或目标可读。进程失联与具体故障观测归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|23]]。
 
 ## 10. 权重更新、后台 job 与真正清空的边界
 
@@ -842,7 +854,7 @@ grep -rnE "os\.environ|os\.getenv" $D/nixl $D/moriio $D/mooncake $D/multi_connec
 | `VLLM_MOONCAKE_STORE_TIER_LOG` | `False` | `envs`；同文件分层日志 | Mooncake store |
 | `VLLM_KV_CACHE_LAYOUT` | 见 `envs.py` | `vllm/v1/attention/backends/utils.py`；与 connector 的 `get_required_kvcache_layout` 在 `vllm/distributed/kv_transfer/kv_connector/utils.py::get_kv_connector_cache_layout` 处交互 | 不在五家目录内；本页只拥有 connector 一侧的强制权，落地归 **10** |
 | `VLLM_KV_OFFLOAD_MAX_BATCH_DESCRIPTORS` | `0` | `vllm/v1/simple_kv_offload/cuda_mem_ops.py` | → **08** |
-| `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES` | `True` | KV event 发布 | → **23** |
+| `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES` | `True` | KV event 发布 | → [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis#5.3 KV cache 事件：从 block 生命周期发布到外部前缀路由|23 §5.3]] |
 | `VLLM_NIXL_EP_MAX_NUM_RANKS` | `32` | `vllm/distributed/device_communicators/all2all.py`，**是 EP all-to-all 的参数，与 KV connector 无关**，名字里的 NIXL 容易误导 | → **18** |
 
 LMCache 自有的 `LMCACHE_CONFIG_FILE`、`LMCACHE_USE_UPSTREAM_MP`、`LMCACHE_FORCE_SKIP_SAVE` 也是裸 `os.environ` 读取，属于不展开的第三方后端，这里只点名。
@@ -909,7 +921,7 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 
 **这一页是什么。** 它是 **V1 KV connector 的跨 Engine 协议层**：把「远端有多少可复用 token」变成一次可提交的分配承诺，把 KV 字节的到达变成一条可被 Scheduler 消费的完成证据，并规定源与目标各自何时解除持有。它同时拥有 connector **反向约束宿主**的那几个接口（强制 KV layout、否决 full CUDA graph、声明能否补齐 divergent hybrid 命中、声明 KV 是否必须可靠投递），以及把多个 connector 拼在一起时的记账语义。
 
-**它不是什么。** 它不是本地 block allocator：block 分配、引用计数、prefix cache 与 native CPU offload 默认路径归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。不是准入器：`num_computed_tokens` 的调度语义、waiting 队列与重算准入归 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]。不是 attention 实现：`supports_kv_connector` 的 backend 过滤与 layout 落地归 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]]。不是 P/D 实例路由：`examples/disaggregated/` 下的 proxy/router 参考实现、实例入口与 `transfer_mode` 匹配的路由约定归 [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]]。不是 encoder cache 传输：EC connector 走独立的 `ec_transfer_config` / `ECConnectorOutput`，与 encoder-only runner 一起归 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]。不是并行几何本身：TP/PP/DP/DCP/PCP 的 group 构造归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]，本页只拥有它们在 **KV 平面**上的跨 Engine 约定。不是编译层：`requires_piecewise_for_cudagraph` 被触发之后的编译后果归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。不是观测面：transfer latency、lease expiry 与 invalid blocks 的信号及观测边界归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|可观测性与可靠性]]。不是权重版本协议：`set_weight_version` 与在线更新链归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|权重传输与在线更新]]。
+**它不是什么。** 它不是本地 block allocator：block 分配、引用计数、prefix cache 与 native CPU offload 默认路径归 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。不是准入器：`num_computed_tokens` 的调度语义、waiting 队列与重算准入归 [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]。不是 attention 实现：`supports_kv_connector` 的 backend 过滤与 layout 落地归 [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]]。不是 P/D 实例路由：`examples/disaggregated/` 下的 proxy/router 参考实现、实例入口与 `transfer_mode` 匹配的路由约定**在基线下全域无 owner**，已提交规划裁决（§14.4 末行），本页只登记“路由方必须送到匹配实例”这一条约束。不是 encoder cache 传输：EC connector 走独立的 `ec_transfer_config` / `ECConnectorOutput`，与 encoder-only runner 一起归 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]。不是并行几何本身：TP/PP/DP/DCP/PCP 的 group 构造归 [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]，本页只拥有它们在 **KV 平面**上的跨 Engine 约定。不是编译层：`requires_piecewise_for_cudagraph` 被触发之后的编译后果归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。不是观测面：各 connector 实际导出哪些 telemetry 归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis#5.2 KV 传输：通用搬运 stats，connector 决定实际指标|可观测性 §5.2]]，block residency 事件的发布与外部路由语义归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis#5.3 KV cache 事件：从 block 生命周期发布到外部前缀路由|可观测性 §5.3]]。不是权重版本协议：`set_weight_version` 与在线更新链归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|权重传输与在线更新]]。
 
 ### 14.1 本页拥有的二十条核心流程
 
@@ -930,7 +942,7 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 | ⑪ Mooncake store put/lookup 与 job ref | future consumer 未知时，GPU 源引用按什么归还 | `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py::MooncakeStoreScheduler._reference_save_blocks/update_connector_output`；`vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/protocol.py` 的 lookup/reset admin 消息 | `_pinned_saves[job] = (block_ids, num_workers)`，全部 worker 报告后 `pool.free_blocks` |
 | ⑫ layerwise wait/save | 逐层写出的实现在哪一点同步 | `vllm/model_executor/layers/attention/kv_transfer_utils.py::maybe_transfer_kv_layer` → `wait_for_layer_load` / `save_kv_layer` | 该层 attention 之前 load 已就绪、之后 save 已提交；NIXL 两个方法都是空实现 |
 | ⑬ 跨 worker/step 完成聚合 | 一个 req 要几个 rank 都报完成才算完成 | `vllm/distributed/kv_transfer/kv_connector/utils.py::KVOutputAggregator.from_connector/aggregate` | expected 取 `connector.get_finished_count() or world_size`，也可被 `kv_output.expected_finished_count` 动态改写 |
-| ⑭ invalid block 截断与失败策略 | 部分字节坏了，哪些 computed 假设必须撤回 | `Scheduler._handle_invalid_blocks/_update_requests_with_invalid_blocks`；`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._handle_failed_transfer` | `request.num_computed_tokens = idx * block_size`；`recompute` 继续、`fail`（默认）以 KV transfer error 结束请求 |
+| ⑭ invalid block 截断与失败策略 | 部分字节坏了，哪些 computed 假设必须撤回 | `Scheduler._handle_invalid_blocks/_update_requests_with_invalid_blocks`；`NixlBaseConnectorWorker._handle_failed_transfer/get_finished` | 非 HMA 时 `request.num_computed_tokens = idx * block_size`，再按 `recompute` / `fail` 处理；HMA 的 NIXL 失败不产出 invalid block，却仍报 `finished_recving`，当前会误走正常缓存分支 |
 | ⑮ 完成 → 晋升或失败收尾 | 成功/重算请求如何恢复准入，失败请求如何归还目标 | `Scheduler._update_from_kv_xfer_finished` → `_try_promote_blocked_waiting_request` → `_update_waiting_for_remote_kv` | `status` 变为 `PREEMPTED if request.num_preemptions else WAITING`；失败分支走 `record_blocks_for_zeroing` 或整体 `free` |
 | ⑯ delay-free、partial tail 与拒绝清理 | 终结的请求什么时候可以真的还 block | `KVConnectorBase_V1.request_finished/register_finished_partial_tail`；`Scheduler._connector_finished/_free_request` | `_free_request` 把 connector 的返回值或进 `delay_free_blocks`；为真则 block 留到 `get_finished()` 回报该 req_id 才 `_free_blocks` |
 | ⑰ lease、heartbeat 与 expiry | 健康但排队的 D 怎样不让 P 提前释放源 | `vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py::NixlBaseConnectorScheduler.on_new_request/build_connector_meta`；`vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py::NixlBaseConnectorWorker._send_heartbeats/_handle_heartbeat` | `_reqs_need_send[req_id]` 一条 deadline；worker 以 `max(old_expiry, now + _lease_extension)` 续期 |
@@ -957,7 +969,7 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 | ⑪ Mooncake store job ref | 条件 | `kv_connector` 为 `MooncakeStoreConnector` | §7 |
 | ⑫ layerwise wait/save | 条件 | 实现使用相应层级挂点（LMCache `use_layerwise`；MoRIIO READ 的层前 wait、WRITE 的层后 save）；NIXL 为空实现 | §5.2、§11.2 |
 | ⑬ 完成聚合 | 基础 | 每步都做；`get_finished_count()` 返回 `None` 时退化为 world size | §5.2 |
-| ⑭ invalid block 截断 | 条件 | worker 上报了非空 `invalid_block_ids` | §5.3、§9 |
+| ⑭ invalid block 截断 | 条件 | worker 上报了非空 `invalid_block_ids`；NIXL 仅非 HMA 失败会这样上报，HMA 失败例外见 §5.3、§9 | §5.3、§9 |
 | ⑮ 晋升或失败收尾 | 条件 | 请求处于 `WAITING_FOR_REMOTE_KVS`；默认fail终态可先由finish_requests产生 | §5.3 |
 | ⑯ delay-free 与拒绝清理 | 基础 | 每个终结请求都调 `request_finished`；是否延迟释放由返回值决定 | §5.4 |
 | ⑰ lease 与 heartbeat | 条件 | NIXL 家族且 `params["do_remote_prefill"]` 为真；源码明确不覆盖 bidirectional 反向复用请求 | §9 |
@@ -984,7 +996,7 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 | ⑪ | worker 开始一次 save | `_reference_save_blocks` 为 job 分配 ID 并 pin 所有可能被读的非空 block（含上次成功 offset 之后的补写范围，边界状态去重只加一次） | `update_connector_output` 把 remaining 减到 0，`pool.free_blocks(reversed(...))` 归还 job 那份引用 |
 | ⑫ | 使用该 hook 的 attention 层 | `wait_for_layer_load(layer_name)` → 该层计算 → `save_kv_layer(...)` | 由实现决定；NIXL 两个方法都是 `pass`，不能把每个 hook 都当成必有一次阻塞 I/O |
 | ⑬ | 每步 executor 收齐各 rank 的 `ModelRunnerOutput` | 读每个 rank 的完成集合 → 对 req_id 计数 → 计满才并入 rank 0 输出 | 聚合后的 `KVConnectorOutput` 随 rank 0 的 `ModelRunnerOutput` 回到 Scheduler |
-| ⑭ | `update_from_output` 收到非空 `invalid_block_ids` | 逐 request 找第一个 invalid block 的 `idx` → `num_computed_tokens = idx * block_size` → 按策略决定继续或作废 | async 分支把 req_id 并入 `failed_recving_kv_req_ids`；sync 分支直接在本步跳过 |
+| ⑭ | `update_from_output` 收到非空 `invalid_block_ids` | 逐 request 找第一个 invalid block 的 `idx` → `num_computed_tokens = idx * block_size` → 按策略决定继续或作废 | async 分支把 req_id 并入 `failed_recving_kv_req_ids`；sync 分支直接在本步跳过；NIXL HMA 失败因没有 invalid block 而不会进入此流程 |
 | ⑮ | 下一次 `schedule` 扫到正常或recompute的 blocked waiting 请求 | 检查 `finished_recving_kv_req_ids` → `_update_waiting_for_remote_kv` 缓存有效前缀或整体释放 → 改 status | `status = PREEMPTED if request.num_preemptions else WAITING`，请求重新参加准入 |
 | ⑯ | `Scheduler._free_request`（由 `update_from_output` 的 stop/length 或 `finish_requests` 中止触发） | producer 角色先 `finalize_partial_tail_offloads` 收集尾块 → `remove_skipped_blocks` + `get_block_ids_for_computed_tokens` 得 `block_ids` → 有尾块时 `register_finished_partial_tail(request, block_ids, …)` → 按 `SupportsHMA` 选 `request_finished_all_groups` 或 `request_finished`；`_free_request` 再 OR 上 EC connector 的 `ec_delay_free` | 返回 `(delay_free, kv_transfer_params)`；`delay_free` 为真时本步不 `_free_blocks` |
 | ⑰ | `on_new_request`（请求进入等待时，不等分配成功） | 读 `remote_engine_id` 等五个必填字段 → 按 remote engine 聚合 req_ids → `build_connector_meta` 按 `_heartbeat_interval` 节流 | worker 发出一批 `HB:` notif；P 侧 `_reqs_need_send[req_id]` 续期到 `max(old, now + _lease_extension)` |
@@ -997,19 +1009,20 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 | 对象 | 22 拥有 | 不拥有 → owner |
 |---|---|---|
 | GPU block 的分配与引用 | 跨 Engine 临时持有：延迟释放、job ref、目标失效上报 | block allocator、prefix cache、引用计数、native CPU offload 默认路径（`OffloadingConnector` / `SimpleCPUOffloadConnector`）→ **08** |
+| HMA（hybrid KV cache manager） | connector 侧的 `supports_hma_config` 能力声明，以及不支持时对本页各 connector 的影响 | `disable_hybrid_kv_cache_manager` 三态解析、None 分支的静默关闭 vs 显式开启时 `create_connector` 的 `ValueError` 硬失败 → [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|08]] §4.5.1 |
 | `num_computed_tokens` | 远端命中怎样写进它、失败怎样撤回它 | 它在准入与 chunk 切分里的调度语义 → **07** |
 | KV layout | `get_required_kvcache_layout` 由哪个 connector 定、定成什么 | layout 在 attention kernel 侧的落地与 `supports_kv_connector` 过滤 → **10** |
-| P/D 实例拓扑 | 一句约束：路由方必须把请求送到 `transfer_mode` 匹配的实例 | `examples/disaggregated/` 的 proxy/router 参考实现、实例入口与请求生命周期 → **13** |
+| P/D 实例拓扑 | 一句约束：路由方必须把请求送到 `transfer_mode` 匹配的实例 | `examples/disaggregated/` 的 proxy/router 参考实现、实例入口与请求生命周期 → **本域暂无 owner，已提交规划**（与本表末行、§2、§14 及 Related Pages 口径一致；13 拥有的是 DP 副本内的路由，不是 P/D 之间） |
 | encoder cache 传输 | 无 | EC connector、`ec_transfer_config`、`ECConnectorOutput`、`MMEncoderModelRunner` → **15** |
 | rank 约定 | **KV 平面**的跨 Engine rank 约定：`kv_transfer_params` 的 `tp_size` / `dcp_size` / `pp_size`、`NixlAgentMetadata.dcp_size` / `pcp_size`、`vllm/distributed/kv_transfer/kv_connector/v1/nixl/tp_mapping.py::compute_tp_mapping` 与 `TransferTopology` | TP/PP/DP/DCP/PCP 本身的 group 构造与 collective → **18** |
-| `requires_piecewise_for_cudagraph` | 触发条件（哪个 connector、哪个 extra_config 键） | 被降为 `PIECEWISE` 之后的编译区间与 capture 后果 → **19** |
-| transfer 失败 | 失败在协议上怎样表达：invalid-block上报、异步接收收尾与释放；默认fail可先终结请求，MoRIIO READ不使用async receive完成 | transfer latency、lease expiry、invalid blocks 的信号及观测边界与故障注入 → **23** |
+| `requires_piecewise_for_cudagraph` | 触发条件（哪个 connector、哪个 extra_config 键） | 被降为 `PIECEWISE` 之后的编译区间与 capture 后果 → [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|19]]：本页给出的是**输入**（connector 提出 piecewise 要求），19 消费它决定 graph mode，两页不重复解释同一后果 |
+| transfer 失败 | 失败在协议上怎样表达：invalid-block上报、异步接收收尾与释放；默认fail可先终结请求，MoRIIO READ不使用async receive完成 | transfer latency、lease expiry、invalid blocks 的信号及观测边界 → [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis#5.2 KV 传输：通用搬运 stats，connector 决定实际指标|23 §5.2]]；故障注入与终结路径 → 23 §6 |
 | 权重版本 | 兼容 hash **不含**运行期 `weight_version` 这条边界 | `set_weight_version`、在线更新链与 drain 协议 → **25** |
 | `request_finished` 的 `delay_free_blocks` | 协议侧：返回 True 即 connector 接管释放责任 | Engine 侧的 deferred free list 与 step fence → **06** |
 | `kv_transfer_params` | 它的键集合、谁产生、拒绝后怎样清理 | 请求语义层怎样携带与回传它 → **03** |
 | forward 上下文内的绑定与收取 | 协议：三个挂点与 spec 时的延后 finalize | 两代 Runner 各自的批组装与设备执行 → **11 / 12** |
 | **EPD/encoder-only 的部署拓扑整体** | 无（只登记） | `mm_processor_device="auto"` 的角色解析、EC connector 工厂角色划分——**本域仍无 owner**，与 `15:§9.4` 的空白登记互指 |
-| **`examples/disaggregated/` 的 proxy/router 参考实现** | 无（只登记） | 建议归 **13**；基线下全库 wiki 无人展开 |
+| **`examples/disaggregated/` 的 proxy/router 参考实现** | 无（只登记） | **本域暂无 owner**，已提交 `planning-codebase-analysis`；候选归属 13，但基线下 13 未展开，§2 与 §14 的措辞与此一致 |
 
 ### 14.5 注册名与扩展入口
 
@@ -1085,6 +1098,6 @@ grep -rnE "^\s*[A-Za-z_][A-Za-z0-9_]*\s*(:[^=]*)?=\s*.*kv_connector_extra_config
 - [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|vLLM Scheduler]] — external hit 如何进入 admission、waiting 与失败重算。
 - [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|vLLM Engine 架构]] — `delay_free_blocks` 的另一半：Engine 侧的 deferred free 与 step fence。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|vLLM Attention Backend]] — 目标 KV 被 attention 读取前的 layer/layout 同步边界与 `supports_kv_connector` 过滤。
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — P/D 实例路由、进程拓扑与请求生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — DP 副本内的负载反馈路由、进程拓扑与请求生命周期；P/D 之间的实例路由不在其中，见本页 §14.4。
 - [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP/PP/DP shard 身份与跨 Engine transfer 的正交关系；本页接下 KV 平面的 rank 约定。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — transfer latency、lease expiry、invalid blocks 与故障注入的观测面。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis#5.2 KV 传输：通用搬运 stats，connector 决定实际指标|vLLM 可观测性与可靠性 §5.2]] — connector telemetry 的实际枚举；KV cache 事件发布与外部前缀路由另见该页 §5.3。

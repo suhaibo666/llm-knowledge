@@ -7,7 +7,7 @@ title: "vLLM 软件架构分析：设计目标、模块分工与使用场景"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从并发推理面对的计算、显存与服务压力出发，建立六个职责模块的静态架构，再跟随服务启动和一次生成理解它们的协作。随后逐个展开模块设计、代码映射及离线、在线、批处理、渲染、分布式和工具场景。
 > **适用范围**：整体能力、模块合同与顶层场景；以 V1 Engine 和普通文本生成为代表路径，内部算法由 Scheduler、KV、Runner 等专题展开。
-> **最近更新**：2026-09-10。补齐模块概要设计、启动与请求闭环、场景完成条件及外部依赖边界。
+> **最近更新**：2026-09-16。修正普通生成请求的默认异步调度路径、执行与采样提交顺序及结果等待边界。
 
 ## 1. 软件背景、设计目标与能力边界
 
@@ -97,7 +97,7 @@ vLLM 在模型外面提供一套推理运行系统：接收不同形式的请求
 
 第 1 章的“显存够不够”在运行前就影响系统装配。Engine 运行先创建执行组织，后者让 worker 初始化设备、选择 Runner 并加载模型。EngineCore 随后收集各 worker 的 KV 需求和支持的布局，确定一致布局，取得可用缓存容量，再建立设备缓存与调度器。Scheduler 因而拿到的是已经与模型及设备匹配的资源视图。
 
-`EngineCore._initialize_kv_caches` 还把模型性质反映回调度政策：发现 non-causal attention 时关闭 chunked prefill 和 prefix caching；无 KV cache 的模型也会关闭 chunked prefill。这说明模块间通过明确的能力合同协商，不能仅凭上层参数已经解析就认为某项优化一定启用。
+`EngineCore._initialize_kv_caches` 还把模型性质反映回调度政策：发现 non-causal attention 时关闭 chunked prefill 和 prefix caching。**“无 KV cache 的模型关闭 chunked prefill”不在这个函数里**，它在 `EngineCore.__init__` 中、`get_scheduler_cls()` 之后、构造 `Scheduler(...)` 之前，按返回的 `kv_cache_config.kv_cache_groups` 是否为空判定并打 warning；两处分别改写 `SchedulerConfig`，但时点不同。这说明模块间通过明确的能力合同协商，不能仅凭上层参数已经解析就认为某项优化一定启用。
 
 ```text
 Engine 运行：EngineCore.__init__
@@ -113,7 +113,9 @@ Engine 运行：EngineCore.__init__
 │  ├─ [后续初始化] Executor.initialize_from_config
 │  └─ [非弹性扩容启动] Executor.compile_or_warm_up_model
 ├─ StructuredOutputManager(...)
-├─ Scheduler(...)                             资源调度：持有已确定的缓存配置
+├─ SchedulerConfig.get_scheduler_cls           资源调度：按配置选择 Scheduler 或 AsyncScheduler
+├─ [kv_cache_groups 为空] enable_chunked_prefill = False   打 warning；时点在选类之后、构造之前
+├─ 所选 Scheduler 类(...)                     资源调度：持有已确定的缓存配置
 └─ 选择 step_fn 与可选 batch_queue             Engine 运行：组织后续每步执行
 ```
 
@@ -168,15 +170,19 @@ flowchart TB
 
 Runner 将请求 ID、token 进度和 block 信息组织成连续的输入 token、位置、KV 寻址信息和 attention metadata。metadata 是描述本批请求长度与缓存位置等信息的数据，供 attention 实现正确解释混合 batch。随后 Runner 选择适用的普通执行、编译或 CUDA Graph 路径。CUDA Graph 复用已捕获的 GPU 工作提交序列，可以减少反复提交的开销，但需要满足输入布局和 buffer 生命周期等条件。
 
-模型前向计算与 token 选择在接口上可以分开：普通生成路径中，EngineCore 先取得模型执行结果；若执行接口返回 `None`，再调用采样接口取得本步 runner 输出。不能把一次 `execute_model` 调用的提交直接理解为“用户已经拿到下一个字”。
+本节普通生成请求采用支持异步调度的常规执行器、单流水线阶段（PP=1）和内置调度器。`SchedulerConfig.async_scheduling` 的默认值是 `None`，在这些条件下由 `VllmConfig.__post_init__` 解析为 `True`，因此使用 `AsyncScheduler`，`max_concurrent_batches=2`，EngineCore 选择 `step_with_batch_queue`。这也适用于该条件下的 MRV1；不能仅凭 Runner 代际判断是否使用批队列。完整选择轴与兼容条件继续见 [[06_vllm_engine_architecture_analysis#4.1 队列里必须同时保留 future 和原计划|Engine 运行循环 §4.1]]。
+
+模型前向计算与 token 选择在接口上分开。**「token 选择」这一步本身有独立的架构分量**：`Scheduler.get_grammar_bitmask` 产出的 grammar 位掩码、`GPUModelRunner.sample_tokens` 里的逐行参数处理顺序、以及结构化输出怎样反过来约束下一步的可选 token，都归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]]；本节只交代它与前向计算在**提交时序**上的关系。对于确实安排了 token、且没有等待前一步结构化输出 token 的生成批次，EngineCore 以 `non_block=True` 提交 `execute_model`，取得执行 Future 后计算 grammar 信息，再以 `non_block=True` 提交 `sample_tokens`。**提交采样前不等待执行 Future，也不以执行结果是否为 `None` 作为条件。** 执行侧仍按提交顺序推进模型前向和采样；非阻塞指 Engine 暂不取回最终 runner 输出，不代表 worker 的 CPU 准备工作或设备依赖消失。
+
+随后 EngineCore 将采样 Future、原计划和执行 Future 一起放入批队列。队列还有空位且本轮执行了模型或仍有请求时，可以先返回、继续下一轮；需要收取结果时才从队尾取最旧批次并调用其 Future 的 `result()`。因此一次 `execute_model` 或 `sample_tokens` 提交返回，都不能直接理解为“用户已经拿到下一个字”。
 
 #### 2.3.4 返回：计算完成之后，还要更新进度和恢复用户输出
 
-Runner 结果先回到 Scheduler。Scheduler 检查请求是否已结束或取消，更新 token 进度和完成原因，处理资源释放，再形成 EngineCore 输出。前端的后台输出任务读取这些输出，由 OutputProcessor 进行文本解码、停止字符串检查和结果组装，然后交给该请求的异步输出收集器。
+EngineCore 从批队列取得最旧计划对应的 Runner 结果，先处理执行期间到达的取消，再交给 Scheduler 对账。Scheduler 检查请求是否已结束或取消，更新 token 进度和完成原因，处理资源释放，再形成 EngineCore 输出。前端的后台输出任务读取这些输出，由 OutputProcessor 进行文本解码、停止字符串检查和结果组装，然后交给该请求的异步输出收集器。
 
 最后，聊天服务把这些增量结果编码成 HTTP 流。一个模型 token 不一定立刻对应一个独立的网络数据块：文本解码、输出间隔、协议包装都可能影响可见粒度。流式输出关注“结果逐步可见”，与模型内部的逐 token 计算步不是同一层概念。
 
-取消可在请求执行期间的任一步发生，并不需要等到本轮输出返回。图 3 分开表示用户可见过程和 Engine 内部的一步。上图中的“执行一步”在下图展开；两图是模块之间的语义交互，实际函数调用、进程消息和后台任务在后面的源码路线中区分。
+取消可在请求执行期间的任一步发生，并不需要等到本轮输出返回。图 3 分开表示用户可见过程和 Engine 内部的一轮：一轮可以只提交工作，也可以收取更早批次的结果。下图展示普通非空生成批次、不等待结构化输出 token 时的提交与收取；并列区域强调 Engine 和设备侧可以重叠，不表示 GPU 时间比例。实际函数调用、进程消息和后台任务在后面的源码路线中区分。
 
 ```mermaid
 sequenceDiagram
@@ -187,10 +193,12 @@ sequenceDiagram
     I->>I: 渲染、校验<br/>登记输出接收者
     I->>E: 提交内部请求
     loop 请求尚未完成
-        E->>E: 执行一步，见下图
-        E-->>I: 本步内部输出
-        I->>I: 解码与停止检查
-        I-->>U: 增量响应
+        E->>E: 推进一轮，见下图
+        opt 本轮收取到结果
+            E-->>I: 已收取批次的内部输出
+            I->>I: 解码与停止检查
+            I-->>U: 增量响应
+        end
         opt 取消或停止
             I->>E: 取消剩余工作
             E->>E: 结束请求<br/>安排安全释放
@@ -198,6 +206,7 @@ sequenceDiagram
     end
 ```
 
+<!-- 图 3 下图语义规格：沿用 Engine 运行、资源调度、执行组织、设备运行、模型与算子五个参与者。Engine 向资源调度取计划与 grammar，向执行组织先后提交 execute_model 和 sample_tokens，各自返回 Future；Engine 保存两个 Future 与原计划。并列分支表示执行组织将两项工作依次交给设备运行，模型与算子的输出留作采样状态。收取分支只在取最旧 Future.result 后把对应结果交回资源调度，先取消、再对账、再输出；队列有空位的轮次允许暂不收取。 -->
 ```mermaid
 sequenceDiagram
     participant E as Engine 运行
@@ -205,40 +214,50 @@ sequenceDiagram
     participant X as 执行组织
     participant R as 设备运行
     participant M as 模型与算子
-    E->>S: 请求计划
-    S-->>E: token 与 block
-    E->>X: 提交计划
-    X->>R: 分发执行
-    R->>M: 设备输入
-    M-->>R: 模型输出
-    R-->>X: 返回
-    X-->>E: 执行结果
-    opt 需要独立采样
-        E->>X: 提交采样
+    par Engine 提交与排队
+        E->>S: 请求计划
+        S-->>E: token 与 block
+        E->>X: execute_model，non_block=True
+        X-->>E: 执行 Future
+        E->>S: 取得 grammar 信息
+        S-->>E: grammar 或 None
+        E->>X: sample_tokens，non_block=True
+        X-->>E: 采样 Future
+        E->>E: 保存采样 Future、计划、执行 Future
+        Note over E: 有空位且仍可推进时，本轮先返回<br/>收取轮次才取最旧 Future 并等待 result
+    and 执行侧按提交顺序推进
+        X->>R: 分发模型执行
+        R->>M: 设备输入
+        M-->>R: 模型输出
+        R->>R: 保存待采样状态
         X->>R: 分发采样
-        R-->>X: token 结果
-        X-->>E: 汇集结果
+        R-->>X: 待交付的 token 结果
     end
-    E->>S: 更新结果
-    S->>S: 更新进度与资源
-    S-->>E: 内部输出
+    opt 本轮收取最旧批次
+        E->>E: 最旧 Future.result，必要时等待
+        X-->>E: 对应计划的 Runner 结果
+        E->>E: 处理执行期间到达的取消
+        E->>S: 按已收取计划更新结果
+        S->>S: 更新进度与资源
+        S-->>E: 内部输出
+    end
 ```
 
-为了看清依赖，图中将一次结果处理完整画出。启用异步调度或流水线并行时，多步可以处于在途状态；`EngineCore.step_with_batch_queue` 负责组织这种重叠。它仍需要用执行结果更新 Scheduler，不能把“已排入队列”当成“已完成”。
+本节条件下默认就有容量为 2 的批队列；这表示最多容纳两批在途，不保证每轮队列都满。单流水线阶段显式关闭 async，或自动配置因 pooling/不兼容组合关闭 async 时，容量才退为 1 并选择 `EngineCore.step`；PP 大于 1 时即使关闭 async，仍可能使用批队列。只有 `step` 分支才先等待执行结果，并在该结果为 `None` 时同步调用采样。批队列路径仍必须用对应执行结果更新 Scheduler，不能把“已排入队列”当成“已完成”。
 
 ### 2.4 合同对象、调用关系与完成信号
 
 | 跨模块对象 | 生产者与消费者 | 读者需要辨认的完成边界 |
 |---|---|---|
-| `EngineCoreRequest` | 接口与语义形成，Engine 运行传输，资源调度接收 | 包含 ID、输入与任务参数；发送返回只证明提交步骤结束，尚未分配本步资源 |
+| `EngineCoreRequest` | 接口与语义形成，Engine 运行传输；由 `EngineCore.preprocess_add_request` 接收并经 `Request.from_engine_core_request` 转成内部 `Request` 后才进入资源调度 | 包含 ID、输入与任务参数；发送返回只证明提交步骤结束，尚未分配本步资源。Scheduler 看到的从来不是这个对象本身 |
 | `SchedulerOutput` | 资源调度形成，Engine 运行保存并交给执行组织 | 请求数、各请求 token 数、block 和新增/结束信息构成计划；对应计划必须与其结果配对 |
-| `ModelRunnerOutput` / Future | 设备运行产生，执行组织送回 Engine 运行 | Future 的就绪与 runner 输出交付定义这个接口的完成；普通路径可能先返回 `None`，再独立采样 |
+| `ModelRunnerOutput` / Future | 设备运行产生，执行组织送回 Engine 运行 | 普通非空生成批次把采样 Future、原计划、执行 Future 配对入队；收取采样 Future 的 `result()` 才取得对应 runner 输出，提交返回不等于结果已交付 |
 | `EngineCoreOutputs` | 资源调度对账后，由 Engine 运行交给接口与语义 | 核心已处理本步结果；前端仍须解码、检查停止字符串并组装用户输出 |
 | `RequestOutput` / HTTP 流 | 接口与语义交付调用者 | 用户结果已可见；取消或完成之后，缓存释放仍可能等待在途执行或传输安全结束 |
 
 同一个请求 ID 把这些表示关联起来，但它们各自携带的信息和完成含义不同。下面把 2.3 的模块交互对应到真实函数；调用树用于定位源码，时序图用于解释对象和控制消息怎样跨边界流动。
 
-下面只保留普通 `n=1` 生成请求中改变执行语义的调用点。标为“跨任务/进程”的部分不是直接函数调用；标为“间接”的部分省略了包装、序列化或分发辅助函数。EngineCore 树展示基本 `step` 分支，异步队列分支另读 `step_with_batch_queue`。
+下面只保留普通 `n=1` 生成请求中改变执行语义的调用点。标为“跨任务/进程”的部分不是直接函数调用；标为“间接”的部分省略了包装、序列化或分发辅助函数。EngineCore 树展示本节默认的 `AsyncScheduler` 加 `step_with_batch_queue` 分支，且本轮安排了 token、无需等待结构化输出 token；`schedule` 与 `update_from_output` 由 `AsyncScheduler` 继承并经其覆写钩子维护异步进度。
 
 ```text
 接口与语义：OpenAIServingChat._create_chat_completion
@@ -246,6 +265,7 @@ sequenceDiagram
 └─ AsyncLLM.generate                           异步生成器，由响应路径迭代
    ├─ AsyncLLM.add_request
    │  ├─ InputProcessor.process_inputs          已渲染输入路径
+   │  ├─ AsyncLLM._run_output_handler           懒启动兜底：__init__ 已在有事件循环时先启动过
    │  └─ AsyncLLM._add_request
    │     ├─ AsyncLLM.check_admission             前端阈值检查
    │     ├─ OutputProcessor.add_request          登记输出接收者
@@ -261,19 +281,22 @@ Engine 运行：跨进程 ADD 消息
    │     └─ EngineCore.add_request
    │        └─ Scheduler.add_request            资源调度：加入等待队列
    └─ _process_engine_step
-      ├─ EngineCore.step                       经 self.step_fn 选择
-      │  ├─ Scheduler.schedule                 资源调度：本步计划
-      │  ├─ Executor.execute_model             执行组织：返回 Future
+      ├─ EngineCore.step_with_batch_queue       经 self.step_fn 选择
+      │  ├─ Scheduler.schedule                 资源调度：AsyncScheduler 实例生成本步计划
+      │  ├─ Executor.execute_model             non_block=True，取得 exec_future
       │  │  └─ [RPC / worker 分发，间接] Worker.execute_model
       │  │     └─ GPUModelRunner.execute_model  设备运行：准备输入并执行模型与算子
       │  ├─ Scheduler.get_grammar_bitmask       资源调度：取得约束信息
-      │  ├─ Future.result                      等待 execute_model 结果
-      │  ├─ Executor.sample_tokens             当上述结果为 None 时调用
+      │  ├─ Executor.sample_tokens             non_block=True，不先等待 exec_future
       │  │  └─ [RPC / worker 分发，间接] Worker.sample_tokens
       │  │     └─ GPUModelRunner.sample_tokens  设备运行：选择输出 token
+      │  ├─ batch_queue.appendleft             保存采样 Future、原计划、exec_future
+      │  ├─ [有空位且仍可推进] return None      先回到运行循环，本轮不交付结果
+      │  ├─ [否则] batch_queue.pop             取最旧计划及其 Future
+      │  ├─ Future.result                      等待最旧采样 Future 的 runner 输出
       │  ├─ _process_aborts_queue               先处理执行期间发生的取消
       │  └─ Scheduler.update_from_output       资源调度：对账并形成内部输出
-      └─ output_queue.put_nowait               Engine 运行：交给输出通道
+      └─ [有内部输出] output_queue.put_nowait  Engine 运行：交给输出通道
 
 接口与语义：AsyncLLM._run_output_handler 创建的后台 output_handler
 ├─ EngineCoreClient.get_output_async           Engine 运行：从跨进程输出通道取结果
@@ -283,13 +306,18 @@ Engine 运行：跨进程 ADD 消息
 [跨任务恢复] AsyncLLM.generate 的 yield 被聊天响应生成器消费，再形成 HTTP 输出
 ```
 
+批队列中的例外需要与上面的代表路径区分：pooling 或 `model_executed` 为假时，队列直接保存执行 Future，无需采样（该标志在 EC producer 引擎上恒假，见 [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis#4.1 队列里必须同时保留 future 和原计划|Engine 架构 §4.1]]）；`pending_structured_output_tokens` 为真时，先处理更早批次的结果，再取得 grammar 并提交延后的采样。收取的采样结果若为 `None`，`step_with_batch_queue` 会读取保存的执行 Future 来重抛原执行异常，而不是再发起一次采样。
+
+默认路径的源码阅读路线：`vllm/config/scheduler.py::SchedulerConfig.async_scheduling`、`SchedulerConfig.get_scheduler_cls`；`vllm/config/vllm.py::VllmConfig.__post_init__`、`VllmConfig.max_concurrent_batches`；`vllm/v1/engine/core.py::EngineCore.__init__`、`EngineCore.step_with_batch_queue`；`vllm/v1/core/sched/async_scheduler.py::AsyncScheduler._update_after_schedule`。单进程执行器中，`vllm/v1/executor/uniproc_executor.py::AsyncOutputFuture.result` 延后调用异步结果的 `get_output`；`non_block=True` 并不把整个 worker 调用搬到后台线程。
+
 启动与请求处理属于不同生命周期。在线服务的装配入口在 `vllm/entrypoints/cli/serve.py::ServeSubcommand.cmd`。普通单 API server 分支调用 `vllm/entrypoints/launchers/api_server/entry.py::run_server`；同文件的 `run_server_worker` 和 `build_async_engine_client_from_engine_args` 展示 AsyncLLM 的创建与退出清理。HTTP 请求入口另在 `vllm/entrypoints/openai/chat_completion/api_router.py::create_chat_completion`，它不是由启动函数逐请求直接调用。
 
 若要验证边界，可继续打开以下现成测试。本次核对了测试逻辑，未运行依赖 GPU、模型权重的推理测试，也未测量吞吐或延迟：
 
 - `tests/v1/engine/test_admission_control.py::test_admission_reqs_rejects_at_limit`、`test_admission_tokens_rejects_at_limit`：前端两类阈值怎样触发拒绝。
 - `tests/v1/engine/test_async_llm.py::test_mid_stream_cancellation`：流式取消后前端不遗留请求，并能重新使用请求 ID。
-- `tests/v1/core/test_deferred_block_free.py::test_abort_defers_free`：取消后，在途步骤尚未收齐时，block 不立即释放。
+- `tests/v1/engine/test_engine_core.py::test_engine_core_concurrent_batches`：验证先入队、首次暂不交付结果，再按原计划取回输出；此测试显式关闭 async 并强制容量 2，验证的是批队列合同，不是默认值解析。
+- `tests/v1/core/test_deferred_block_free.py::test_abort_defers_free`：取消后，在途步骤尚未收齐时，block 不立即释放。**这条不是通用规则**：`Scheduler.__init__` 只在「配了 KV connector 且它是 consumer」**并且** `max_concurrent_batches > 1` 时才把 `defer_block_free` 置 True，两条同时成立才延迟。理由写在源码注释里——重叠批次下某一步可能仍在写已释放请求的 KV block，而 consumer connector 的 load 与那次写之间没有顺序保证。门的完整口径归 [[06_vllm_engine_architecture_analysis#6.2 两批在途时的 block fence|Engine 运行 §6.2]]。
 
 ## 3. 六个模块的概要设计
 
@@ -330,20 +358,20 @@ vLLM 把差异分布在前端 facade 和 EngineCoreClient 中，共用 EngineCor
 
 **内部协作与合同。** 这一模块分为前端 facade、CoreClient 和 EngineCore：facade 适配同步或异步消费，CoreClient 提供进程内或消息式访问，EngineCore 保存核心对象并反复协调计划与结果。共享的是内部合同，多进程时两端各自保存必要状态。
 
-<!-- Engine 图：Client 把请求送到核心循环；循环把计划和结果配对后发布；异步 batch queue 只改变在途组织。 -->
+<!-- Engine 图：Client 把请求送到核心循环；循环把计划和结果配对后发布。配对节点标明 batch queue 与单批 step 两种组织方式，不把单批 step 标成默认路径。 -->
 ```mermaid
 flowchart TB
     F[同步或异步 facade] --> C[CoreClient<br/>提交与关联]
     C --> L[EngineCore 循环]
     L --> S[资源调度<br/>形成计划]
-    S --> Q[计划与结果配对<br/>基本 step 或 batch queue]
+    S --> Q[计划与结果配对<br/>batch queue 或单批 step]
     Q --> X[执行组织<br/>提交并等待相应结果]
     X --> A[资源调度<br/>处理取消并对账]
     A --> O[核心输出通道]
     O --> F
 ```
 
-**选择与限制。** `EngineCoreClient.make_client` 在同步进程内、同步多进程和异步多进程间选择，明确对 asyncio 且不开 multiprocessing 抛出 `NotImplementedError`。使用 batch queue 时，EngineCore 保留在途计划及 Future，结果更新仍与该计划对应。运行策略的收益是允许准备与设备工作重叠，代价是取消、资源回收和错误传播需要理解在途状态。具体队列时序见 [[06_vllm_engine_architecture_analysis|Engine 运行循环]]。
+**选择与限制。** `EngineCoreClient.make_client` 在同步进程内、同步多进程和异步多进程间选择，明确对 asyncio 且不开 multiprocessing 抛出 `NotImplementedError`。使用 batch queue 时，EngineCore 保留在途计划及 Future，结果更新仍与该计划对应。运行策略的收益是允许准备与设备工作重叠，代价是取消、资源回收和错误传播需要理解在途状态。具体队列时序见 [[06_vllm_engine_architecture_analysis#4.2 默认 R 与两个 12-token prompt 的最小重放|Engine 运行循环 §4.2]]。
 
 ### 3.3 资源调度：把计算机会和 KV 容量一起考虑
 
@@ -406,7 +434,7 @@ Scheduler 的计划以请求为单位变化，GPU 输入则需要适当的 tenso
 
 两代 Model Runner 展示了不同取舍。MRV1 使用紧凑的 persistent batch，同时保留 `CachedRequestState`；空行压缩和重排时，相关 token、block 和采样状态要一起移动。MRV2 把请求活跃期间的状态行与本步输入顺序分开：保存稳定行，再为本步 gather 所需输入。请求结束或被抢占后可释放该行，恢复时重新加入，因此“稳定”不表示跨越整个请求的所有暂停与恢复过程都不变。
 
-MRV2 的 `execute_model` 先处理完成、释放、新增与更新，再应用暂存的 block 写入，准备设备输入及 attention metadata，选择图执行路径。持久状态复用和临时传输 buffer 的生命周期必须配套，否则 CPU 改写的数据可能仍在被 GPU 异步读取。这里的收益依据设计与实现分析；本页没有测量两代 Runner 的速度。
+MRV2 的 `execute_model` 先处理完成、释放、新增与更新，再 `apply_staged_writes()` 应用暂存的 block 写入；**随后才是 `dispatch_cg_and_sync_dp` 选图与 DP 协商，`prepare_inputs` / `prepare_attn` 排在它之后**——图执行路径要先定下来，本步的 padding 目标才有依据，不是先准备输入再选图。持久状态复用和临时传输 buffer 的生命周期必须配套，否则 CPU 改写的数据可能仍在被 GPU 异步读取。这里的收益依据设计与实现分析；本页没有测量两代 Runner 的速度。
 
 源码的 MRV2 设计文档解释了 persistent state 与逐步输入分离的动机。两代的内部布局和异步细节分别见 [[02_engineering/03_infer_frameworks/vllm/11_vllm_model_runner_v1_analysis|Model Runner V1]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_model_runner_v2_analysis|Model Runner V2]]。
 
@@ -490,14 +518,19 @@ flowchart TB
 | 在线权重更新 | 前端发起更新，各 rank 执行，Engine 记录版本标签 | `finish_weight_update` 先等待 worker 完成，再按需写版本；版本可单独修改，不能证明多 rank 原子回滚或 cache 已处理 | [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|在线权重更新]] |
 | 插件 | 平台、I/O、endpoint 和统计扩展作用于不同位置 | general plugin 的加载保护是进程内一次；endpoint 插件仅在前端，并需显式允许 | [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|扩展与插件]] |
 | 观测与故障处理 | 核心产生调度统计，前端汇总请求结果，执行器与客户端分别检测故障 | 指标收到、进程存活、请求成功是不同事实；output handler 异常也会向等待请求传播 | [[02_engineering/03_infer_frameworks/vllm/23_vllm_observability_reliability_analysis|可观测性与可靠性]] |
+| 采样与结构化输出 | 逐行采样参数在前端建立、在 Runner 消费；grammar 约束由 Scheduler 产出位掩码、Runner 施加，还会反过来改变下一步能调度什么 | 采样参数合法不等于该组合被当前 runner 支持；grammar 校验只返回可接受前缀，不代表请求已推进 | [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]] |
+| 多模态执行 | 媒体在前端预处理、在 encoder 侧执行并缓存，其 placeholder 又占用调度预算与 KV 位置 | encoder 缓存命中不等于该 item 的引用可释放；释放条件按已确认进度而非已算进度判定 | [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]] |
+| 投机解码 | drafter 产出候选、target 一次验证多个位置，Scheduler 要为未定长的接受数预留 KV 并事后结算 | 草稿发布成功不等于被接受；已写 KV 需要 device 与 CPU 两处结算 | [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]] |
 
 这些侧接能力有多个接入点，因此不再组成与六个模块并列的第七模块。平台插件和外部后端提供实现，观测收集跨边界事件，KV transfer 与权重更新则额外引入资源持有或版本可见性合同。接入成功不能代替这些合同的验证。
 
 ### 3.8 外部底座与四个易混淆的边界
 
+**平台是一条独立的选择轴，本域只覆盖 CUDA。** 进程运行在哪种设备后端由 `current_platform` 一次性探测并缓存（发现规则与 OOT 优先级归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|扩展与插件]] §3.3），它随后决定一串下游选择点：Worker/Runner 子类（`XPUWorker`/`XPUModelRunnerV2`、`CPUWorker`/`CPUModelRunner`）、attention backend 候选集、`get_default_ir_op_priority` 的 provider 默认序、graph capture 是否可用、以及各 `CustomOp` 落到 `forward_cuda`/`forward_hip`/`forward_xpu`/`forward_cpu` 的哪一支。**本域 26 页的核验范围是 CUDA**：涉及 ROCm/XPU/CPU/TPU 的地方只在该选择点出现时点名，没有页面展开非 CUDA 平台的完整执行路径，该覆盖缺口见 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 的「已知覆盖边界」。
+
 PyTorch 提供 tensor、stream、编译及通用分布式 API，设备运行时、通信库和硬件实际执行计算与搬运。vLLM 源码能证明传入的对象、调用顺序、设备/后端选择和显式等待点；本页没有读取这些依赖的内部实现，也不能由仓库代码推断某台机器实际采用哪种互联。六个主模块的职责以这些交接点为止，性能与故障定位则可能需要继续观察底层。
 
-**Engine V1 与 Model Runner V1/V2 是两个版本维度。** `vllm.engine.LLMEngine` 和 `AsyncLLMEngine` 是 V1 实现的别名；同步 LLMEngine 保留兼容 facade，不代表另有一套 V0 核心。Runner 则由 `VllmConfig.use_v2_model_runner` 选择：显式环境变量优先；未显式选择时，特定 ROCm 模型、缺少 Triton 或不支持的特性会回退 MRV1，其余路径使用 MRV2。Worker 还会为 encoder-only 模式选择专用 Runner，不能只凭“V1”字样推断实际实现。
+**Engine V1 与 Model Runner V1/V2 是两个版本维度。** `vllm/engine/llm_engine.py` 的 `LLMEngine` 与 `vllm/engine/async_llm_engine.py` 的 `AsyncLLMEngine` 都只是一行赋值别名，分别指向 `vllm/v1/engine/llm_engine.py::LLMEngine` 与 `AsyncLLM`；同步 LLMEngine 保留兼容 facade，不代表另有一套 V0 核心。Runner 则由 `VllmConfig.use_v2_model_runner` 选择：显式环境变量优先；未显式选择时，特定 ROCm 模型、缺少 Triton 或不支持的特性会回退 MRV1，其余路径使用 MRV2。Worker 还会为 encoder-only 模式选择专用 Runner，不能只凭“V1”字样推断实际实现。
 
 **软件模块数不等于进程数。** EngineCoreClient 有 in-process、同步多进程、异步多进程及 DP 变体，Executor 另有自己的设备组织选择。当前 factory 明确拒绝“asyncio 但不用 multiprocessing”的组合。官方架构文档的进程图有助于理解默认意图，但其中部分 `AsyncLLMEngine` 命名需要与当前别名、构造器对照。
 
@@ -512,7 +545,7 @@ PyTorch 提供 tensor、stream、编译及通用分布式 API，设备运行时�
 | 模块 | 优先打开的路径与符号 | 重点看什么 |
 |---|---|---|
 | 接口与语义 | `vllm/entrypoints/openai/chat_completion/serving.py::OpenAIServingChat._create_chat_completion`；`vllm/v1/engine/input_processor.py::InputProcessor.process_inputs`；`vllm/v1/engine/output_processor.py::OutputProcessor.process_outputs` | Renderer 输入、内部请求字段、文本与停止条件恢复 |
-| Engine 运行 | `vllm/v1/engine/async_llm.py::AsyncLLM._add_request`、`AsyncLLM._run_output_handler`；`vllm/v1/engine/core_client.py::EngineCoreClient.make_client`；`vllm/v1/engine/core.py::EngineCoreProc.run_busy_loop`、`EngineCore.step` | 先登记后提交、跨进程传输、后台输出任务、调度与执行协调 |
+| Engine 运行 | `vllm/v1/engine/async_llm.py::AsyncLLM._add_request`、`AsyncLLM._run_output_handler`；`vllm/v1/engine/core_client.py::EngineCoreClient.make_client`；`vllm/v1/engine/core.py::EngineCoreProc.run_busy_loop`、`EngineCore.step_with_batch_queue`、`EngineCore.step` | 先登记后提交、跨进程传输、后台输出任务；默认生成的批队列路径与容量为 1 时的 step 分支 |
 | 资源调度 | `vllm/v1/core/sched/scheduler.py::Scheduler.schedule`、`Scheduler.update_from_output`；`vllm/v1/core/kv_cache_manager.py::KVCacheManager.allocate_slots` | 请求选择、资源检查、结果对账与安全回收 |
 | 执行组织 | `vllm/v1/executor/abstract.py::Executor.get_class`；`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor.execute_model`、`MultiprocExecutor.collective_rpc`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model` | 后端选择、RPC、rank 结果和流水线通信 |
 | 设备运行 | `vllm/config/vllm.py::VllmConfig.use_v2_model_runner`；`vllm/v1/worker/gpu/model_runner.py::GPUModelRunner.execute_model`、`GPUModelRunner.sample_tokens`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner` | Runner 选择、输入准备、图执行和采样；两份同名类属于不同实现 |
@@ -612,6 +645,8 @@ async_llm_streaming.py::main                 接口与语义：用户应用
 
 其逻辑是“提交一条请求、逐次消费增量直到 finished、再处理下一条、最后 shutdown”；对应 2.3 的用户时序图，只把 HTTP 响应消费者替换成应用的 `async for`。进一步使用见 [[01_vllm_feature_optimizations_guide|使用指南]]。
 
+**同一场景还有两个更低层的兄弟入口**，它们绕过 `LLM` 门面，因此会暴露不同的完成条件：`examples/deployment/llm_engine_example.py` 直接驱动 `LLMEngine.add_request` / `step()` 循环——由调用方自己判断何时无未完成请求，`LLM` 的批量收敛逻辑不复存在；`examples/features/torchrun/torchrun_example_offline.py` 则在 `torchrun` 拉起的每个进程里各建一个 `LLM`，走 `external_launcher` executor，所有 rank 执行同一段脚本并各自拿到完整结果，不是一个进程分发给多个 worker。
+
 ### 5.2 池化：embedding、分类和评分
 
 **执行入口。** `examples/basic/offline_inference/embed.py` 设置 pooling runner 并打印每条提示词的 embedding；所选模型必须支持 embed task。脚本的模型参数同样来自 EngineArgs。
@@ -695,12 +730,13 @@ flowchart TB
 | 变体及入口依据 | 如何进入 | 相比普通文本请求新增的合同 |
 |---|---|---|
 | embedding、分类、score/rerank | `serve` 选择兼容 pooling 模型；路由按 supported tasks 装配 | 返回向量或分数，按 5.2 的任务语义交付 |
+| 非 OpenAI 协议前端 | 同一进程另挂三组路由：Anthropic 的 `/v1/messages`、`/v1/messages/count_tokens`（`vllm/entrypoints/anthropic/api_router.py`），OpenAI Responses 的 `/v1/responses` 及其 `{response_id}` / `cancel`（`vllm/entrypoints/openai/responses/api_router.py`），Cohere 风格的 `/v2/rerank`（`vllm/entrypoints/pooling/scoring/api_router.py`） | 请求/响应 schema 与流式事件各按自己的协议定义；本页只证明它们与普通 chat 路由同进程、同引擎，协议字段归 [[03_vllm_request_semantics_analysis|请求语义]] |
 | 多模态聊天、音频转录/翻译与实时音频 | 对应媒体模型及协议路由；示例位于 `examples/generate/multimodal/` 等目录 | 媒体预处理、encoder 和流式输入具有独立状态；详见 [[15_vllm_multimodal_execution_analysis|多模态执行]] |
 | gRPC | `vllm serve "<兼容模型>" --grpc`；`ServeSubcommand.cmd` 委托 `serve_grpc` | 需 protobuf/gRPC 依赖和对应客户端；不能用 HTTP/SSE 的完成事件解释 gRPC 流 |
-| Rust frontend | 配置 `VLLM_USE_RUST_FRONTEND` 与可解析的 `VLLM_RUST_FRONTEND_PATH`，经 `run_multi_api_server` | 启动外部二进制并连接核心；本页证明启动交接，协议实现与兼容性须按 Rust 路径核实 |
+| Rust frontend | 配置 `VLLM_USE_RUST_FRONTEND`（或 `VLLM_USE_RUST_BENCH`）；`VLLM_RUST_FRONTEND_PATH` **默认即 `"auto"`**（不是未设置）。报错条件与直觉相反：取 `auto`/`1`/`true` 时才去包目录找 `vllm-rs`，**找不到就抛 `FileNotFoundError`**；显式给了路径则原样返回、根本不校验存在性。未启用 Rust 却设了该变量只打 warning 并返回 None。就绪后经 `run_multi_api_server` | 启动外部二进制并连接核心；本页证明启动交接，协议实现与兼容性须按 Rust 路径核实 |
 | vLLM-Omni | CLI 检测 `--omni` 后委托其独立入口 | 需另外安装 `vllm_omni`；本仓不提供其全部运行保证 |
 
-gRPC、Rust 与 Omni 的调用边界如下。此处只给源代码能够证明的委托及退出边界，客户端操作与完整部署参数由 [[13_vllm_serving_control_plane_analysis|Serving 控制面]] 和对应外部项目负责。
+gRPC、Rust 与 Omni 的调用边界如下。此处只给源代码能够证明的委托及退出边界。**这三项在本域没有深度 owner**：`vllm/entrypoints/grpc_server.py::serve_grpc` 的协议合同、Rust frontend 的进程模型与 Omni 的独立入口都尚未有页面展开（13 只在 §4.1 写了「Rust frontend 默认按一个多线程进程处理、显式 API count 大于一会被改为一」这一条计数规则）。覆盖缺口已提交 `planning-codebase-analysis` 裁决 owner，本页不把它们指给不拥有该内容的页面；客户端操作与完整部署参数目前只能按各自源码与外部项目文档核实。
 
 ```text
 ServeSubcommand.cmd
@@ -790,6 +826,12 @@ flowchart LR
 
 **完成与限制。** `run_launch_fastapi` 只创建模型配置，清除 quantization 以跳过不需要的量化设备检查，并抑制 CPU KV 容量配置的无关警告。该路径不创建 Scheduler 和模型 GPU 缓存，因此 render 成功证明的是预处理/后处理完成，下一步模型计算仍需独立执行服务。其具体请求合同见 [[03_vllm_request_semantics_analysis|Render 与请求语义]]。
 
+**它的另一半：token-in/token-out 与那趟往返靠什么门打开。** 一个只做渲染的服务本身没有意义——渲染出来的 token 必须能送进某个只收 token 的执行服务，结果再送回来反渲染。这三段都在 `vllm/entrypoints/scale_out/` 下，由 `register_scale_out_api_routers` 按任务集合分别挂载：render 侧有三条 `/v1/chat/completions/render`、`/v1/messages/render`、`/v1/completions/render`，derender 侧**只有两条**——`/v1/chat/completions/derender` 与 `/v1/completions/derender`，没有 `/v1/messages/derender`；token-in/token-out 侧是 `/inference/v1/generate`，它比前两组多一个 `"generate" in supported_tasks` 的条件。
+
+**这组路由默认不开。** 门是 `VLLM_ENABLE_SCALE_OUT_ENDPOINTS`（三态：未设、0、1）叠加两个"专用模式"信号：`vllm launch render` 使 `supported_tasks` 含 `render`，`--tokens-only` 使执行侧只收 token。判定顺序是——先取专用模式（render 优先于 `--tokens-only`），若处在专用模式而环境变量显式为 `0`，直接抛 `ValueError` 拒绝这种自相矛盾的配置；若不在专用模式且环境变量未开，则只打一行 info 后整组路由不注册。`--tokens-only` 还会把 `force_no_detokenize=True` 传给 `ServingTokens`，并额外挂一个 `/abort_requests`（注释写明供 "Disaggregated Everything" 部署取消请求）。
+
+因此**一个普通 `vllm serve` 加上 `VLLM_ENABLE_SCALE_OUT_ENDPOINTS=1` 就同时暴露这三段**：`init_scale_out_state` 对任何 generate 服务都建好 render / derender / tokens 三个 handler，`register_scale_out_api_routers` 在 `"generate" in supported_tasks or "render" in supported_tasks` 时进入，其中 render/derender 两组路由在 env 门之后无条件挂载，只有 `/inference/v1/generate` 额外要求 `"generate"`。`vllm launch render` 与 `--tokens-only` 是**专用部署形态**——把一个进程裁成只做渲染或只收 token，供拆开部署时使用——而不是凑齐这条往返的必要条件。这些端点的请求体与响应合同归 [[03_vllm_request_semantics_analysis|请求语义]]；本域尚无页面展开 scale-out 的部署编排与失败语义，该缺口已提交 `planning-codebase-analysis` 裁决 owner。
+
 ### 5.6 多设备、多副本与前后端分离
 
 **执行入口。** 仍从 `serve` 进入，配置决定一个模型跨几张卡，以及有多少 Engine 副本承接请求。下面分别给出单机 TP=2 与 DP=2 的独立模板，两者各自需要匹配的两设备资源。
@@ -803,9 +845,9 @@ vllm serve "<兼容模型>" --data-parallel-size 2
 ServeSubcommand.cmd                         接口与语义：选择部署
 ├─ [单 API server] run_server              Engine 运行：复用 5.3
 ├─ [多个 API server 或 Rust] run_multi_api_server
-│  ├─ [context] launch_core_engines        创建 Engine 与可选 coordinator
-│  ├─ APIServerProcessManager / RustFrontendProcessManager
-│  ├─ wait_for_completion_or_failure
+│  ├─ [with] launch_core_engines           创建 Engine 与可选 coordinator
+│  │  └─ APIServerProcessManager / RustFrontendProcessManager   在 with 体内构造
+│  ├─ wait_for_completion_or_failure       已退出 with，engine 侧交接完成
 │  └─ [finally] manager.shutdown
 ├─ [multi-port external LB] run_dp_supervisor
 └─ [headless] run_headless
@@ -835,7 +877,11 @@ flowchart TB
 
 图同时表示两个可组合维度，不要求上面两个模板同时执行：TP/PP 让一个模型的计算由多个 rank 完成，DP 引入多个 Engine 的请求承载；MoE 等配置还会增加跨 DP 协调。
 
+**DP=2 默认起几个 API server。** 上面的 `--data-parallel-size 2` 模板走的不是 `run_server` 那条单进程分支。`ServeSubcommand.cmd` 在未显式给 `--api-server-count` 时按 LB 模式推导：internal LB（即不设 external / hybrid / multi-port，也没有 Rust frontend）取**全局 `data_parallel_size`**，所以 DP=2 默认就是 2 个 API server，进而走 `run_multi_api_server` —— 多个 API children 共用同一个监听 socket。hybrid LB 改取 `data_parallel_size_local`，external LB 与 multi-port 顶层取 1，Rust frontend 与 elastic EP 则把它压回 1。这张推导表与各模式下「请求在哪里选副本」的对应关系归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]] §4.1。
+
 **完成与限制。** `ServeSubcommand.cmd` 对多种 DP 负载均衡模式做互斥检查；headless 不启动 API server，并拒绝与正的 API server 数量混用。单进程 `LLM(data_parallel_size>1)` 在普通配置下有拒绝 guard，需要使用明确的多进程部署路径。Ray、external launcher 和远端 headless 还需要各自的集群地址、rank 配置与进程环境；当前 factory 接受某个名称，不证明所有调度组合都已受支持。
+
+**离线 DP 是第三个模板，不在上面两条命令里。** `LLM(data_parallel_size>1)` 在普通配置下有拒绝 guard，所以离线跑 DP 的参考实现是 `examples/features/data_parallel/data_parallel_offline.py`：脚本自己用 `multiprocessing.Process` 为每个 DP rank 拉一个进程，逐进程写 `VLLM_DP_RANK` / `VLLM_DP_RANK_LOCAL` 环境变量后各建一个 `LLM`；多节点时再由 `--dp-num-nodes` / `--dp-node-rank` / `--dp-master-addr` / `--dp-master-port` 指定跨机会合点。**DP 的进程编排由调用方负责，不是 `LLM` 构造函数替你做的**——这正是那条 guard 存在的原因。
 
 KV/encoder 分离是资源传输维度：发送方、接收方、路由服务和 connector 必须协同，请求结束后还可能有未完成传输。跨实例块的有效性与释放详见 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]]，多机启动及并行约束详见 [[18_vllm_distributed_inference_analysis|分布式推理]]。
 
@@ -911,6 +957,8 @@ flowchart TB
 
 公共 API 还包括 sleep/wake、cache reset、profile、collective RPC 以及权重传输和版本更新。它们作用在已经创建的 Engine 上，沿用创建该 Engine 的场景前提，另有各自的完成条件：
 
+**LoRA 的三个入口串在一起看。** 启动侧 `--enable-lora`（`EngineArgs.enable_lora`，默认 False）决定 Engine 是否为适配器预留 slot 与 scratch；请求侧离线用 `LoRARequest`、在线由 model 名解析到已注册适配器；运行时增删则另需 `VLLM_ALLOW_RUNTIME_LORA_UPDATING=1` 才注册 `/v1/load_lora_adapter` 与 `/v1/unload_lora_adapter`（源码在注册时就 warning「This should ONLY be used for local development!」）。**三者互不蕴含**：开了 `--enable-lora` 不等于能在运行时增删适配器；能增删也不等于请求会自动用上——请求仍要指明用哪一个。按名字解析到具体权重的 resolver 链归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|扩展与插件]] §4，适配器在模型侧怎样包装既有层归 [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|模型库]] §4.2。
+
 | 操作族 | 执行边界与输出 | 不能由一次返回推导的结论 |
 |---|---|---|
 | sleep / wake 与缓存重置 | 前端控制请求经 Engine/Executor 到设备或缓存管理者 | 重新唤醒不自动证明所有外部资源和调用者状态已恢复 |
@@ -934,8 +982,16 @@ flowchart TB
 | 请求怎样在客户端与核心之间推进？ | [[02_engineering/03_infer_frameworks/vllm/06_vllm_engine_architecture_analysis|Engine 架构]] |
 | 长短请求怎样混合调度，显存紧张时怎么办？ | [[02_engineering/03_infer_frameworks/vllm/07_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache]] |
 | 模型怎样加载，attention 实现怎样选？ | [[02_engineering/03_infer_frameworks/vllm/09_vllm_model_library_analysis|模型库]]、[[02_engineering/03_infer_frameworks/vllm/10_vllm_attention_backends_analysis|Attention Backend]] |
+| 怎样控制采样随机性，或让输出必须符合某个 schema？ | [[02_engineering/03_infer_frameworks/vllm/14_vllm_sampling_structured_output_analysis|采样与结构化输出]] |
+| 图像/音频输入怎样进入这条流水线并占用预算？ | [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]] |
 | 如何减少生成步数或设备提交成本？ | [[02_engineering/03_infer_frameworks/vllm/16_vllm_speculative_decoding_analysis|投机解码]]、[[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
 | 量化、融合算子和编译 Pass 怎样配合？ | [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis|量化]]、[[02_engineering/03_infer_frameworks/vllm/20_vllm_fused_ops_and_kernels_analysis|融合算子]]、[[02_engineering/03_infer_frameworks/vllm/21_vllm_ir_and_fusion_passes_analysis|IR 与融合 Pass]] |
+| 多副本部署时，请求按什么选副本、服务怎样就绪与关闭？ | [[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]] |
+| 一个模型跨多卡多机时，rank、并行轴与通信顺序怎样确定？ | [[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]] |
+| 想把 prefill 与 decode 拆到不同实例，KV 怎样跨实例搬？ | [[02_engineering/03_infer_frameworks/vllm/22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] |
+| 服务不重启就换权重，版本什么时候对外可见？ | [[02_engineering/03_infer_frameworks/vllm/25_vllm_weight_transfer_online_update_analysis|在线权重更新]] |
+| 多进程 executor 的 RPC、广播顺序与响应配对怎样保证？ | [[02_engineering/03_infer_frameworks/vllm/26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]] |
+| 想用插件扩展平台、路由或采样，代码在什么时候被加载？ | [[02_engineering/03_infer_frameworks/vllm/24_vllm_extension_plugin_system_analysis|扩展与插件]] |
 
 六个模块形成稳定的职责划分：接口交付语义，Engine 推进生命周期，Scheduler 决定资源计划，Executor 组织设备，Runner 形成当步输入，模型与算子完成计算。选择使用场景时，先确定交付的是文本、向量、文件还是控制结果，再决定同步/异步、服务/离线和单模型多卡/多副本部署；每个选择都对应第 5 章的一种完成条件。具体机制的适用组合与验证范围以其权威专题为准。
 

@@ -7,7 +7,7 @@ title: "vLLM 分布式推理：模型怎样切开，又怎样算回一个结果"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：从模型容量、请求吞吐和长上下文的不同需求出发，解释 TP/PP/DP/EP/PCP/DCP 分别切什么，以及局部计算如何恢复为正确输出。随后介绍 rank/group 与 executor 的执行合同、PP 部分发送与反向采样同步、Elastic EP 重配、EPLB 权重搬迁和微批重叠的完成边界。
 > **适用范围**：拥有并行轴、rank/group 构造、executor fan-out、collective 顺序、PP 正反向同步、Elastic EP 扩缩容重配、EPLB 分布式搬迁及 DBO。明确不拥有：进程启动/广播 RPC/响应 FIFO 归26，Serving 路由与 wave 通知归13，KV block 分配与生命周期归08，模型层 TP/PP 接口与权重 ABI 归09，attention backend 与 kernel 条件归10，两代 Runner 的批组装与执行归11/12，编译与 CUDA Graph 归19，设备算子归20，跨 Engine KV transfer 的 rank/group 约定归22，在线模型权重更新归25。
-> **最近更新**：2026-09-13。补齐闭环位置图、十三条核心流程的触发/阶段/完成点、所有权表、配置契约与聚合成本账；新增 Elastic EP 扩缩容重配一节；修正 `get_pp_indices` 余数方向与 `Worker.execute_model` 符号名。
+> **最近更新**：2026-09-16。修正 MRV1/MRV2 的 PP 反向采样通道及 MRV2+DBO 支持边界，并保留并行轴、Elastic EP、EPLB 与通信合同的完整分析。
 
 ## 1. 同样增加两张卡，解决的可能是完全不同的问题
 
@@ -31,9 +31,9 @@ title: "vLLM 分布式推理：模型怎样切开，又怎样算回一个结果"
 
 **这一页是什么。** 它是**并行几何与通信合同层**：把 `ParallelConfig` 解析出的轴数变成一组 `GroupCoordinator` 成员身份，规定每条 collective 的成员、顺序与 shape/lifetime，并说明局部结果在哪一次通信之后才恢复成完整语义。它同时拥有这一层自己的动态事务：Elastic EP 换 DP group、EPLB 换专家物理槽、DBO 在时间维再切一层微批。
 
-**它不是什么。** 它不是进程管理层：worker 进程启动、广播 RPC 的四通道与响应 FIFO、shutdown 归 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]。不是请求控制面：DP 请求路由、wave 通知与就绪屏障归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。不是 KV 分配器：block 分配、`block_size` 整除约束与 KV 生命周期归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。不是模型库：`make_layers` / `PPMissingLayer` 怎样声明 PP 边界、权重 ABI 怎样按 TP rank 切开归 [[09_vllm_model_library_analysis|模型库与模型 ABI]]。不是 attention 实现：产出 `cp_attn_out` / `cp_attn_lse` 的 backend 与 kernel 条件归 [[10_vllm_attention_backends_analysis|Attention Backend]]。不是 Runner：`BatchExecutionDescriptor` 之后的批组装与设备执行归 [[11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。不是跨 Engine 传输：EPD/PD 分离在 KV 平面的 rank 约定（实际由 `kv_transfer_params` 的 tp/dcp/pp 与 `NixlAgentMetadata` 的 DCP/PCP 字段承载；`KVTransferConfig.kv_rank` / `kv_parallel_size` 在本基线下无读取者）归 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]]。
+**它不是什么。** 它不是进程管理层：worker 进程启动、广播 RPC 的四通道与响应 FIFO、shutdown 归 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]]；**`Executor.get_class` 那几个分支各自落到哪个执行器类、哪些复用这套控制面，owner 也是 [[26_vllm_multiproc_executor_rpc_deepdive#1.1 哪些执行器实际使用这套控制面|MultiprocExecutor 专题 §1.1]]**，本页只用它的结果。不是请求控制面：DP 请求路由、wave 通知与就绪屏障归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]。不是 KV 分配器：block 分配、`block_size` 整除约束与 KV 生命周期归 [[08_vllm_kv_cache_management_analysis|KV Cache 管理]]。不是模型库：`make_layers` / `PPMissingLayer` 怎样声明 PP 边界、权重 ABI 怎样按 TP rank 切开归 [[09_vllm_model_library_analysis|模型库与模型 ABI]]。不是 attention 实现：产出 `cp_attn_out` / `cp_attn_lse` 的 backend 与 kernel 条件归 [[10_vllm_attention_backends_analysis|Attention Backend]]。不是 Runner：`BatchExecutionDescriptor` 之后的批组装与设备执行归 [[11_vllm_model_runner_v1_analysis|Model Runner V1]] / [[12_vllm_model_runner_v2_analysis|Model Runner V2]]。不是跨 Engine 传输：EPD/PD 分离在 KV 平面的 rank 约定（实际由 `kv_transfer_params` 的 tp/dcp/pp 与 `NixlAgentMetadata` 的 DCP/PCP 字段承载；`KVTransferConfig.kv_rank` / `kv_parallel_size` 在本基线下无读取者）归 [[22_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]]。
 
-<!-- Figure spec: closed-loop position figure for the distributed layer. Every edge carries the real object crossing the boundary, not a verb. Three return edges close the loop: PPHandler sibling-group sampled broadcast back to earlier stages, EPLB three maps back into the running weights, and Elastic EP's committed new dp_group back into the coordinator set. Not a call graph; membership edges and data edges are drawn together deliberately because both are this layer's contracts. -->
+<!-- Figure spec: closed-loop position figure for the distributed layer. Every edge carries the real object crossing the boundary, not a verb. The PP return edge summarizes two distinct generation feedback channels: MRV2 PPHandler on a sibling group, and ordinary MRV1 async sampled IDs on the main PP device group; EPLB maps and Elastic EP's committed dp_group form the other return edges. Not a call graph; membership edges and data edges are drawn together deliberately because both are this layer's contracts. -->
 ```mermaid
 flowchart TB
     CFG["ParallelConfig<br/>world_size ＝ PP×TP×PCP"]
@@ -52,7 +52,7 @@ flowchart TB
     EC -->|SchedulerOutput| EX
     EX -->|collective_rpc 元组与 unique_reply_rank＝output_rank| W
     W -->|IntermediateTensors，partial P2P 时是本 TP rank 的切片| LAST
-    LAST -->|sampled_tokens num_sampled num_rejected 与 draft_tokens，经 PPHandler sibling group| W
+    LAST -->|MRV2 经 PPHandler 回 sampled num/reject/draft；MRV1 async 经 PP group 回 sampled IDs| W
     LAST -->|ModelRunnerOutput| EX
     EX -->|future.result| EC
     W -->|expert_load_view：本步物理槽负载计数| EPLB
@@ -76,18 +76,18 @@ flowchart TB
 | 功能 | 要解决的问题 | 设计与实现入口 | 产出的可观察变化 |
 |---|---|---|---|
 | ① 并行配置解析与校验 | 用户给的轴数是否构成一个存在执行路径的组合 | `ParallelConfig.__post_init__` 算 `world_size`；`_validate_parallel_config` 查 EPLB 前提与 PCP/DCP/DP 组合；`_verify_args` 查微批门槛；`VllmConfig._get_dbo_unsupported_features` | `world_size` / `data_parallel_index` 落定并冻结，或提前抛 `ValueError` / `NotImplementedError` |
-| ② 分布式环境与 group 构造 | 同一批进程怎样知道自己属于哪些通信组 | `init_worker_distributed_environment` → `init_distributed_environment` → `initialize_model_parallel` 的 reshape 与逐轴 transpose | 五个模型并行 group 就位并打出 rank 分配日志，`_EP` 按「MoE 或 `model_config is None`」、`_EPLB` 按 `enable_eplb` 另行创建，否则保持 None；重复初始化被 `ensure_model_parallel_initialized` 的四条 assert 拦截 |
-| ③ executor 选择与 worker 拉起 | 谁把这些 worker 叫起来，结果从哪个 rank 收 | `Executor.get_class` 的六个分支；`MultiprocExecutor._init_executor` / `_get_output_rank` | `self.output_rank` 固定为 `world_size − TP×PCP`；所有 worker 进入可接收 RPC 的状态 |
+| ② 分布式环境与 group 构造 | 同一批进程怎样知道自己属于哪些通信组 | `init_worker_distributed_environment` → `init_distributed_environment` → `initialize_model_parallel` 的 reshape 与逐轴 transpose | 五个模型并行 group 就位并打出 rank 分配日志，`_EP` 按「MoE 或 `model_config is None`」、`_EPLB` 按 `enable_eplb` 另行创建，否则保持 None；重复初始化只被 `ensure_model_parallel_initialized` 的四条 **size** assert（TP/PP/PCP/DCP 各一条）挡住——它比较的是已建 group 的 world size 与本次期望值，**不校验成员列表**，也不覆盖 `_DP`/`_EP`/`_EPLB`；成员构成不一致不会在这里报错 |
+| ③ executor 选择与 worker 拉起 | 谁把这些 worker 叫起来，结果从哪个 rank 收 | `Executor.get_class` 的六个分支（分支到类的完整映射归 26 §1.1）；`MultiprocExecutor._init_executor` / `_get_output_rank` | `self.output_rank` 固定为 `world_size − TP×PCP`；所有 worker 进入可接收 RPC 的状态 |
 | ④ TP 层内 collective | 层内切开的权重怎样合回完整语义 | `RowParallelLinear.forward` / `ColumnParallelLinear.forward`；`tensor_model_parallel_all_reduce` | 返回张量在每个 TP rank 上都具备完整模型语义：row 求和、column 按通道拼接 |
 | ⑤ PP 跨 stage 传递 | 中间激活怎样从上一 stage 到下一 stage，且不覆盖在途 buffer | `Worker.execute_model` 的 `irecv_tensor_dict` / `isend_tensor_dict`；`GroupCoordinator._should_use_all_gather` | 接收侧首次访问 tensor 时通信完成并做完 TP all-gather；发送侧的 handle 在下一 step 开头才 `wait()` 返回 |
-| ⑥ PP 反向采样同步 | 靠前的 stage 怎样知道末 stage 采样、拒绝、draft 了什么 | `compute_need_sampled_mask`；`PPHandler` 在 sibling NCCL group 上广播 | step T 的结果在 step T+`pp_size` 由 `get_prev_sampled_outputs()` 取出，且 slot generation 与快照一致才交付 |
-| ⑦ DP 共同推进 | 没有请求的 rank 怎样不破坏全组 collective | `run_engine_core` 分 `DPEngineCoreProc` 与 `reconfigure_for_independent_dp_rank()` 两支；`_has_global_unfinished_reqs` | `engines_running` 转 False 并让本 wave 收尾；paused 状态忽略 `START_DP_WAVE`，后续 `dist.barrier(dp_group)` 才能完成 |
+| ⑥ 两代 Runner 的 PP 反向采样同步 | 靠前的 stage 怎样取得末 stage 的生成反馈 | MRV2 用 sibling group 的 `PPHandler` 广播 sampled/num_sampled/num_rejected/draft；普通 MRV1 async 用主 PP `device_group` 广播 sampled IDs | MRV2 在 T+`pp_size` 由 `get_prev_sampled_outputs()` 按 slot generation 交付；MRV1 非末 stage 异步接收后，在下一次 `_prepare_input_ids` 使用前等待 |
+| ⑦ DP 共同推进 | 没有请求的 rank 怎样不破坏全组 collective | `run_engine_core` 分 `DPEngineCoreProc` 与 `reconfigure_for_independent_dp_rank()` 两支；`_has_global_unfinished_reqs` | `engines_running` 转 False 并让本 wave 收尾；paused 状态忽略 `START_DP_WAVE`，后续 `DPEngineCoreProc.barrier()` 才能完成——该方法的 docstring 明写是 **test-only utility**，生产路径不靠它判定 pause 达成 |
 | ⑧ PCP 切分—计算—gather—恢复 | 一次 prefill 的 token 分给多 rank 后怎样恢复全局顺序 | `PCPManager._iter_rank_chunks` / `_reorder_segments` / `_build_batch_layout`；`_gather_prefill_cache_inputs` | `restore_for_sampling` 返回按全局顺序排好的 hidden rows，采样器看到的批与未切分时一致 |
 | ⑨ DCP KV 切分与 LSE 合并 | 两份局部 softmax 输出怎样合成一个正确 attention | `MLADCPManager._init_combine` 选路；`_correct_attn_cp_out_kernel` 加权；`cp_lse_ag_out_rs` / `cp_lse_ag_out_ar` / `dcp_a2a_lse_reduce` | 返回 `[B, H/N, D]` 的 head-scattered 输出，或 all-reduce 分支的完整 head；`return_lse` 时另给全局 LSE |
 | ⑩ EP token dispatch/combine | token 选中的逻辑专家在哪个物理槽上 | `BaseRouter._select_experts`：`_compute_routing` → `capture_fn` → `_apply_eplb_mapping` → `_convert_indices_dtype` | 返回 `(topk_weights, topk_ids)`，其中 ids 已是物理 ID；combine 后每个 token 恢复原身份与路由权重 |
 | ⑪ EPLB 统计—策略—搬迁—提交 | 专家负载不均时怎样换布局而不换语义 | `EplbState.step` / `rearrange`；同步 `rearrange_expert_weights_inplace`，异步 `transfer_run_periodically` + `_move_to_workspace` | 两个不同完成点：同步是 `_commit_eplb_maps` 返回；异步是逐层 `_commit_eplb_maps_for_layer` 加 `consumed_event.record()` |
 | ⑫ DBO 意愿协商—切分—overlap—合并 | 通信等待窗口怎样被另一半 batch 的计算填上 | MRV1 `_synchronize_dp_ranks` / `_post_process_ubatch`；MRV2 `sync_cudagraph_and_dp_padding` + `UBatchRunner.run`；`UBatchContext` 的 yield | MRV1 按微批编号排序后 `torch.cat` 得完整输出；MRV2 全线程 join 后 `merge_ubatch_outputs` 返回单一输出 |
-| ⑬ Elastic EP 扩缩容重配 | 运行中改变 DP 规模时，旧 group 怎样安全退役 | `ElasticEPScalingState` 的四张状态机；`EngineCore.reinitialize_distributed` / `commit_prepared_elastic_ep` | `_commit_new_dp_group` 销毁旧 stateless dp_group、换上新 group 并同步 wave；`_update_parallel_config` 写回新 DP 规模 |
+| ⑬ Elastic EP 扩缩容重配 | 运行中改变 DP 规模时，旧 group 怎样安全退役 | `ElasticEPScalingState` 的四张状态机；`DPEngineCoreProc.reinitialize_distributed` / `commit_prepared_elastic_ep` | `_commit_new_dp_group` 销毁旧 stateless dp_group、换上新 group 并同步 wave；`_update_parallel_config` 写回新 DP 规模 |
 
 ### 1.2 哪些是基础路径，哪些要显式启用
 
@@ -98,7 +98,7 @@ flowchart TB
 | ③ executor 与 output rank | 基础 | 每次启动都跑；`output_rank` 公式对 PP=1 同样成立 | §5 |
 | ④ TP 层内 collective | 基础 | TP=1 时 `reduce_results and tp_size > 1` 不成立，不发 collective | §2.1 |
 | ⑤ PP 跨 stage 传递 | 条件 | `pipeline_parallel_size > 1`；partial P2P 另需元素数可被 TP size 整除 | §5、§5.1 |
-| ⑥ PP 反向采样同步 | 条件 | `pipeline_parallel_size > 1` | §5.2 |
+| ⑥ PP 反向采样同步 | 条件 | MRV2 且 PP>1 使用 `PPHandler`；MRV1 需 async、PP>1 且非 `broadcast_pp_output` 才广播 sampled IDs；external launcher 的 logits 广播是第三种合同 | §5.2 |
 | ⑦ DP 共同推进 | 条件 | `data_parallel_size > 1`；MoE 走 `DPEngineCoreProc`，dense 走独立 DP=1 重配 | §5.3 |
 | ⑧ PCP | 条件 | `prefill_context_parallel_size > 1`，且 MRV2、且 MLA | §3.1 |
 | ⑨ DCP | 条件 | `decode_context_parallel_size > 1` | §3.2 |
@@ -114,12 +114,12 @@ flowchart TB
 | 流程 | 触发 | 阶段：读入 → 决定 → 流向 | 完成点（可观察） |
 |---|---|---|---|
 | ① | `ParallelConfig` 构造（pydantic validator，早于 `VllmConfig.__post_init__`） | 读 EngineArgs → 算 `world_size = PP×TP×PCP`（`external_launcher` 再 `×DP`）→ 过 elastic EP 四条 gate、EPLB 三条前提、PCP/DCP/DP 组合 → 随后由 `VllmConfig.__post_init__` 补微批 a2a backend assert 与 `disable_cascade_attn = True` | `ParallelConfig.world_size` 与 `data_parallel_index` 落定；或抛出点名字段的 `ValueError` / `NotImplementedError` |
-| ② | `Worker.init_device` | `torch.accelerator.set_device_index` → `init_worker_distributed_environment`（`set_custom_all_reduce`、按 `distributed_timeout_seconds` 造 timeout）→ `init_distributed_environment` 或 `_init_elastic_ep_world` → `initialize_model_parallel` 依次建 `_TP`、`_DCP`、`_PCP`、`_PP`、`_DP`、`_EP`、`_EPLB` | 打出 `rank %s in world size %s is assigned as DP rank %s, PP rank %s, PCP rank %s, TP rank %s, EP rank %s, EPLB rank %s`；再次进入被 `ensure_model_parallel_initialized` 的 TP/PP/PCP/DCP 四条 assert 拦截 |
-| ③ | `EngineCore.__init__` | 读 `distributed_executor_backend` 与 `VLLM_USE_RAY_V2_EXECUTOR_BACKEND` → `Executor.get_class` 六分支 → `_init_executor` 建进程或 actor → 算 output rank | `self.output_rank == world_size − TP×PCP`；`get_response_mqs` 的 `unique_reply_rank` assert 从此以它为界 |
+| ② | `Worker.init_device` | `torch.accelerator.set_device_index` → `init_worker_distributed_environment`（`set_custom_all_reduce`、按 `distributed_timeout_seconds` 造 timeout）→ `init_distributed_environment` 或 `_init_elastic_ep_world` → `initialize_model_parallel` 依次建 `_TP`、`_DCP`、`_PCP`、`_PP`、`_DP`、`_EP`、`_EPLB` | 打出 `rank %s in world size %s is assigned as DP rank %s, PP rank %s, PCP rank %s, TP rank %s, EP rank %s, EPLB rank %s`；再次进入时 `ensure_model_parallel_initialized` 只用 TP/PP/PCP/DCP 四条 **size** assert 比较 world size，不查成员列表，也不管 `_DP`/`_EP`/`_EPLB` |
+| ③ | `EngineCore.__init__` | 读 `distributed_executor_backend` 与 `VLLM_USE_RAY_V2_EXECUTOR_BACKEND` → `Executor.get_class` 六分支 → `_init_executor` 建进程或 actor → 算 output rank | `self.output_rank == world_size − TP×PCP`。注意 `get_response_mqs` 的 `unique_reply_rank` assert 以 **`world_size`** 为界（`-1 <= unique_reply_rank < world_size`），不是以 output rank 为界；且 `collective_rpc` 不走 `get_response_mqs` |
 | ④ | 每个 row/column parallel 层的 `forward` | row：`input_is_parallel` 决定是否本地切分 → `bias_ = None if (tp_rank > 0 or skip_bias_add) else bias` → `quant_method.apply` → `reduce_results and tp_size > 1` 时 all-reduce；column：算本地 output shard → `gather_output` 时按通道 all-gather | 返回张量在每个 TP rank 上具备完整语义；`skip_bias_add` 时 bias 作为第二个返回值外移，由调用方自行融合 |
 | ⑤ | 非首或非末 stage 的 `Worker.execute_model` | 等上一步 `self._pp_send_work` → 构造 `all_gather_tensors`（仅 PP>1 且 `pass_config.enable_sp` 且 MRV1）→ `irecv_tensor_dict` 包成 `AsyncIntermediateTensors` → runner forward → `isend_tensor_dict` 并保留 `handles[1:]` | **接收侧**：首次访问 tensor 触发 `wait_for_comm()` 并跑完 `_postprocess` 的 TP all-gather。**发送侧**：下一 step 开头 `handle.wait()` 返回，buffer 才可复用 |
-| ⑥ | 末 stage 采样完成 | `compute_need_sampled_mask` 排除非最终 prefill chunk → 在 sibling NCCL group 与 `broadcast_stream` 上广播 sampled / `num_sampled` / `num_rejected` / draft → 非末 rank push `PendingRecv`，内含 slot generation 快照 | step T 的结果在 step T+`pp_size` 由 `get_prev_sampled_outputs()` 取出；generation 与快照不一致的旧 slot 结果被丢弃 |
-| ⑦ | `run_engine_core` 启动 | MoE 且 DP>1 → `DPEngineCoreProc`；否则 `reconfigure_for_independent_dp_rank()` 把 DP size/local/rank 置 1/1/0 并保留 `data_parallel_index` → busy loop → 无请求 rank 跑 dummy batch → `_has_global_unfinished_reqs` 在 wave 首步及 `dp_sync_interval` 的整数倍步做 CPU all-reduce | `engines_running` 转 False，本 wave 收尾；pause 达成共识后 `ignore_start_dp_wave = True`，使后续 `dist.barrier(dp_group)` 能完成 |
+| ⑥ | PP>1 的末 stage 完成采样 | MRV2：`compute_need_sampled_mask` → `PPHandler.broadcast` / `broadcast_drafts`；MRV1 async：`_pp_broadcast_prev_sampled_token_ids`，非末 stage 由 `_pp_receive_prev_sampled_token_ids_to_input_batch` 发起异步接收 | MRV2 在 T+`pp_size` 由 `get_prev_sampled_outputs()` 按 generation 交付；MRV1 的 `_prepare_input_ids` 等 `_pp_recv_work` 后才消费 sampled IDs；全为 chunked prefill 时跳过传输 |
+| ⑦ | `run_engine_core` 启动 | MoE 且 DP>1 → `DPEngineCoreProc`；否则 `reconfigure_for_independent_dp_rank()` 把 DP size/local/rank 置 1/1/0 并保留 `data_parallel_index` → busy loop → 无请求 rank 跑 dummy batch → `_has_global_unfinished_reqs` 在 wave 首步及 `dp_sync_interval` 的整数倍步做 CPU all-reduce | `engines_running` 转 False，本 wave 收尾；pause 达成共识后 `ignore_start_dp_wave = True`，使后续 `DPEngineCoreProc.barrier()`（docstring 标注 **test-only utility**，是测试的可观察点而非生产完成点）能完成 |
 | ⑧ | MRV2 且 PCP>1 的一次 step | `_iter_rank_chunks` 切 `2×pcp` 块、rank 取 `r` 与 `2p−1−r`、decode 行复制 → `_reorder_segments` 把 pure prefill 排到本地末尾 → `_build_batch_layout` 定 `padded_num_tokens = max` 并产出 `hidden_restore_idx` / `padded_gather_idx` / `gathered_kv_write_mask` → `_gather_prefill_cache_inputs` → 本地 attention → hidden all-gather | `restore_for_sampling` 返回按全局顺序排好的 hidden rows；padding 行已被写掩码挡在 KV cache 之外 |
 | ⑨ | backend 交出 `cp_attn_out [B,H,D]` 与 `cp_attn_lse [B,H]` | `mask_dcp_empty_shards_` 把空 shard 置零权重 → `_init_combine` 在 direct workspace / `dcp_a2a_lse_reduce` / `cp_lse_ag_out_ar` / `cp_lse_ag_out_rs` 之间选路 → `correct_attn_out` 减最大 LSE 后按 `exp(ℓᵢ−ℓ)` 加权 → reduce-scatter、all-reduce 或 A2A 解包 | 返回 `[B, H/N, D]`（head-scattered）或 PCP 分支的完整 head；A2A 分支在 `work.wait()` 之后解包才算数 |
 | ⑩ | MoE 层 forward | `_validate_eplb_state` → `_compute_routing` 得逻辑 `topk_ids` 与权重 → `capture_fn(topk_ids)` 看逻辑 ID → `_apply_eplb_mapping` 转物理，冗余专家时从副本中选一个 → `_convert_indices_dtype` → prepare/finalize dispatch → expert GEMM → combine | `_select_experts` 返回 `(topk_weights, topk_ids)`；combine 后每个 token 恢复原身份与路由权重 |
@@ -299,7 +299,7 @@ EP group 只对 MoE 或模型配置为空的初始化场景创建；EPLB 开启�
 
 前两节的 group 一经建立就不再变化。`enable_elastic_ep` 打开的是这一层唯一的**动态重配事务**：DP 规模在服务运行期间增减，而模型执行不能因此看到半新半旧的通信域。配置期先过四条 gate——必须 `enable_eplb=True`、拒绝 `pipeline_parallel_size > 1`、拒绝 `data_parallel_external_lb` / `data_parallel_hybrid_lb`（源码理由是 elastic EP 依赖单一 API server 与 core client 协调）、`eplb_config.use_async` 时要求 NIXL 可用；初始化期 `_init_elastic_ep_world` 再 assert `nnodes_within_dp == 1`，明确拒绝 multi-node TP/PP。
 
-`EngineCore.reinitialize_distributed` 收到 `ReconfigureDistributedRequest` 后深拷贝一份 `ParallelConfig`、改写 DP 规模与 master 端口，然后建 `ElasticEPScalingState`。它按 `worker_type ∈ {existing, new, removing}` 与 `scale_type ∈ {scale_up, scale_down}` 组合出四张状态机（`ScaleUpExistingEngineState` / `ScaleUpNewEngineState` / `ScaleDownRemainingEngineState` / `ScaleDownRemovingEngineState`），每次 `progress()` 只推进一格，因此重配不阻塞 busy loop。关键在于 **prepare 阶段新旧 dp_group 同时存在**：`old_dp_group` 来自当前 engine，`new_dp_group` 由 `ElasticEPPrepare` 单线程 `ThreadPoolExecutor` 上的 `stateless_init_dp_group` 建出；`_execute_async` 把 worker 侧的 `prepare_reconfiguration` 交给 TCP coord store 的 `wait(done_keys)`，主线程只轮询 future 是否 done。scale-up 还要 `_sync_kv_cache_memory_size` 在新组上做一次 MIN all-reduce，让新旧 engine 用同一份可用显存口径。
+`DPEngineCoreProc.reinitialize_distributed`（这两个入口都定义在 `DPEngineCoreProc` 上，不在基类 `EngineCore`——只有 DP engine proc 有 dp_group 可换；同一入口在 23 §6.3 的写法一致）收到 `ReconfigureDistributedRequest` 后深拷贝一份 `ParallelConfig`、改写 DP 规模与 master 端口，然后建 `ElasticEPScalingState`。它按 `worker_type ∈ {existing, new, removing}` 与 `scale_type ∈ {scale_up, scale_down}` 组合出四张状态机（`ScaleUpExistingEngineState` / `ScaleUpNewEngineState` / `ScaleDownRemainingEngineState` / `ScaleDownRemovingEngineState`），每次 `progress()` 只推进一格，因此重配不阻塞 busy loop。**四张状态机不是同一个入口产生的**：`reinitialize_distributed` 只会给出 `worker_type = "removing" if is_shutdown else "existing"`，也就是本节展开的 existing/removing 两支；`worker_type="new"` 由新加入 engine 自己的 `DPEngineCoreProc._eep_scale_up_before_kv_init` 在 KV 初始化之前产生——基类 `EngineCore` 上的同名方法只是 `raise NotImplementedError`，实体同样只在 `DPEngineCoreProc`，与上面两个入口是同一类归属。因此下文的 existing scale-up 走法不能套到新 engine 那一支上——新 engine 根本没有旧 dp_group 要退役。关键在于 **prepare 阶段新旧 dp_group 同时存在**：`old_dp_group` 来自当前 engine，`new_dp_group` 由 `ElasticEPPrepare` 单线程 `ThreadPoolExecutor` 上的 `stateless_init_dp_group` 建出；`_execute_async` 把 worker 侧的 `prepare_reconfiguration` 交给 TCP coord store 的 `wait(done_keys)`，主线程只轮询 future 是否 done。scale-up 还要 `_sync_kv_cache_memory_size` 在新组上做一次 MIN all-reduce，让新旧 engine 用同一份可用显存口径。
 
 准备就绪时 `_mark_ready_for_switch` 往 coord store 写 `eep_ready/<dp_rank>`，状态停在 `COMMIT_SCALE_UP` 或 `COMMIT_SCALE_DOWN` 等待外部放行。此时若重复发起重配，`reinitialize_distributed` 抛 `"Elastic EP reconfiguration is already active"`；若在没准备好时调用 `commit_prepared_elastic_ep`，抛 `"No prepared Elastic EP reconfiguration is ready"`——注意 `is_ready_for_switch()` 只对 `worker_type == "existing"` 成立，新加入和正在退出的 engine 不走这个放行点。放行后 `_commit_new_dp_group` 才是真正的完成点：`stateless_destroy_torch_distributed_process_group(old_dp_group)` 销毁旧组，换上新 dp_group/dp_rank/dp_store，再在新组上 MAX all-reduce `(engines_running, current_wave, step_counter)` 让新成员对齐 wave 进度；随后 `_update_parallel_config` 把新 DP 规模写回活跃的 `ParallelConfig`，状态转 `COMPLETE`，新组 rank 0 发出 `RECONFIGURE_FINISHED` 通知。
 
@@ -325,29 +325,31 @@ Executor 管理 worker 生命周期、RPC fan-out、输出汇集与故障；`Wor
 
 PP 中间 tensor 通常在一个 stage 的 TP ranks 上完全复制。对满足条件的 key，`GroupCoordinator._should_use_all_gather()` 会选择 partial P2P：发送端先按 TP size 切出本 rank 负责的连续片段，只沿对应 PP lane 发送；接收端收到自己的片段后，在新 stage 的 TP group 内 all-gather，恢复原 tensor shape。于是 TP=2、PP=2 时，rank 0→2 和 rank 1→3 各发送一半，rank 2/3 再互相 all-gather；不是 rank 0 把完整 tensor 发给 rank 2、rank 1 再重复发一份。
 
-**这里的责任归属要分清，因为它决定误用时的表现。** guard 本身只验一件事：`all_gather_group` 存在，且 `numel % all_gather_group.world_size == 0`，即元素数可按 TP size 整除。“该 tensor 在发送 stage 确实是 fully replicated”这一条**源码没有任何检查**——它是**调用方义务**，只能通过 `all_gather_tensors` 逐 key 关闭。基线里唯一设置它的调用点是 `Worker.execute_model`：仅当 `pipeline_parallel_size > 1` 且 `compilation_config.pass_config.enable_sp` 且本步是 forward pass 时才构造 `{"residual": not is_residual_scattered_for_sp(...)}`，并且带 `assert not self.use_v2_model_runner`——**这是 MRV1 独有的分支**，与 §7.1 “MRV2 拒绝 PP”的结论互为印证。因此在 sequence parallel 已把 residual 分散到各 TP rank 的情况下，只有这条路径会关掉 residual 的 partial all-gather；换成别的 key 或别的 Runner 误开时，guard 不会拦，接收端会把两个本来不同的局部片段误当成“同一完整 tensor 的分片”，**通信正常完成而数值含义已错**。
+**这里的责任归属要分清，因为它决定误用时的表现。** guard 本身只验一件事：`all_gather_group` 存在，且 `numel % all_gather_group.world_size == 0`，即元素数可按 TP size 整除。“该 tensor 在发送 stage 确实是 fully replicated”这一条**源码没有任何检查**——它是**调用方义务**，只能通过 `all_gather_tensors` 逐 key 关闭。普通 MP 路径由 `Worker.execute_model` 在 `pipeline_parallel_size > 1`、`compilation_config.pass_config.enable_sp` 且本步是 forward pass 时构造 `{"residual": not is_residual_scattered_for_sp(...)}`，并以 `assert not self.use_v2_model_runner` 限定 MRV1；MRV1 的 `external_launcher` 路径也会在 `GPUModelRunner.execute_model` 的 `broadcast_pp_output` 分支构造同名映射。这里排除 MRV2 的原因是 **MRV2 在 TP>1 时不支持 sequence parallelism**，不是 MRV2 不支持 PP：MRV2 在 PP>1 时会构造 `PPHandler`，第5.2节就是它的反向同步通道。因此在 sequence parallel 已把 residual 分散到各 TP rank 的情况下，这两条 MRV1 路径会按 residual 的真实复制状态决定是否关闭 partial all-gather；换成别的 key 或误开时，guard 不会拦，接收端会把两个本来不同的局部片段误当成“同一完整 tensor 的分片”，**通信正常完成而数值含义已错**。
 
 异步完成点也没有改变：非末 stage 保存 `isend_tensor_dict()` 返回的 device handles，并在下一 step 复用相关 buffer 前等待；非首 stage 的 `AsyncIntermediateTensors` 到真正访问 tensor 时才等待 irecv 和后处理。partial P2P 减少的是 PP 链路字节，代价是在接收 stage 增加 TP all-gather；是否有收益需要按互连拓扑和 tensor 大小测量，源码没有给出统一阈值。
 
-### 5.2 sampled token 走独立的 PP 反向同步通道
+### 5.2 两代 Runner 的 sampled token 走不同 PP 反向通道
 
-hidden states 沿 PP 正向流动，但较早 stage 还需要知道末 stage 最终采样、拒绝和 draft 了什么。`PPHandler` 为此建立一条 side stream：末 stage 按 `compute_need_sampled_mask()` 只选择本步真正到达采样点的请求，非最终 prefill chunk 不进入 sampled 集合；随后广播 sampled token、每请求 `num_sampled`、`num_rejected`，以及可选 draft tokens。前面 stages 接收并通过 `get_prev_sampled_outputs()` 取回对应历史结果。
+这条通道的选择轴不只是 PP size，还有 Runner 代际。MRV2 `GPUModelRunner.__init__` 只在 `use_pp` 时构造 `PPHandler`；hidden states 沿 PP 正向流动时，较早 stage 还需要知道末 stage 最终采样、拒绝和 draft 了什么。末 stage 按 `compute_need_sampled_mask()` 只选择本步真正到达采样点的请求，非最终 prefill chunk 不进入 sampled 集合；随后广播 sampled token、每请求 `num_sampled`、`num_rejected`，以及可选 draft tokens。前面 stages 接收并通过 `get_prev_sampled_outputs()` 取回对应历史结果。
 
-这条广播使用与 hidden-state P2P 分开的 sibling NCCL group，避免采样广播和正向 P2P 在同一 communicator 上互相串行。非末 stage 的接收队列预先填入 `pp_size` 个空项：step T 接收的结果到 T+PP size 才消费，与流水线延迟对齐。request slot 被释放并复用时，generation counter 会使旧 slot 的晚到结果失效，不能只凭当前位置把旧 token 交给新请求。
+这条 MRV2 广播使用与 hidden-state P2P 分开的 sibling NCCL group，避免采样广播和正向 P2P 在同一 communicator 上互相串行。非末 stage 的接收队列预先填入 `pp_size` 个空项：step T 接收的结果到 T+PP size 才消费，与流水线延迟对齐。request slot 被释放并复用时，generation counter 会使旧 slot 的晚到结果失效，不能只凭当前位置把旧 token 交给新请求。
 
-因此 PP 的完整正确性不止“中间 tensor 最终送到下一 stage”：正向数据要满足 shape/lifetime，反向采样反馈还要满足 request 身份、延迟和 generation。draft/accept/reject 的算法语义归 [[16_vllm_speculative_decoding_analysis|投机解码]]；本节只拥有跨 stage 的同步合同。
+MRV1 不构造 `PPHandler`，但普通 async PP 仍有一条更窄的反馈通道。末 stage 的 `GPUModelRunner.sample_tokens` 在 `not broadcast_pp_output`、PP>1 时用主 PP `device_group` 调 `_pp_broadcast_prev_sampled_token_ids`；非末 stage 在自己的 `sample_tokens` 空状态分支调用 `_pp_receive_prev_sampled_token_ids_to_input_batch`，保存异步 work，并给本地请求追加占位进度。下一次 `_prepare_input_ids` 必须先等待 `_pp_recv_work`，再把收到的 sampled IDs 写进输入。全批都是未完成的 chunked prefill 时，两端都跳过这次广播。它只传单步 sampled IDs，不承载 MRV2 的拒绝数、draft 列表或 slot-generation 队列合同。
+
+MRV1 的 `external_launcher` 又不同：`broadcast_pp_output=True` 时由末 stage 广播 logits，各 stage 已能在本地继续采样；async 分支因此显式跳过再次广播 sampled IDs。三条路径不能合成一句“PPHandler 负责 PP 采样”。PP 的完整正确性不止中间 tensor 最终送到下一 stage：正向数据要满足 shape/lifetime，反向反馈还要满足各自的 request 行对应、延迟与失效规则。draft/accept/reject 的算法语义归 [[16_vllm_speculative_decoding_analysis|投机解码]]；本节只拥有跨 stage 的同步合同。
 
 ### 5.3 DP 空闲不能随意退出 MoE 通信
 
 普通 dense DP 在 `run_engine_core` 重配成各自 DP=1，保留用于服务标识的 DP index，能够独立推进；MoE 则进入 `DPEngineCoreProc`，内部 rank offset 与 world 扩展使它们组成共同通信域。某个 rank 没有实际请求但全组仍需推进时，engine 执行 dummy batch；全局 unfinished 状态同步后才能结束 wave。sleep/pause 分支必须遵守自己的限制，不可看到“本地没 token”就进入不同 collective。
 
-`test_dp_pause_barrier_request_deadlock` 的反例是 rank 0 在 DP barrier 等待、rank 1 因错误 wave 通知进入 EP all-to-all。两个都在通信，但等的不是同一次操作；测试要求 paused 状态忽略该启动通知（源码里就是把 `ignore_start_dp_wave` 置真），使后续 barrier 能完成。请求路由和 wave 的服务通知归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]，它们不能代替此处实际执行的 collective 顺序。
+`test_dp_pause_barrier_request_deadlock` 的反例是 rank 0 在 DP barrier 等待、rank 1 因错误 wave 通知进入 EP all-to-all。两个都在通信，但等的不是同一次操作；测试要求 paused 状态忽略该启动通知（源码里就是把 `ignore_start_dp_wave` 置真），使后续 barrier 能完成。pause 共识协议本身（`pending_pause` → `sync_dp_state` → `ignore_start_dp_wave`，以及 resume 对未完成 pause 的拒绝）归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]] §2.4；本节只讲它在**通信域**这一侧的后果——共识未达成时各 rank 对 collective 的预期不一致。请求路由和 wave 的服务通知归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]]，它们不能代替此处实际执行的 collective 顺序。
 
 ## 6. EP 与 EPLB：逻辑专家不变，物理槽位可以改变
 
 ### 6.1 Token 路由先选专家，再查放在哪里
 
-设一个 MoE 层有逻辑专家 E0–E3，EP=2，每 rank 两个物理槽：rank0 的槽0、1装 E0、E1；rank1 的槽2、3装 E2、E3。R 的 token 选择 E1，S 的 token 选择 E3，则 dispatch 分别送到 rank0 的槽1和 rank1 的槽3，执行各专家后，combine 按原 token 身份及路由权重归并。多选专家时，一个 token 可以产生多份 expert 输入，但重建后仍对应原 token。
+设一个 MoE 层有逻辑专家 E0–E3，EP=2，每 rank 两个物理槽：rank0 的槽0、1装 E0、E1；rank1 的槽2、3装 E2、E3。R 的 token 选择 E1，S 的 token 选择 E3，则 dispatch 分别送到 rank0 的槽1和 rank1 的槽3，执行各专家后，combine 按原 token 身份及路由权重归并。多选专家时，一个 token 可以产生多份 expert 输入，但重建后仍对应原 token。启动期 checkpoint 怎样把全局 expert 名称筛到本 rank 并写入本地槽归 [[09_vllm_model_library_analysis#2.6 融合前分别分片，融合后仍能拆回各投影|模型库 §2.6 的 2.6.1]]；本节从权重已经位于这些槽开始。
 
 `BaseRouter._select_experts` 先 `_validate_eplb_state`，再由 `_compute_routing` 产生逻辑 `topk_ids` 与权重，接着 `_apply_eplb_mapping` 转成物理 ID，最后 `_convert_indices_dtype`；capture callback 在映射前看到逻辑 ID。开启冗余专家时 `logical_to_physical_map` 可为一个逻辑专家列出多个物理副本，`logical_replica_count` 给有效数；路由选一个副本，padding/无效 ID 另有掩码。函数返回的 `(topk_weights, topk_ids)` 就是本页交给 [[20_vllm_fused_ops_and_kernels_analysis|融合算子]] 的对象——ids 此时已是物理 ID；具体 top-k 实现、token packing、GEMM 与 combine 算子归 20。
 
@@ -403,7 +405,7 @@ DBO 是 dual batch overlap，把同一次 forward 切成两个 microbatches，�
 同一教学输入：DP 两 rank 分别有128、512个真实 token，已共同超过所用 threshold，切成两个256-token微批。MRV1 因 rank0 第二微批无真实 token 而否决；MRV2 让 rank0 第二微批以 padding 继续，保持每 rank 两次 expert all-to-all。这一差异有 `test_microbatching_survives_a_rank_that_cannot_fill_it` 等测试支撑，不能把旧稿的“空末微批必否决”套到 MRV2。
 
 > [!contradiction] 旧基线的 Runner 能力结论已经变化
-> 旧稿写“DBO 不受 MRV2 支持，回退 MRV1”。新基线有 MRV2 `UBatchRunner`，但默认选择仍把其视为开发中的能力，需要显式设置 `VLLM_USE_V2_MODEL_RUNNER`；它拒绝 CUDA Graph、LoRA、投机、PP、PCP/DCP、多模态及 hybrid 等组合。PCP 仍只在 MRV2 运行，因此 PCP+DBO 仍不组成受支持路径，理由已是具体兼容校验。编译接缝见 [[19_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]]。
+> 旧稿写“DBO 不受 MRV2 支持，回退 MRV1”。新基线有 MRV2 `UBatchRunner`，但默认选择仍把 DBO 视为开发中的能力，需要显式设置 `VLLM_USE_V2_MODEL_RUNNER`；`_get_dbo_unsupported_features` 拒绝的是 **DBO 与** CUDA Graph、LoRA、投机、PP、PCP/DCP、多模态及 hybrid 的组合，不是 MRV2 本身拒绝 PP。MRV2 的 PP 正常构造 `PPHandler`；PCP 也只在 MRV2 运行，但 PCP+DBO 仍不组成受支持路径，理由是上述具体兼容校验。编译接缝见 [[19_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]]。
 
 ### 7.2 先交出 CPU 执行权，再让通信覆盖另一微批的计算
 
@@ -468,7 +470,7 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 |---|---|---|---|
 | `pipeline_parallel_size` / `tensor_parallel_size` / `prefill_context_parallel_size` | 三个进程级轴，相乘即 `world_size` | §2、§3.1、§4.1 | 1 / 1 / 1 |
 | `decode_context_parallel_size` | DCP 分片数，不增加 world | §3.2、§4.1 | 1 |
-| `data_parallel_size` / `data_parallel_size_local` / `data_parallel_rank` / `data_parallel_rank_local` / `data_parallel_index` | DP 规模与本 rank 身份；`reconfigure_for_independent_dp_rank` 只保留最后一个 | §5.3、§4.3 | 1 / 1 / 0 / None / 0 |
+| `data_parallel_size` / `data_parallel_size_local` / `data_parallel_rank` / `data_parallel_rank_local` / `data_parallel_index` | DP 规模与本 rank 身份；`reconfigure_for_independent_dp_rank` 只保留最后一个 | §5.3、§4.3 | 1 / 1 / 0 / None / `Field(init=False)`，无字面默认：`__post_init__` 先置为 `data_parallel_rank`，`run_engine_core` 再按实际身份覆写 |
 | `data_parallel_backend` / `data_parallel_external_lb` / `data_parallel_hybrid_lb` | 决定 DP 由谁负载均衡；后两者被 elastic EP 拒绝 | §4.3、§5.3 | "mp" / False / False |
 | `dp_sync_interval` | `_has_global_unfinished_reqs` 在 wave 首步之后每多少步才真同步 | §5.3、§1.3 ⑦ | 16 |
 | `disable_nccl_for_dp_synchronization` | DP 一致性 all-reduce 走 CPU 还是设备 | §7.1（MRV1 `_synchronize_dp_ranks` 路径） | None，由 `VllmConfig` 解析 |
@@ -500,7 +502,7 @@ MRV1 `_allow_microbatching` 另检查 prefix-cache 读写依赖：如果前半 b
 | ③ executor 与 output rank | 一次 fan-out 只收一份模型结果 | 广播 RPC 的进程/actor 开销；aggregator 存在时要收全量再合并 | output rank 公式假定结果只从最后 stage 首 TP worker 出；进程握手细节归 26 |
 | ④ TP 层内 collective | 单卡放不下的层能切开执行 | 每个 row-parallel 层一次 all-reduce，落在延迟关键路径上；bias 只能一次 | TP 越大同步越频；跨节点 TP 通常被带宽压垮，官方指南建议先在高带宽域内用 |
 | ⑤ PP 跨 stage 传递 | 模型可跨节点分段，突破单域容量 | 每 stage 边界一次 P2P；stage 串行带来 bubble；异步 handle 让 buffer 多驻留一步 | partial P2P 只减少链路字节，接收端换成 TP all-gather，源码不给统一阈值；误开时数值错而不报错 |
-| ⑥ PP 反向采样同步 | 靠前 stage 能拿到末 stage 的采样结论 | 一条 sibling NCCL communicator 的额外资源；结果延迟 `pp_size` 步；每 slot 一个 generation counter | 延迟固定为 `pp_size` 步，不能靠调参消除；slot 复用需靠 generation 判废 |
+| ⑥ PP 反向采样同步 | 靠前 stage 能拿到末 stage 的生成反馈 | MRV2 支付 sibling communicator、`pp_size` 步队列与 slot generation；MRV1 async 在主 PP group 多一次 sampled-ID broadcast 与异步接收 | MRV2 与 MRV1 的载荷和失效规则不同；external launcher 改为 logits 广播，不能重复计算这项成本 |
 | ⑦ DP 共同推进 | 多副本提高请求吞吐，MoE 仍能维持共同 collective | 权重与 KV 按副本复制；空闲 rank 要跑 dummy batch 白付算力；每 `dp_sync_interval` 一次 CPU all-reduce | 不缩小单副本；wave 语义要求全组同步，任一 rank 走岔即 hang |
 | ⑧ PCP | 长 prefill 的 query 计算分给更多 rank | 新增 ranks；`padded_num_tokens` 取组内最大带来 padding 浪费；K/V 与 hidden 各一次 gather | 只接受 MLA，拒绝 PP、多模态、LoRA、投机与 full CUDA Graph；与 DP 互斥 |
 | ⑨ DCP | 减少 decode 期 KV 复制，不新增进程 | 每步一次 LSE 加权合并，交换量按 `B×H×(D+若干)` 计；A2A 分支要求 H 被 DCP size 整除 | ranks 越多 KV 越省而交换越贵；可用组合受 §8 的 PCP/DCP 约束与 backend 能力限制 |
@@ -545,20 +547,25 @@ Worker.init_device
         |-- _EPLB 同成员另建 group_name="eplb"  [enable_eplb]
         `-- logger.info_once("rank ... is assigned as DP rank ...")
 
-EngineCore.step -> MultiprocExecutor.execute_model -> collective_rpc(unique_reply_rank=output_rank)
-`-- Worker.execute_model
-    |-- wait self._pp_send_work                          [上一步残留的 isend handles]
-    |-- 构造 all_gather_tensors {"residual": ...}         [PP>1 且 pass_config.enable_sp 且 forward_pass；assert 非 MRV2]
-    |-- irecv_tensor_dict -> AsyncIntermediateTensors     [非首 stage；首次访问才 wait_for_comm]
-    |-- model_runner.execute_model
-    |   |-- RowParallelLinear.forward -> tensor_model_parallel_all_reduce  [reduce_results and TP>1]
-    |   |-- PCPManager.partition_batch / restore_hidden_states / restore_for_sampling  [PCP>1]
-    |   |-- MLADCPManager.combine                        [DCP>1；输入是 cp_attn_out 与 cp_attn_lse]
-    |   |-- BaseRouter._select_experts -> _apply_eplb_mapping  [MoE]
-    |   |-- EplbState.step -> rearrange                  [enable_eplb 且到达 step_interval]
-    |   `-- UBatchRunner.run -> merge_ubatch_outputs     [use_ubatching]
-    |-- isend_tensor_dict -> self._pp_send_work = handles[1:]  [非末 stage]
-    `-- PPHandler.broadcast / receive                    [PP>1；T 的结果 T+pp_size 才消费]
+EngineCore.step / step_with_batch_queue
+|-- MultiprocExecutor.execute_model -> collective_rpc(unique_reply_rank=output_rank)
+|   `-- Worker.execute_model
+|       |-- wait self._pp_send_work                          [上一步残留的 isend handles]
+|       |-- 构造 all_gather_tensors {"residual": ...}         [PP>1 且 pass_config.enable_sp 且 forward_pass；assert 非 MRV2]
+|       |-- irecv_tensor_dict -> AsyncIntermediateTensors     [非首 stage；首次访问才 wait_for_comm]
+|       |-- model_runner.execute_model
+|       |   |-- RowParallelLinear.forward -> tensor_model_parallel_all_reduce  [reduce_results and TP>1]
+|       |   |-- PCPManager.partition_batch / restore_hidden_states / restore_for_sampling  [PCP>1]
+|       |   |-- MLADCPManager.combine                        [DCP>1；输入是 cp_attn_out 与 cp_attn_lse]
+|       |   |-- BaseRouter._select_experts -> _apply_eplb_mapping  [MoE]
+|       |   |-- EplbState.step -> rearrange                  [enable_eplb 且到达 step_interval]
+|       |   `-- UBatchRunner.run -> merge_ubatch_outputs     [use_ubatching]
+|       `-- isend_tensor_dict -> self._pp_send_work = handles[1:]  [非末 stage]
+`-- MultiprocExecutor.sample_tokens -> collective_rpc(unique_reply_rank=output_rank)
+    `-- Worker.sample_tokens
+        |-- gpu.model_runner.GPUModelRunner.sample_tokens -> PPHandler.broadcast / receive  [MRV2 PP；T+pp_size 消费]
+        `-- gpu_model_runner.GPUModelRunner.sample_tokens                              [MRV1 async PP]
+            `-- _pp_broadcast_prev_sampled_token_ids / _pp_receive_prev_sampled_token_ids_to_input_batch
 
 DPEngineCoreProc.run_busy_loop                            [MoE 且 DP>1；否则 reconfigure_for_independent_dp_rank]
 |-- _has_global_unfinished_reqs                           [wave 首步及 dp_sync_interval 整数倍步]
@@ -576,13 +583,13 @@ DPEngineCoreProc.run_busy_loop                            [MoE 且 DP>1；否则
 |---|---|
 | 切分与并行约束 | `vllm/config/parallel.py::ParallelConfig._validate_parallel_config / __post_init__ / _verify_args / num_ubatches / use_ubatching / set_dcp_defaults / reconfigure_for_independent_dp_rank`；`vllm/model_executor/layers/linear.py::ColumnParallelLinear.forward / RowParallelLinear.forward`；`vllm/model_executor/models/utils.py::make_layers / PPMissingLayer`；`vllm/distributed/utils.py::get_pp_indices` |
 | Rank与group | `vllm/distributed/parallel_state.py::init_distributed_environment / _init_elastic_ep_world / initialize_model_parallel / ensure_model_parallel_initialized / GroupCoordinator.__init__ / all_reduce`；`vllm/distributed/communication_op.py::tensor_model_parallel_all_reduce` |
-| Elastic EP 重配 | `vllm/distributed/elastic_ep/elastic_state.py::ElasticEPScalingState.progress / _prepare_workers / _ensure_new_dp_group / _execute_async / _sync_kv_cache_memory_size / _mark_ready_for_switch / _commit_new_dp_group / _update_parallel_config / is_ready_for_switch`；`vllm/v1/engine/core.py::EngineCore.reinitialize_distributed / commit_prepared_elastic_ep / _eep_scale_up_before_kv_init` |
+| Elastic EP 重配 | `vllm/distributed/elastic_ep/elastic_state.py::ElasticEPScalingState.progress / _prepare_workers / _ensure_new_dp_group / _execute_async / _sync_kv_cache_memory_size / _mark_ready_for_switch / _commit_new_dp_group / _update_parallel_config / is_ready_for_switch`；`vllm/v1/engine/core.py::DPEngineCoreProc.reinitialize_distributed / DPEngineCoreProc.commit_prepared_elastic_ep / DPEngineCoreProc._eep_scale_up_before_kv_init`（基类 `EngineCore` 上三者或不存在、或只是 `raise NotImplementedError`） |
 | PCP切分与重建 | `vllm/v1/worker/gpu/pcp_manager.py::PCPManager.validate_config / _iter_rank_chunks / _reorder_segments / _build_batch_layout / restore_hidden_states / restore_for_sampling`；`vllm/v1/attention/ops/pcp.py::_gather_prefill_cache_inputs / maybe_gather_mla_latent_cache_inputs`；`tests/v1/worker/test_gpu_pcp_manager.py::test_num_tokens_for_dispatch_uses_largest_pcp_rank / test_graph_padding_cannot_be_smaller_than_largest_pcp_rank` |
 | DCP数值与通信 | `vllm/v1/attention/ops/dcp.py::_correct_attn_cp_out_kernel / _cp_lse_common / mask_dcp_empty_shards_ / cp_lse_ag_out_rs / cp_lse_ag_out_ar / dcp_a2a_lse_reduce / MLADCPManager._init_combine`；`tests/distributed/test_dcp_a2a.py::TestLSEWeightedCombine.test_mathematically_correct` |
 | Executor到完成输出 | `vllm/v1/executor/abstract.py::Executor.get_class`；`vllm/v1/executor/multiproc_executor.py::MultiprocExecutor._init_executor / execute_model / collective_rpc / _get_output_rank / get_response_mqs`；`vllm/v1/executor/uniproc_executor.py::UniProcExecutor._init_executor`；`vllm/v1/executor/ray_executor.py::RayDistributedExecutor._init_workers_ray`；`vllm/v1/worker/gpu_worker.py::Worker.init_device / Worker.execute_model / AsyncIntermediateTensors.wait_for_comm / init_worker_distributed_environment`；`vllm/v1/engine/core.py::EngineCore.step`；进程 RPC 深挖见 [[26_vllm_multiproc_executor_rpc_deepdive|MultiprocExecutor 专题]] |
-| PP partial P2P 与采样反向同步 | `vllm/distributed/parallel_state.py::GroupCoordinator._should_use_all_gather / isend_tensor_dict / irecv_tensor_dict`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model`；`vllm/v1/worker/gpu/pp_utils.py::compute_need_sampled_mask / PPHandler`；`tests/v1/worker/test_pp_utils.py` |
+| PP partial P2P 与采样反向同步 | `vllm/distributed/parallel_state.py::GroupCoordinator._should_use_all_gather / isend_tensor_dict / irecv_tensor_dict`；`vllm/v1/worker/gpu_worker.py::Worker.execute_model`；`vllm/v1/worker/gpu/pp_utils.py::compute_need_sampled_mask / PPHandler`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner.sample_tokens / _pp_broadcast_prev_sampled_token_ids / _pp_receive_prev_sampled_token_ids_to_input_batch / _prepare_input_ids`；`tests/v1/worker/test_pp_utils.py`；`tests/v1/worker/test_gpu_model_runner.py::test_sample_tokens_receives_pp_sampled_ids_only_on_non_last_rank` |
 | DP共同推进 | `vllm/v1/engine/core.py::EngineCoreProc.run_engine_core / DPEngineCoreProc.run_busy_loop / _has_global_unfinished_reqs`；`tests/v1/distributed/test_async_llm_dp.py::test_dp_pause_barrier_request_deadlock` |
-| EPLB身份与提交 | `vllm/model_executor/layers/fused_moe/router/base_router.py::BaseRouter._select_experts / _apply_eplb_mapping`；`vllm/distributed/eplb/eplb_state.py::EplbState.step / rearrange / _all_ranks_result_ready / drain_async / compute_logical_maps / _commit_eplb_maps / _commit_eplb_maps_for_layer / _move_to_workspace`；`vllm/distributed/eplb/async_worker.py::transfer_run_periodically` |
+| EPLB身份与提交 | `vllm/model_executor/layers/fused_moe/router/base_router.py::BaseRouter._select_experts / _apply_eplb_mapping`；`vllm/distributed/eplb/eplb_state.py::EplbState.step / rearrange / _all_ranks_result_ready / drain_async`，以及**同文件的模块级函数**（不是 `EplbState` 的方法）`compute_logical_maps / _commit_eplb_maps / _commit_eplb_maps_for_layer / _move_to_workspace`；`vllm/distributed/eplb/async_worker.py::transfer_run_periodically` |
 | 权重搬迁与验证 | `vllm/distributed/eplb/rebalance_execute.py::move_to_buffer / move_from_buffer / rearrange_expert_weights_inplace`；`tests/distributed/test_eplb_execute.py::_test_async_transfer_layer_without_mtp_worker / test_rearrange_expert_weights_with_redundancy`；`tests/distributed/test_eplb_events.py::test_producer_consumer`；`vllm/distributed/weight_transfer/sharded_rdt_engine.py::ShardedRDTWeightTransferEngine.init_transfer_engine` |
 | 两代微批与图约束 | `vllm/v1/worker/dp_utils.py::_run_ar / _post_process_ubatch / _post_process_dp_padding / _synchronize_dp_ranks`；`vllm/v1/worker/gpu/dp_utils.py::sync_cudagraph_and_dp_padding / DPSyncState`；`vllm/v1/worker/gpu/cudagraph_utils.py::BatchExecutionDescriptor`；`vllm/v1/worker/gpu/ubatch_utils.py::UBatchRunner.prepare / run / merge_ubatch_outputs`；`vllm/config/vllm.py::VllmConfig._get_dbo_unsupported_features`；`tests/v1/worker/test_gpu_ubatch_slicing.py::test_microbatching_survives_a_rank_that_cannot_fill_it / test_ubatch_runner_overlaps_and_matches_single_batch / test_ubatch_runner_names_the_microbatch_that_failed` |
 | 重叠的buffer与事件 | `vllm/v1/worker/ubatching.py::UBatchContext`；`vllm/v1/worker/workspace.py::WorkspaceManager`；`vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._allow_microbatching`；`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py::DeepEPHTPrepareAndFinalize._do_dispatch`；`tests/v1/worker/test_workspace.py::test_workspace_lanes_compose_with_ubatches` |

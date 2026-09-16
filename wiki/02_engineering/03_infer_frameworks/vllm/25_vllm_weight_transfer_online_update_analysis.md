@@ -4,10 +4,10 @@ title: "vLLM 在线权重更新：受暂停窗口保护的版本可见性协议"
 
 # vLLM 在线权重更新：受暂停窗口保护的版本可见性协议
 
-> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main`，2026-09-07）
-> **主题**：vLLM 在线权重更新（功能分析）
-> **适用范围**：V1 Engine 的 pause、WeightTransfer session、四类内置后端、版本发布与派生状态失效
-> **最近更新**：2026-09-14
+> **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
+> **主题**：服务不重启时，一次权重更新怎样在 pause 窗口内完成传输、finish 与版本发布，四类后端的数据面与完成语义有何不同，以及哪些派生状态必须随之失效。核心代码在 `vllm/distributed/weight_transfer/`。
+> **适用范围**：Engine 的 pause 窗口、WeightTransfer session、四类内置后端、版本发布与派生状态失效；量化侧的 reload 地址合同归 17 §6.2，DP pause 共识协议归 13 §2.4，权重字节到 Parameter 的写入归 09。
+> **最近更新**：2026-09-16。补齐 utility RPC 的进程跳与多 Engine 扇出，并区分 Ray V1/V2 的回复收集语义。
 
 ---
 
@@ -189,14 +189,14 @@ flowchart TB
     DU -->|是| DP["有界 packed buffer broadcast"]
     DB --> DL["收齐一层并 post-process"]
     DP --> DL
-    DL --> DO["copy 回原 storage<br/>W=1,9"]
+    DL --> DO["copy 回原 storage<br/>W=1,9 完整两元素都传"]
 
     I --> IU{"packed"}
     IU -->|否| IH["逐参数 IPC handles"]
     IU -->|是| IP["packed buffer handle<br/>与 tensor_sizes"]
     IH --> IR["按物理 GPU UUID 导入"]
     IP --> IR
-    IR --> IO["layerwise reload<br/>W=1,9"]
+    IR --> IO["layerwise reload<br/>W=1,9 完整两元素都映射"]
 
     S --> SX["发送 index=1，value=9"]
     SX --> SN["本地展开完整 shape<br/>NaN,9"]
@@ -206,7 +206,7 @@ flowchart TB
     R --> RS["静态计划只 pull 本地切片"]
     RS --> RP["后台 scatter 与按需 quant"]
     RP --> RF["finish 等队列、stream<br/>与 producer 释放"]
-    RF --> RO["原 storage 为 W=1,9"]
+    RF --> RO["原 storage 为 W=1,9<br/>只 pull 本切片，不传未变的 1"]
 
     classDef default fill:#f7f7f7,stroke:#707070,color:#202020
     classDef acc1 fill:#e8f1ff,stroke:#3569a8,color:#173a63
@@ -223,7 +223,7 @@ Sparse 路径用 NaN 表示“这个位置保持旧值”，所以新值本身�
 
 layerwise reload 保存当前 kernel tensors，把 live layer 临时恢复为 meta 形态，收齐一层后 materialize、加载、量化或 repack，再 `copy_` 回原 tensor storage。稳定地址能保留 CUDA Graph 和 kernel 对参数 storage 的引用，并限制整模型双份驻留；但一层完成后旧值已经被覆盖，即使 version 尚未发布。
 
-因此安全性来自 **pause window**，不是 staging isolation。这里也不能从“地址稳定”推广出所有 loader 都无需 graph recapture：具体 kernel 的辅助 workspace、sort index 和捕获条件仍属于[[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]的合同。
+因此安全性来自 **pause window**，不是 staging isolation。这里也不能从“地址稳定”推广出所有 loader 都无需 graph recapture：Marlin `workspace` 与 `g_idx_sort_indices` 的 reload 复用条件归 [[02_engineering/03_infer_frameworks/vllm/17_vllm_quantization_analysis#6.2 reload 与 CUDA Graph：本页负责哪一半|量化执行 §6.2]]，通用 capture 地址前提归 [[02_engineering/03_infer_frameworks/vllm/19_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]；本页只拥有 pause window 与版本可见性。
 
 ## 4. 代码实现：控制面、数据面与模型加载器怎样衔接
 
@@ -253,46 +253,70 @@ flowchart TB
 
 ### 4.2 公开调用链
 
+调用这条链的**入口不止 Python 进程内 API**，先把兄弟轴列清，否则容易误以为只有一种用法：`vllm/entrypoints/serve/dev/rlhf/api_router.py` 暴露 `/init_weight_transfer_engine`、`/start_weight_update`、`/update_weights`、`/finish_weight_update` 四条 HTTP 路由（dev 路由，非稳定公开 API）；`vllm/distributed/weight_transfer/clients.py` 另提供两个同步客户端——`HTTPVLLMWeightSyncClient` 按上面四条路由说话，`RayVLLMWeightSyncClient` 则向一组 `AsyncLLM`/`LLM` Ray actor 扇出并等全部返回，把多 actor（例如多 DP）部署当作一个整体驱动。三者最终落到的都是下面这条链。
+
 以 Async 接口为例，pause 和权重 session 是两条相邻但独立的链：
 
 ```text
 AsyncLLM.pause_generation
 +-- frontend multimodal cache clear
-`-- EngineCoreClient.pause_scheduler_async
-    `-- EngineCoreProc.pause_scheduler
-        `-- EngineCore._finish_pause
-            +-- Executor.collective_rpc("synchronize_device")
-            `-- EngineCore._reset_caches
+`-- AsyncMPClient.pause_scheduler_async                       # 基类 EngineCoreClient 上没有这个方法
+    `-- AsyncMPClient.call_utility_async("pause_scheduler", ...)
+        |-- [DPLB internal/hybrid] asyncio.gather(所有 core_engines)，只返回第一个结果
+        |-- [DP external LB / 单 Engine] 只发给本 client 的 core_engine
+        `-- [ZMQ 进程边界] EngineCoreProc._handle_client_request(UTILITY)
+            `-- EngineCoreProc.pause_scheduler
+                `-- EngineCore._finish_pause
+                    +-- Executor.collective_rpc("synchronize_device")
+                    `-- EngineCore._reset_caches
 
 AsyncLLM.start_weight_update
 `-- AsyncLLM.collective_rpc
-    `-- EngineCoreClient.collective_rpc_async
-        `-- EngineCore.collective_rpc
-            `-- Executor.collective_rpc("start_weight_update")
-                `-- Worker.start_weight_update
-                    `-- Worker._start_weight_update
+    `-- AsyncMPClient.collective_rpc_async
+        `-- call_utility_async("collective_rpc", ...)
+            |-- [DPLB internal/hybrid] gather 所有 EngineCore
+            `-- [ZMQ 进程边界] EngineCoreProc._handle_client_request(UTILITY)
+                `-- EngineCoreProc._invoke_utility_method
+                    `-- EngineCore.collective_rpc
+                        `-- Executor.collective_rpc("start_weight_update")
+                            `-- Worker.start_weight_update
+                                `-- Worker._start_weight_update
 
 AsyncLLM.update_weights
 `-- AsyncLLM.collective_rpc
-    `-- EngineCoreClient.collective_rpc_async
-        `-- EngineCore.collective_rpc
-            `-- Executor.collective_rpc("update_weights")
-                `-- Worker.update_weights
-                    `-- WeightTransferEngine.update_weights
+    `-- AsyncMPClient.collective_rpc_async
+        `-- call_utility_async("collective_rpc", ...)
+            |-- [DPLB internal/hybrid] gather 所有 EngineCore
+            `-- [ZMQ 进程边界] EngineCoreProc._handle_client_request(UTILITY)
+                `-- EngineCoreProc._invoke_utility_method
+                    `-- EngineCore.collective_rpc
+                        `-- Executor.collective_rpc("update_weights")
+                            `-- Worker.update_weights
+                                `-- WeightTransferEngine.update_weights
 
 AsyncLLM.finish_weight_update
 +-- AsyncLLM.collective_rpc
-|   `-- EngineCoreClient.collective_rpc_async
-|       `-- EngineCore.collective_rpc
-|           `-- Executor.collective_rpc("finish_weight_update")
-|               `-- Worker.finish_weight_update
-|                   `-- WeightTransferEngine.finish_weight_update
+|   `-- AsyncMPClient.collective_rpc_async
+|       `-- call_utility_async("collective_rpc", ...)
+|           |-- [DPLB internal/hybrid] gather 所有 EngineCore
+|           `-- [ZMQ 进程边界] EngineCoreProc._handle_client_request(UTILITY)
+|               `-- EngineCoreProc._invoke_utility_method
+|                   `-- EngineCore.collective_rpc
+|                       `-- Executor.collective_rpc("finish_weight_update")
+|                           `-- Worker.finish_weight_update
+|                               `-- WeightTransferEngine.finish_weight_update
 `-- AsyncLLM.update_weight_version
-    `-- EngineCoreClient.set_weight_version_async
-        `-- EngineCore.set_weight_version
+    `-- AsyncMPClient.set_weight_version_async
+        `-- call_utility_async("set_weight_version", ...)
+            |-- [DPLB internal/hybrid] gather 所有 EngineCore
+            `-- [ZMQ 进程边界] EngineCoreProc._handle_client_request(UTILITY)
+                `-- EngineCoreProc._invoke_utility_method
+                    `-- EngineCore.set_weight_version
 ```
 
-当 payload 是 list 时，Worker 用 `data_parallel_rank * world_size + rank` 选择本地项。该索引合同把外部 payload 排列与 DP、local world size、Worker rank 绑定；并行组本身由[[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]负责。
+`DPLBAsyncMPClient.call_utility_async` 对它管理的每个 `core_engines` 建立调用并用 `asyncio.gather` 等待：任一 EngineCore 抛错都会让公开调用失败；成功返回则表示这些 EngineCore 都已完成，只是 API 丢弃其余返回值、仅交回索引 0 的结果。`DPAsyncMPClient` 的 external-LB 形态没有这个扇出，只向自己的 `core_engine` 发送；因此一次 `finish_weight_update` 成功只能证明这个 client 所属 Engine 已闭合，不能证明其他独立实例也更新完成。client 变体与路由选择见 [[13_vllm_serving_control_plane_analysis#3.1 进程、对象与状态归属|Serving 控制面 §3.1]]。
+
+当 payload 是 list 时，Worker 用 `data_parallel_rank * world_size + rank` 选择本地项。该索引合同把外部 payload 排列与 `data_parallel_rank`、`ParallelConfig.world_size` 与 Worker rank 绑定。注意这里的 `world_size` 是**模型并行 world**（PP×TP×PCP，`external_launcher` 时再 ×DP），不是“本节点的 local world size”；因此 payload 必须按同一口径线性排布。dense DP 下两个不同 DP rank 是否可能算出重合索引，本页未核实，不作断言。并行组本身由[[02_engineering/03_infer_frameworks/vllm/18_vllm_distributed_inference_analysis|分布式推理]]负责。
 
 ### 4.3 后端实现入口
 
@@ -327,20 +351,23 @@ SparseNCCLWeightTransferEngine.receive_weights
 
 | 阅读目标 | 稳定源码锚点 |
 |---|---|
-| 唯一配置字段与双侧后端注册表 | `vllm.config.weight_transfer.WeightTransferConfig`、`vllm.distributed.weight_transfer.factory.WeightTransferEngineFactory`、`WeightTransferTrainerFactory` |
-| Facade 调用顺序与版本后置 | `vllm.entrypoints.llm.LLM.finish_weight_update`、`vllm.v1.engine.async_llm.AsyncLLM.finish_weight_update` |
-| pause、cache 与 sleep | `vllm.v1.engine.core.EngineCoreProc.pause_scheduler`、`EngineCore._finish_pause`、`EngineCore._reset_caches`、`EngineCore.sleep`、`EngineCore.wake_up` |
-| Worker session 与 rank payload | `vllm.v1.worker.gpu_worker.Worker._start_weight_update`、`update_weights`、`finish_weight_update` |
-| Backend 公共完成语义 | `vllm.distributed.weight_transfer.base.WeightTransferEngine` |
-| Dense 与 IPC 的 Worker/Trainer 实现 | `vllm.distributed.weight_transfer.nccl_engine.NCCLWeightTransferEngine`、`NCCLTrainerWeightTransferEngine`、`vllm.distributed.weight_transfer.ipc_engine.IPCWeightTransferEngine`、`IPCTrainerWeightTransferEngine` |
-| Sparse 展开与原位写 | `vllm.distributed.weight_transfer.sparse_nccl_engine.SparseNCCLWeightTransferEngine`、`vllm.model_executor.model_loader.checkpoint_weight_patch._load_nan_masked_weights` |
-| RDT 静态计划与 drain | `vllm.distributed.weight_transfer.sharded_rdt_engine.ShardedRDTWeightTransferEngine` |
-| 稳定 storage | `vllm.model_executor.model_loader.reload.layerwise.initialize_layerwise_reload`、`_copy_and_restore_kernel_tensors` |
-| DP pause 共识 | `vllm.v1.engine.core.DPEngineCoreProc` |
+| 唯一配置字段与双侧后端注册表 | `vllm/config/weight_transfer.py::WeightTransferConfig`；`vllm/distributed/weight_transfer/factory.py::WeightTransferEngineFactory / WeightTransferTrainerFactory` |
+| 外部入口（HTTP / Ray 同步客户端） | `vllm/entrypoints/serve/dev/rlhf/api_router.py`；`vllm/distributed/weight_transfer/clients.py::HTTPVLLMWeightSyncClient / RayVLLMWeightSyncClient` |
+| sharded RDT 的 trainer 侧 | `vllm/distributed/weight_transfer/sharded_rdt_trainer.py` |
+| Facade 调用顺序与版本后置 | `vllm/entrypoints/llm.py::LLM.finish_weight_update`；`vllm/v1/engine/async_llm.py::AsyncLLM.finish_weight_update` |
+| pause、cache 与 sleep | `vllm/v1/engine/core.py::EngineCoreProc.pause_scheduler / EngineCore._finish_pause / EngineCore._reset_caches / EngineCore.sleep / EngineCore.wake_up` |
+| Worker session 与 rank payload | `vllm/v1/worker/gpu_worker.py::Worker._start_weight_update / update_weights / finish_weight_update` |
+| Backend 公共完成语义 | `vllm/distributed/weight_transfer/base.py::WeightTransferEngine` |
+| Dense 与 IPC 的 Worker/Trainer 实现 | `vllm/distributed/weight_transfer/nccl_engine.py::NCCLWeightTransferEngine / NCCLTrainerWeightTransferEngine`；`vllm/distributed/weight_transfer/ipc_engine.py::IPCWeightTransferEngine / IPCTrainerWeightTransferEngine` |
+| Sparse 展开与原位写 | `vllm/distributed/weight_transfer/sparse_nccl_engine.py::SparseNCCLWeightTransferEngine`；`vllm/model_executor/model_loader/checkpoint_weight_patch.py::_load_nan_masked_weights` |
+| RDT 静态计划与 drain | `vllm/distributed/weight_transfer/sharded_rdt_engine.py::ShardedRDTWeightTransferEngine` |
+| 稳定 storage | `vllm/model_executor/model_loader/reload/layerwise.py::initialize_layerwise_reload / _copy_and_restore_kernel_tensors` |
+| DP pause 共识 | `vllm/v1/engine/core.py::EngineCoreProc.pause_scheduler`（pause 入口，`DPEngineCoreProc` 未覆写它）、`DPEngineCoreProc._pause_complete / resume_scheduler`、`DPEngineCoreProc._has_global_unfinished_reqs`、`vllm/config/parallel.py::ParallelConfig.sync_dp_state` |
+| utility 进程跳与多 Engine 扇出 | `vllm/v1/engine/core_client.py::AsyncMPClient.collective_rpc_async / call_utility_async / _call_utility_async / set_weight_version_async / DPAsyncMPClient / DPLBAsyncMPClient.call_utility_async`；`vllm/v1/engine/core.py::EngineCoreProc._handle_client_request / _invoke_utility_method` |
 | Facade 顺序与版本标签测试 | `tests/entrypoints/weight_transfer/test_weight_transfer_llm.py::test_full_weight_transfer_flow` |
-| Worker session、rank payload、draft 与失败测试 | `tests/v1/worker/test_gpu_worker_weight_transfer.py` |
-| Sparse patch 与稳定 storage 测试 | `tests/model_executor/model_loader/test_checkpoint_weight_patch.py`、`tests/model_executor/model_loader/test_reload.py` |
-| pause 的设备同步、cache reset 与 DP 共识测试 | `tests/v1/engine/test_engine_core.py`、`tests/v1/core/test_async_scheduler.py` |
+| Worker session、rank payload、draft 与失败测试 | `tests/v1/worker/test_gpu_worker_weight_transfer.py::test_start_update_finish_delegates_to_engine / test_rank_local_update_includes_data_parallel_rank / test_finish_draft_session_keeps_lora_state / test_update_resets_active_on_error` |
+| Sparse patch 与稳定 storage 测试 | `tests/model_executor/model_loader/test_checkpoint_weight_patch.py::test_dense_and_sparse_patches_follow_packed_tp_loader`；`tests/model_executor/model_loader/test_reload.py::test_marlin_post_load_preserves_runtime_tensor_addresses / test_reload_lifecycle` |
+| pause 的设备同步、cache reset 与 DP 共识测试 | `tests/v1/engine/test_engine_core.py::test_pause_synchronizes_device_before_cache_reset / test_dp_sync_interval_idle_pause_consensus_on_first_step`；`tests/v1/core/test_async_scheduler.py::test_reset_prefix_cache_with_inflight_output_under_kv_pressure` |
 
 ## 5. 配套机制：哪些派生状态必须随权重边界处理
 
@@ -363,7 +390,7 @@ target 和 draft 是两个独立 update target；更新一个不会自动更新�
 
 ### 5.3 多 DP Engine 的暂停共识
 
-`DPEngineCoreProc` 不是只改本地 pause flag。它先记录本地 `pending_pause` 并继续 stepping，在 `sync_dp_state` 中等所有 rank 达成暂停共识，再设置 `ignore_start_dp_wave`，防止迟到 wave 把调度重新唤醒。resume 还拒绝尚未完成的 pause。
+pause 在多 DP Engine 下不是一个本地 flag，而要走一轮共识——这直接决定“窗口何时真正建立”。该共识的完整协议（`pending_pause` → `sync_dp_state` 达成 → `ignore_start_dp_wave`，以及 resume 对未完成 pause 的拒绝）归 [[13_vllm_serving_control_plane_analysis|Serving 控制面]] §2.4，本页不重述。本页只取它的**后果**：共识达成之前，各 rank 的窗口并未同时建立，此时发起 session 传输不安全。
 
 独立服务实例和外部负载均衡器不自动加入这个 DP 共识。多副本更新必须由更上层协调；服务拓扑边界见[[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]]。
 
@@ -375,9 +402,9 @@ Worker 的 update 失败会关闭 `_weight_update_active`、恢复默认 target 
 
 多进程 Executor 在等待回复前已经广播命令。成功路径会依次收齐目标 response queues；遇到第一个失败回复则立即抛错，不再等待或消费余下回复。未消费不代表其他 Worker 未执行。如果 rank A 已原位写入而 rank B 失败，Facade 不发布 version，但 rank A 不会自动回滚。这里没有 prepare vote、commit record 或补偿事务。
 
-Ray Executor 的收集方式不同：它为所有 Worker 建立 object refs，再以 `ray.get(refs, timeout=...)` 等待整组结果，因此没有 MultiprocExecutor “遇到首个失败后留下后续本地响应队列未 drain”的同一实现问题。但 Ray 路径同样先把调用发给各 Worker，也没有参数级事务回滚；某个远端 task 失败仍不能证明其他 rank 没有写入。
+“Ray Executor”必须再分两代。`Executor.get_class` 在 backend 为 `ray` 且 `VLLM_USE_RAY_V2_EXECUTOR_BACKEND` 关闭时选择 `RayDistributedExecutor`：它为所有 Worker 建立 object refs，再以 `ray.get(refs, timeout=...)` 等待整组结果，因此没有 MultiprocExecutor “遇到首个失败后留下后续本地响应队列未 drain”的同一实现问题。该开关开启时选择的 `RayExecutorV2` 则直接继承 `MultiprocExecutor`，复用 MQ control plane 且没有覆写 `collective_rpc`，所以拥有同样的首错/超时后未 drain 边界。两代 Ray 都先把调用发给各 Worker，也都没有参数级事务回滚；某个远端 task 或 MQ 回复失败仍不能证明其他 rank 没有写入。
 
-安全恢复策略是保持 pause，把所有 ranks 重建到同一份已知版本，必要时重启 Engine，再清理派生 cache、发布版本并恢复流量。源码没有 `rollback_weight_update`，所以具体恢复流程属于部署 policy。
+安全恢复策略是保持 pause，把所有 ranks 重建到同一份已知版本，必要时重启 Engine，再清理派生 cache、发布版本并恢复流量。对于 MultiprocExecutor 与 RayExecutorV2，首错或超时还可能让迟到/未消费回复留在 FIFO；除非能证明所有 response queues 已 drain，否则不要复用同一 executor 继续下一轮 RPC，应重建 Engine/executor，具体错配机制见 [[26_vllm_multiproc_executor_rpc_deepdive#6. Future：响应没有请求 ID 时怎样保持配对|MultiprocExecutor §6]]。源码没有 `rollback_weight_update`，所以具体恢复流程属于部署 policy。
 
 ### 6.2 完整配置合同
 
@@ -397,7 +424,7 @@ IPC 还有一条独立安全门：HTTP client 会把 handle 以 pickle+base64 �
 | `sleep(level)` | 0、1、2 | 不属于 weight session；深睡要先恢复 allocation |
 | `start_weight_update()` / `start_draft_weight_update()` | 主模型 / draft 两个公开入口 | 不允许 session 嵌套；后端可能拒绝 draft |
 | `update_weights(request)` | backend-specific typed payload；dict 或 rank-local list | deferred 后端的返回不代表处理完成 |
-| `finish_weight_update(version)` | 可选字符串 | 先 collective finish，成功后再独立发布标签 |
+| `finish_weight_update(weight_version=...)` | 可选字符串 | 先 collective finish，成功后再独立发布标签。参数名是 `weight_version`（`LLM` 与 `AsyncLLM` 两侧一致），不是 `version`；Worker 侧的同名方法 `Worker.finish_weight_update()` 不带参数 |
 | `VLLM_ALLOW_INSECURE_SERIALIZATION` | `0` / `1` | 默认 `0`；仅控制 pickled IPC handles 的反序列化，不影响 raw in-process handles |
 
 ### 6.3 选择与操作准则
