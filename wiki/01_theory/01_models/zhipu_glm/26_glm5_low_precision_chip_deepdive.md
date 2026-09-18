@@ -5,6 +5,7 @@ title: "GLM-5 低精度链与国产芯片适配 — INT4 QAT → FP8 Rollout →
 # GLM-5 低精度链与国产芯片适配 — INT4 QAT → FP8 Rollout → W4A8 部署
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)
+> **源码基线**：`THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）
 > **维度**: Deep Dive（机制级）
 > 本页串起 GLM-5 的一条「降比特」主线：**训练**端 INT4 QAT（§2.4.3, p10）→ **RL** 端 FP8 rollout（§3.6.2, p14–15）→ **部署**端 W4A8 混合精度（§5, p21–22），并落到国产芯片（昇腾 Atlas）单机推理的全栈适配。架构总览见 [[20_glm5_architecture_deepdive]]，概要见 [[01_glm_5_analysis]]。
 
@@ -43,6 +44,14 @@ GLM-5 在三个训练/部署阶段都用了「降比特」，但**每一处低�
 
 > 相关对比：把量化提前进训练目标，是当前低精度训练的共识方向，参见 [[13_low_precision_training_analysis]] 与 [[24_deepseek_v4_fp4_qat_analysis]]（FP4 QAT 的同类思路）。
 
+> **论文 vs 开源基线**（`THUDM/slime@4c193f1f`）：论文描述的是训练与离线量化**共用一个** kernel、逐比特一致；开源 slime 里同一套 INT4 公式（对称、$q_{\max}=7$、scale 下限 $10^{-5}$、`(1, group)` 分组）有**两份实现**。
+>
+> - **训练侧**：镜像补丁 `docker/patch/latest/megatron.patch` 新增 `_FakeInt4QuantizationSTE`，挂在 `TEGroupedLinear._get_weight_tensors` 上。它由 `OPEN_TRAINING_INT4_FAKE_QAT_FLAG=1` 打开，group 取 `OPEN_TRAINING_INT4_GROUP_SIZE`（默认 128），只作用于经 `--moe-grouped-gemm` 选中 TE grouped 实现的 MoE experts，scale 以 FP32 计算。
+> - **rollout 侧**：CUDA 扩展 `fake_int4_quant_cuda` 打包权重，调用点是在线的 `slime/backends/megatron_utils/megatron_to_hf/processors/quantizer_compressed_tensors.py::pack_layer` 与离线的 `tools/convert_hf_to_int4_direct.py::pack_layer`；`weight_scale` 随权重 dtype 存为 BF16。
+> - **默认值不一致**：离线转换工具默认 `--group-size 32`，且不加 `--is-symmetric` 时写出非对称 checkpoint；而 `docs/zh/advanced/low-precision.md` 的 INT4 快速开始只给 `--model-dir/--save-dir`，同一节又建议 Qwen3-30B-A3B 等模型把 fake-QAT group 设为 128。按文档原样执行时，训练前向模拟的量化映射与 rollout 实际加载的不同（分析判断，未运行）。
+>
+> 仓库没有断言两份实现逐位一致的测试；两边是否算“同一个 INT4”见 [[22_slime_low_precision_training_rollout_analysis#5.3 训练与 rollout 看到的是否是同一个 INT4|slime 低精度训推]]。
+
 ---
 
 ## 3. RL 端：FP8 Rollout —— 一条「尾延迟」支线（§3.6.2, p14–15）
@@ -57,6 +66,8 @@ GLM-5 在三个训练/部署阶段都用了「降比特」，但**每一处低�
 一个掉队的长轨迹就会卡住整步的同步点（batch 完成、buffer 就绪、trainer 更新），直接决定墙钟进度（§3.6.2, p14）。因此 FP8 在这里的作用是**把最慢样本的逐 token 解码做快**，从而缩短 step 级的 stall——和 §2 训练端 QAT「为精度」的目的截然不同。FP8 rollout 还与 **MTP**（小 batch decode 下对长尾收益尤其大）、**PD 解耦**协同压尾延迟（§3.6.2, p14–15）。
 
 **效果**：降低长轨迹的 time-to-completion，减少每个 RL step 因最慢样本造成的等待。
+
+开源 slime 里，rollout 用哪种 FP8 schema 由 HF checkpoint 的 `quantization_config` 决定；每次在线权重同步都经 `slime/backends/megatron_utils/megatron_to_hf/processors/__init__.py::quantize_params` 按该 schema 重新量化，分块、scale 格式与字节账见 [[22_slime_low_precision_training_rollout_analysis|slime 低精度训推]]。
 
 > 这条 FP8 支线是「推理加速」性质，**不进入最终权重**；与 §2 的 INT4 QAT（改变训练目标）、§4 的 W4A8（改变部署权重）是三件不同的事，只是共享「降比特」这一手段。
 

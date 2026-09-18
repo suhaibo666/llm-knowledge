@@ -4,10 +4,10 @@ title: "slime Ray 控制面分析：按职责边界编排训练与推理"
 
 # slime Ray 控制面分析：按职责边界编排训练与推理
 
-> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（`main`，2026-08-12）
-> **主题**：Ray 控制面怎样把一次后训练任务落到 GPU 上：placement group 只产出 GPU 总量与 rollout 偏移，再按节点、GPU 排序出逻辑序号，trainer 按 rank、engine 按偏移绑定槽位；`RayTrainGroup`、`RolloutManager`、`RolloutServer`/`ServerGroup`、`SGLangEngine` actor 与 weight updater 各自持有哪部分状态；启动、每轮扇出与两条权重发布路径的控制链。核心代码在 `slime/ray/`。
-> **适用范围**：Ray 控制面；逐轮时序见端到端页，生成请求与权重传输数据面见相应专题页。
-> **最近更新**：2026-09-10。按特性分析画像重写，补最小实例、布局原理图、调用树与成本账本。
+> **源码基线**：`THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）
+> **主题**：本页讲 slime 的 Ray 控制面怎样把一次后训练任务落到 GPU 上。先用 colocate 与分离两种布局的最小实例讲 placement group 布局、bundle 排序、trainer 与 SGLang engine 的槽位绑定、端口分配与训练 world 的建立；再讲 `RayTrainGroup`、`RolloutManager`、`RolloutServer`/`ServerGroup`、`SGLangEngine` actor 与 weight updater 的职责和状态归属，以及启动、tensor/distributed 发布与 full+disk 发布三条调用链；最后是资源复用、多模型与外部引擎的启动依赖、约束和配置契约。核心代码在 `slime/ray/` 与 `slime/backends/sglang_utils/`。
+> **适用范围**：Ray 控制面（资源布局、进程角色、生命周期与发布控制链）；逐轮时序见 [[10_slime_end_to_end_iteration_analysis|端到端迭代]]，请求数据面见 [[13_slime_sglang_rollout_engine_analysis|SGLang rollout 引擎]]，权重传输数据面见 [[16_slime_weight_sync_analysis|权重同步]]。
+> **最近更新**：2026-09-17。页面覆盖布局与绑定的最小实例（含 external 布局与两种 debug 模式）、各组件状态归属、启动与两类权重发布的控制链、资源复用、约束与配置契约。
 
 ---
 
@@ -19,7 +19,7 @@ title: "slime Ray 控制面分析：按职责边界编排训练与推理"
 
 ### 1.2 解决方法
 
-slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并行算法或"每个概念一个 actor"。placement group 先按每卡一个 bundle 预留整组 GPU，并把 Ray 交回的 bundle 按节点、GPU 排序成稳定的逻辑序号；`RayTrainGroup` 是 driver 内的普通对象，按 rank 逐个创建 trainer actor 并向它们广播调用；`RolloutManager` 是一个不占 GPU 的 actor，持有 DataSource、rollout 函数、服务注册表、engine lock 与健康监控；`RolloutServer` 与 `ServerGroup` 只是它内部的 dataclass，分别描述"一个模型、一个 router"与"一组同构 engine"；`SGLangEngine` actor 是服务进程的控制壳，负责拉起或接入 SGLang HTTP server 并转发 RPC；权重发布由 trainer 内的 weight updater 驱动，只有 full+disk 这一条路径例外地由 `RayTrainGroup` 自持版本并直接驱动 engine reload。同一套绑定规则在 colocate 与 disaggregate 下一字不差，差别只在 placement group 的总量、偏移和是否重叠。
+slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并行算法或"每个概念一个 actor"。placement group 先按每卡一个 bundle 预留整组 GPU，并把 Ray 交回的 bundle 按节点、GPU 排序成稳定的逻辑序号；`RayTrainGroup` 是 driver 内的普通对象，按 rank 逐个创建 trainer actor 并向它们广播调用；`RolloutManager` 是一个不占 GPU 的 actor，持有 DataSource、rollout 函数、服务注册表、engine lock 与健康监控；`RolloutServer` 与 `ServerGroup` 只是它内部的 dataclass，分别描述"一个模型、一个 router"与"一组同构 engine"；`SGLangEngine` actor 是服务进程的控制壳，负责拉起或接入 SGLang HTTP server 并转发 RPC；权重发布由 trainer 内的 weight updater 驱动，只有 full+disk 这一条路径例外地由 `RayTrainGroup` 自持版本并直接驱动 engine reload。同一套绑定规则在 colocate 与 disaggregate 下一字不差，差别只在 placement group 的总量、偏移和是否重叠。设备编号、进程组后端与显存分配器选项都经 `slime/utils/accelerator/` 的后端抽象取得（CUDA 与 MUSA 两个内置后端）。
 
 ### 1.3 收益、开销和约束
 
@@ -29,7 +29,7 @@ slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并
 | 训练角色 | 每个 rank 一个 actor，Ray 能分别放置与杀掉，Megatron 的 SPMD 身份不被代理 | rank 0 提供 rendezvous，少一个 rank 整个 world 起不来；`release` 只能靠 checkpoint 复原 |
 | 生成控制 | RolloutManager 独占跨轮生成状态，训练 rank 不必理解请求、数据恢复与服务故障 | 它是同步 actor，`generate()` 执行期间发给它的其他 RPC 排队；服务启动完成前它不返回 |
 | 服务拓扑 | server/group 两层让"哪个模型、是否接收权重"与"几张卡、什么 worker type"分开配置 | 多 updatable model 未支持，只取第一个；异构 `nodes_per_engine` 直接报错 |
-| 权重发布 | 版本与传输状态跟随实际执行者：updater 或 full+disk 的 `RayTrainGroup` | 每次发布跨 group → trainer → RolloutManager → updater/engine，多次 `ray.get` 屏障；无跨 engine 回滚 |
+| 权重发布 | 版本与传输状态跟随实际执行者：updater 或 full+disk 的 `RayTrainGroup` | 每次发布跨 group → trainer → RolloutManager → updater/engine，多次 `ray.get` 与 gloo 屏障；无跨 engine 回滚 |
 | 共卡 | GPU 声明 0.4/0.2 让 trainer 与 engine 能落到同一 bundle | 声明不是显存配额，真实让渡靠 sleep/wake、offload/onload 或 release |
 
 ### 1.4 术语约定
@@ -38,7 +38,7 @@ slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并
 |---|---|
 | driver | 运行 `train.py` / `train_async.py` 的进程；只持有 RolloutManager 句柄和训练组封装对象 |
 | 逻辑序号 | slime 按 (节点 IP, GPU id) 排序后给 bundle 的位置；Ray 原生 bundle 序号只是被映射的对象 |
-| physical GPU id | `ray.get_gpu_ids()` 交回的整数设备号；与 `get_physical_gpu_id()` 返回的 CUDA UUID 不是同一个东西 |
+| physical GPU id | `ray.get_gpu_ids()` 交回的整数设备号；与 `get_physical_gpu_id()` 经 accelerator 读到的设备 UUID（无 uuid 属性时退回设备序号）不是同一个东西 |
 | rank | Megatron world 内的 distributed rank，由 trainer actor 进程承载 |
 | engine / group / server | `SGLangEngine` actor 是可独立放置和恢复的服务控制进程；group 是同构 engine 的拓扑单元；server 是一个模型加一个 router |
 | 六元组 | `RolloutManager.get_updatable_engines_and_lock()` 的返回：engines、lock、新 engine 数、逐 engine GPU 数、GPU 偏移、并行配置（每 engine 的 TP/PP/EP/MoE-DP，来自 `ServerGroup.parallel_config`） |
@@ -51,9 +51,9 @@ slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并
 
 ### 2.1 最小实例：4 张训练卡加 4 张 rollout 卡的一次布局
 
-取 actor 1 节点 × 4 卡、rollout 4 卡、每 engine 2 卡、每节点 4 卡、`sglang_dp_size=1`。同一份输入分别走 `--colocate` 与默认的分离布局，下图把布局函数、排序、绑定、显存让渡判定和端口分配放在两条泳道里，绑定规则两边完全相同。
+取 actor 1 节点 × 4 卡、rollout 4 卡、每 engine 2 卡、每节点 4 卡、`sglang_dp_size=1`。同一份输入分别走 `--colocate` 与默认的分离布局，下图把布局函数、排序、绑定、显存让渡判定和端口分配放在两条泳道里，绑定规则两边完全相同；右下角用同一输入给出 external 布局。
 
-![同一输入在 colocate 与 disaggregate 下的资源布局、绑定与端口](assets/slime_ray_control_plane_layout.svg)
+![同一输入在 colocate 与 disaggregate 下的资源布局、绑定与端口，以及 external 布局](assets/slime_ray_control_plane_layout.svg)
 
 | 步骤 | colocate | disaggregate |
 |---|---|---|
@@ -64,36 +64,40 @@ slime 把 Ray 用作**进程容器、资源放置与 RPC 端点**，而不是并
 | `needs_offload` | rollout 起点 0 < Megatron GPU 数 4，且默认参数下 colocate 归一化把 `offload_rollout` 置真 → True | 起点 4 不小于 4 → False |
 | 端口 | engine 0：server 15000、nccl 15001、dist 15004（预留 15004–15034）；engine 1：15002、15003、15035（预留 15035–15065）；cursor 15066 | 同左 |
 
+同一输入改走 external（`--rollout-external-engine-addrs` 非空）时，PG GPU 数 = 4、rollout offset = 4，rollout 切片为 0 个槽位：engine actor 不绑任何 bundle，下文 §4.2 展开。
+
 #### 2.1.1 布局函数与六个分支的枚举依据
 
 `_get_placement_group_layout` 只返回两个整数：placement group 的 GPU 总数与 rollout 区间的起点。它的六个分支按源码顺序判定，对应五种部署模式外加 external 下的 debug 子分支，这也是本页变体集合的枚举基础：
 
 | 判定顺序 | 条件 | GPU 总数 | rollout offset | 资源含义 |
 |---|---|---:|---:|---|
-| 1 | `debug_train_only` | actor GPUs | 0 | 无本地 rollout engine |
-| 2 | `rollout_external` 且 `debug_rollout_only` | actor GPUs | 0 | 只连外部服务，不建 trainer |
+| 1 | `debug_train_only` | actor GPUs | 0 | 不拉起 SGLang（`RolloutManager.__init__` 置空服务表），`RolloutManager.eval` 立即返回；trainer 完整初始化并训练，`update_weights` 立即返回 |
+| 2 | `rollout_external` 且 `debug_rollout_only` | actor GPUs | 0 | 只连外部服务；trainer actor 照常按 rank 创建并绑 bundle，`init` 立即返回 |
 | 2 | `rollout_external` | actor GPUs | actor GPUs | serving 不占本任务的 rollout bundle |
-| 3 | `debug_rollout_only` | rollout GPUs | 0 | 无 trainer actor；参数归一化已把 actor GPU 数改写为 rollout GPU 数 |
+| 3 | `debug_rollout_only` | rollout GPUs | 0 | trainer actor 按归一化后的 actor 尺寸创建（见下文四个分支），`init` 立即返回 |
 | 4 | `colocate` | `max(actor, rollout)` | 0 | 训练与 rollout 的前缀区间重叠 |
 | 5 | 默认 | actor + rollout | actor GPUs | 两个连续且不重叠的区间 |
 
-`tests/test_placement_group.py::test_placement_group_layout` 用 2 节点 × 8 卡、rollout 32 卡的参数钉住全部十个组合，包括 colocate 下 rollout 少于、等于、多于 actor，以及 rollout GPU 为零的路径。critic 不另建布局：`create_placement_groups` 在 `use_critic` 时把 actor 的 placement group 三元组直接赋给 critic。
+两种 debug 模式互斥（参数归一化断言），只要 actor 尺寸非零就都不会跳过 trainer 创建。`--debug-rollout-only` 时，`create_training_models` 仍经 `RayTrainGroup._allocate_gpus_for_actor` 为每个 rank 建 actor（进程、0.4 GPU 声明、rendezvous 地址都在），只是 `MegatronTrainRayActor.init` 第一行在 `args.debug_rollout_only` 下保存 args 后 `return 0`：不建进程组、不加载模型，`train`、`save_model`、`update_weights` 随后都立即返回，`TrainRayActor.set_rollout_manager` 也不向 RolloutManager 回报并行配置。`slime/utils/arguments.py::slime_validate_args` 对 `debug_rollout_only` 按四个分支改写尺寸，随后一律关掉 colocate 与两种 offload：① external 时什么都不改；② colocate 且未给 `--rollout-num-gpus` 时令 `rollout_num_gpus` 等于 actor GPU 数，actor 尺寸不变；③ `rollout_num_gpus == 0` 时 actor 改成 0 节点 × 0 卡，world_size 为 0、不建任何 trainer，`create_training_models` 的 `assert len(set(start_rollout_ids)) == 1` 随即失败；④ 其余情况令 `actor_num_gpus_per_node = min(8, R)`、`actor_num_nodes = R // actor_num_gpus_per_node`（R 为 rollout GPU 数），actor GPU 数为 R（R < 8 时）或 $8\lfloor R/8 \rfloor$，R 大于 8 且不是 8 的倍数时少于 R。②④ 下空闲 trainer 落在 engine 所在的同一段逻辑序号上。`tests/test_qwen2.5_0.5B_debug_rollout_then_train.py` 用 `--debug-rollout-only` 生成数据、再以 `--load-debug-rollout-data`（参数归一化强制 `debug_train_only`）训练。
+
+`tests/test_placement_group.py::test_placement_group_layout` 用 2 节点 × 8 卡、rollout 32 卡的参数钉住全部十个组合，包括 colocate 下 rollout 少于、等于、多于 actor，以及 rollout GPU 为零的路径。critic 不另建布局：`create_placement_groups` 在 `use_critic` 时把 actor 的 placement group 三元组直接赋给 critic；`create_training_models` 只在 `use_critic` 且 `num_rollout != 0` 时建 critic 训练组，eval-only 任务（`num_rollout == 0`）不创建。
 
 #### 2.1.2 排序与绑定
 
 `_create_placement_group` 为每张 GPU 申请一个 `{GPU:1, CPU:1}` bundle，策略为 `PACK`，然后轮询 `pg.ready()`：等待没有上界，每 30 秒记录一次集群已注册与可用的 GPU 数。就绪后它在每个 bundle 上起一个 `InfoActor` 读取节点 IP 与 physical GPU id，用完即 `ray.kill`。`sort_key` 先把节点标识按 IPv4 数字段解析，失败则 DNS 解析主机名，再失败就退回标识符逐字符的整数序列；GPU id 转整数作次级键。排序结果同时给出"逻辑序号 → Ray 原 bundle 序号"和"逻辑序号 → physical GPU id"两张映射，rollout 一侧只是这两张表从 `rollout_offset` 起的切片。
 
-trainer 的绑定发生在 `RayTrainGroup._allocate_gpus_for_actor`：`world_size = num_nodes × num_gpus_per_node`，按 rank 循环创建 actor，每个以 `num_cpus=num_gpus=0.4` 落到 `reordered_bundle_indices[rank]`。engine 的绑定发生在 `ServerGroup.start_engines`：第 i 个 engine 的 `gpu_index = gpu_offset + i × min(per_engine, num_gpus_per_node)`，bundle 取 `reordered_bundle_indices[gpu_index]`，`base_gpu_id` 取 `reordered_gpu_ids[gpu_index]`，并以 `num_cpus=num_gpus=0.2`、`placement_group_capture_child_tasks=True` 创建 actor。engine 因此不需要自己推导"我在哪张卡"，SGLang 子进程的起始设备直接来自逻辑序号对应的 physical id。
+trainer 的绑定发生在 `RayTrainGroup._allocate_gpus_for_actor`：`world_size = num_nodes × num_gpus_per_node`，按 rank 循环创建 actor，每个以 `num_cpus=num_gpus=0.4` 落到 `reordered_bundle_indices[rank]`。engine 的绑定发生在 `slime/backends/sglang_utils/engine_group.py::ServerGroup.start_engines`：第 i 个 engine 的 `gpu_index = gpu_offset + i × min(per_engine, num_gpus_per_node)`，bundle 取 `reordered_bundle_indices[gpu_index]`，`base_gpu_id` 取 `reordered_gpu_ids[gpu_index]`，并以 `num_cpus=num_gpus=0.2`、`placement_group_capture_child_tasks=True` 创建 actor。engine 因此不需要自己推导"我在哪张卡"；`_compute_server_args` 再经 `accelerator.resolve_visible_device_id` 把 physical id 换成本进程可见设备序号（可见设备环境变量未设置时原样返回），作为 SGLang 子进程的起始设备。
 
-`needs_offload` 在 `start_rollout_servers` 装配 group 时判定：`_compute_rollout_offset` 在 colocate 或两种 debug 模式下为 0，否则为 actor GPU 数；`_compute_megatron_num_gpus` 在 `debug_rollout_only` 下为 0，否则为 actor GPU 数；group 的绝对起点小于 Megatron GPU 数且 `offload_rollout` 为真才需要让渡。全局开了 `offload_rollout` 而该 group 不重叠时，源码用 `setdefault("enable_memory_saver", False)` 关闭 memory saver，不覆盖用户显式的 group override。
+`needs_offload` 在 `ServerGroupPlacement.create` 装配 group 时判定：`slime/backends/sglang_utils/deployment.py::_compute_rollout_offset` 在 colocate 或两种 debug 模式下为 0，否则为 actor GPU 数；`_compute_megatron_num_gpus` 在 `debug_rollout_only` 下为 0，否则为 actor GPU 数；group 的绝对起点小于 Megatron GPU 数且 `offload_rollout` 为真才需要让渡。全局开了 `offload_rollout` 而该 group 不重叠时，源码用 `setdefault("enable_memory_saver", False)` 关闭 memory saver，不覆盖用户显式的 group override；`tests/test_sglang_config_mixed_offload.py` 覆盖逐 group 的让渡判定。
 
 #### 2.1.3 端口与地址
 
-`_allocate_rollout_engine_addr_and_ports_normal` 按节点维护 cursor，并对同一节点上的 engine 先分完 server 与 NCCL 端口，再逐个分配 `dist_init_addr`。注释写的是 dp attention 需要 `4 + dp_size` 个端口，**实际调用**是 `get_port(30 + args.sglang_dp_size)`，以计算为准；`get_free_port` 从 cursor 起向后找到第一个连续 `consecutive` 个都空闲的端口，所以上表是"从 15000 起全部空闲"这一前提下的算法结果，不是固定配置。prefill worker 额外分配一个 bootstrap 端口。engine 跨节点时只有 engine 的首节点分配 `dist_init_addr`，并把它写给该 engine 覆盖的所有 node actor；上层只暴露 node-0 的 handle。router 使用 3000–4000 间随机起点的空闲端口，Prometheus 用 4000–5000，不在这个区间内。
+`_allocate_rollout_engine_addr_and_ports_normal` 按节点维护 cursor，并对同一节点上的 engine 先分完 server 与 NCCL 端口，再逐个分配 `dist_init_addr`，每个 `dist_init_addr` 通过 `get_port(30 + args.sglang_dp_size)` 预留一段连续端口（源码未注释这一预留量的依据）。`get_free_port` 从 cursor 起向后找到第一个连续 `consecutive` 个都空闲的端口，所以上表是"从 15000 起全部空闲"这一前提下的算法结果，不是固定配置。prefill worker 额外分配一个 bootstrap 端口。engine 跨节点时只有 engine 的首节点分配 `dist_init_addr`，并把它写给该 engine 覆盖的所有 node actor；上层只暴露 node-0 的 handle。同一模型的 group 之间，前一个 group 返回的 cursor 取最大值作为下一个 group 的起点，避免同节点的两个 group 争端口；`start_rollout_servers` 与 `start_pd_server_groups`/`start_epd_server_groups` 为每个模型新建空的 cursor 表，下一个模型又从 15000 起，只靠 `get_free_port` 的逐个探测避开已占用端口（分析判断：探测与服务真正 bind 之间有时间差，第一个模型的 engine 尚未 bind 时第二个模型可能探到同一端口）。router 使用 3000–4000 间随机起点的空闲端口，Prometheus 用 4000–5000，不在这个区间内。
 
 #### 2.1.4 训练 world 的建立
 
-先纠正一个常见误读：SPMD 是 **single program, multiple data**，多个进程执行同一套程序、各自处理不同数据或模型分片，不是"single process"。上例的 4 个 trainer actor 就是 4 个 OS 进程，各承载一个 distributed rank。`RayTrainGroup` 创建 rank 0 后立刻 `ray.get` 它的 master addr/port（rank 0 在 20000–21000 间随机起点取空闲端口），其余 rank 用同一组参数创建。每个 `TrainRayActor.__init__` 写入 `MASTER_ADDR`、`MASTER_PORT`、`WORLD_SIZE`、`RANK`，并用 `get_local_gpu_id()` 求 `LOCAL_RANK`：`CUDA_VISIBLE_DEVICES` 未设置时它就是 `ray.get_gpu_ids()[0]`，即 physical GPU id；已设置时取该 id 在 `CUDA_VISIBLE_DEVICES` 中的位置。训练组注入了整组 `RAY_EXPERIMENTAL_NOSET_*_VISIBLE_DEVICES=1`，Ray 不再改写可见设备，但任务环境继承下来的 `CUDA_VISIBLE_DEVICES` 仍会走第二个分支。`init()` 再调用 `torch.distributed.init_process_group()` 与 `init_gloo_group()`，至此 Ray actor 的进程身份才变成 Megatron 可用的 rank；NVIDIA 环境随后尝试用 pynvml 按 `RANK % num_gpus_per_node` 设置 NUMA CPU affinity，ROCm 跳过，缺少 pynvml 或失败只记日志。
+先纠正一个常见误读：SPMD 是 **single program, multiple data**，多个进程执行同一套程序、各自处理不同数据或模型分片，不是"single process"。上例的 4 个 trainer actor 就是 4 个 OS 进程，各承载一个 distributed rank。`RayTrainGroup` 创建 rank 0 后立刻 `ray.get` 它的 master addr/port（rank 0 在 20000–21000 间随机起点取空闲端口），其余 rank 用同一组参数创建。每个 `TrainRayActor.__init__` 写入 `MASTER_ADDR`、`MASTER_PORT`、`WORLD_SIZE`、`RANK`，并用 `get_local_gpu_id()` 求 `LOCAL_RANK`：它调用 `accelerator.resolve_visible_device_id(ray.get_gpu_ids()[0])`，当前后端的可见设备环境变量（CUDA 为 `CUDA_VISIBLE_DEVICES`，MUSA 为 `MUSA_VISIBLE_DEVICES`）未设置时返回 physical GPU id；已设置时返回该 id 在列表中的位置，id 不在列表但落在 `0..len−1` 内时按本地序号原样返回，否则抛 `RuntimeError`（`tests/test_accelerator.py::test_cuda_visible_device_mapping`）。训练组注入了整组 `RAY_EXPERIMENTAL_NOSET_*_VISIBLE_DEVICES=1`（含 MUSA），Ray 不再改写可见设备，但任务环境继承下来的可见设备变量仍会走第二个分支。`init()` 依次 `accelerator.set_device(LOCAL_RANK)`、在 `SLIME_ENABLE_EXPANDABLE_SEGMENTS=1` 时打开分配器 `expandable_segments`、以 `accelerator.process_group_backend(--distributed-backend)`（CUDA 为 `nccl`，MUSA 把 `nccl` 映射为 `mccl`）调用 `torch.distributed.init_process_group()`，再 `init_gloo_group()`；至此 Ray actor 的进程身份才变成 Megatron 可用的 rank。非 ROCm 环境随后尝试用 pynvml 按 `RANK % --num-gpus-per-node` 设置 NUMA CPU affinity，ROCm 跳过，缺少 pynvml 或失败只记日志。Megatron 侧的 TP/PP/DP/CP/EP 进程组由 `MegatronTrainRayActor.init` → `slime/backends/megatron_utils/initialize.py::init` → `mpu.initialize_model_parallel` 在这个 world 内建立；进程组怎样从并行度枚举、物化并交给各模块，见 [[17_megatron_parallelism_orchestration_analysis|Megatron 并行编排与进程组]]（该页按 `NVIDIA/Megatron-LM@85902ef5` 分析，slime 镜像钉的是其约 1500 个提交之前的 `1dcf0daf`，组构造细节可能有出入）。
 
 | 观察粒度 | 在上例中是什么 | 负责什么 |
 |---|---|---|
@@ -113,7 +117,7 @@ trainer 的绑定发生在 `RayTrainGroup._allocate_gpus_for_actor`：`world_siz
 | 生成状态 | RolloutManager 的 DataSource、rollout 函数、服务注册表、健康监控 | 训练 rank 被迫理解请求、数据恢复与服务故障 |
 | 服务状态 | router 后的 SGLang 进程、KV cache、权重版本 | driver 或 RolloutManager 变成实际推理执行器，故障与资源占用耦合 |
 
-> **设计分析**：本节各组件的"为什么"是根据对象边界、调用方向和失败路径作出的推断，不代表项目作者原话；源码事实与推断分开陈述。
+> **设计分析**：本节各组件的"为什么"是根据对象边界、调用方向和失败路径作出的推断（分析判断），不代表项目作者原话；源码事实与推断分开陈述。
 
 #### 2.2.1 placement group：只预留与排序，不管理 actor
 
@@ -121,57 +125,59 @@ trainer 的绑定发生在 `RayTrainGroup._allocate_gpus_for_actor`：`world_siz
 
 **为什么不让各模块自己算位置。** 被否掉的方案是让 `RayTrainGroup` 与 `ServerGroup` 分别根据参数推导自己占哪些卡。Ray 交回的 bundle 顺序不保证与物理拓扑一致，两处各自推导就会得到两套"第 k 张卡"的定义，colocate 下 trainer 与 engine 是否落在同一张卡将变成巧合。把排序集中在一处，rollout 一侧只做切片，是让"逻辑序号"成为唯一坐标系的代价最低的方式。这是推断；源码事实是排序只在 `_create_placement_group` 发生一次，其它模块只读映射。
 
-**代价与边界。** 就绪等待无上界；每个 bundle 一次 `InfoActor` 创建与销毁；`_create_placement_group(0)` 返回空三元组，rollout GPU 为零时没有本地 engine。
+**代价与边界。** 就绪等待无上界；每个 bundle 一次 `InfoActor` 创建与销毁；`_create_placement_group(0)` 返回空三元组（`tests/test_placement_group.py::test_create_zero_gpu_placement_group_is_empty`），rollout GPU 为零时没有本地 engine。
 
 #### 2.2.2 RayTrainGroup 与 trainer actor：角色对象在 driver，rank 状态在进程
 
-**职责。** `RayTrainGroup` 持有一个角色（actor 或 critic）的全部 rank handles、角色参数与 full+disk 版本计数，向所有 rank 广播 `init/train/save/update_weights/sleep/wake_up/clear_memory`。trainer actor 持有 rank-local 的模型、optimizer、scheduler、`TensorBackuper` 备份与 weight updater。trainer 的实现由 `actor_cls` 选择：`create_actor_model` 透传调用方给的类，未给时 `_allocate_gpus_for_actor` 取 `MegatronTrainRayActor`；`torch_memory_saver` 的注入另以 `train_backend == "megatron"` 为条件。本页只展开 Megatron 后端，其他 `actor_cls` 沿用同一套 rank 绑定与 rendezvous 契约。
+**职责。** `RayTrainGroup` 持有一个角色（actor 或 critic）的全部 rank handles、角色参数与 full+disk 版本计数，向所有 rank 广播 `init/train/save/update_weights/sleep/wake_up/clear_memory`。trainer actor 持有 rank-local 的模型、optimizer、scheduler、`TensorBackuper` 备份与 weight updater。trainer 的实现由 `actor_cls` 选择：`create_actor_model` 透传调用方给的类，未给时 `_allocate_gpus_for_actor` 取 `MegatronTrainRayActor`。仓内另一个调用方是 OPD 的独立 teacher server：`slime/backends/megatron_utils/server/megatron_server.py` 以 `actor_cls=TeacherLogpRayActor` 调用 `create_training_models`，沿用同一套 rank 绑定与 rendezvous 契约，其语义归 [[20_slime_on_policy_distillation_analysis|在线蒸馏]]。本页只展开 Megatron 训练 actor；`--train-backend` 只接受 `megatron`。
 
-**为什么不是一个 actor 管全部 GPU。** 反事实方案是一个训练角色只建一个 Ray actor，由它在内部 spawn 全部 rank 进程。那样 Ray 只能放置和恢复这个总进程，无法把每个 rank 绑到排好序的 bundle，总进程还要自己传递 rendezvous 信息，等于在 Ray 下面再实现一层进程管理。反方向也不成立：`RayTrainGroup` 没有独立执行循环和资源需求，做成 actor 只会给本地聚合加上序列化与 RPC。是否需要 Ray actor，取决于是否需要**独立进程、资源放置、故障边界或远程串行状态**。
+**为什么不是一个 actor 管全部 GPU。** 反事实方案是一个训练角色只建一个 Ray actor，由它在内部 spawn 全部 rank 进程。那样 Ray 只能放置和恢复这个总进程，无法把每个 rank 绑到排好序的 bundle，总进程还要自己传递 rendezvous 信息，等于在 Ray 下面再实现一层进程管理。反方向也不成立：`RayTrainGroup` 没有独立执行循环和资源需求，做成 actor 只会给本地聚合加上序列化与 RPC。是否需要 Ray actor，取决于是否需要**独立进程、资源放置、故障边界或远程串行状态**。verl 把同一问题做成了"把 N 个 SPMD rank 伪装成一个 controller 对象"的 `RayWorkerGroup`，由方法注册元数据生成 dispatch/collect 包装，可对照 [[11_verl_single_controller_analysis|verl single-controller]]；slime 的 `RayTrainGroup` 只做显式的逐 rank 广播与 `ray.get`，没有注册式派发层。
 
-**怎样产生结果。** `create()` 在 handles 非空时直接返回，属于幂等创建；否则把自持的磁盘版本写回 `args.update_weight_start_version`，重建 rank，`ray.get` 全部 `init`，再恢复 RolloutManager 绑定。`init` 返回各 rank 的起始 rollout id，`create_training_models` 断言它们只有一个取值，并在用户未指定时写入 `args.start_rollout_id`。绑定 RolloutManager 时只有 rank 0 把 `train_parallel_config`（DP、CP、VPP 尺寸与 VPP microbatch 分组）回报给 RolloutManager。`create_actor_model` 在创建前应用角色 YAML；critic 使用 `parse_megatron_role_args` 或 `deepcopy(args)`，无 YAML 时把 `disable_param_buffers_cpu_backup` 置回 `False`，避免 critic 的备份设置污染 actor。
+**怎样产生结果。** `create()` 在 handles 非空时直接返回，属于幂等创建；否则把自持的磁盘版本写回 `args.update_weight_start_version`，重建 rank，`ray.get` 全部 `init`，再恢复 RolloutManager 绑定。`init` 返回各 rank 的起始 rollout id，`create_training_models` 断言它们只有一个取值（有 critic 时取 critic 组的返回值），并在用户未指定时写入 `args.start_rollout_id`。绑定 RolloutManager 时只有 rank 0 把 `train_parallel_config`（DP、CP、VPP 尺寸与 VPP microbatch 分组）回报给 RolloutManager。`create_actor_model` 在创建前应用角色 YAML。critic 在有 `--megatron-config-path` 时用 `parse_megatron_role_args(role="critic")`，否则用 `deepcopy(args)` 并把这份拷贝的 `disable_param_buffers_cpu_backup` 改回 `False`；前一条路由里 `slime/utils/arguments.py::_apply_megatron_role_overrides` 的 critic 分支同样在 YAML 未覆盖该键时把它置为 `False`，所以两条路由效果一致。背景是：PPO 让参数归一化强制 `offload_train=True`，随之把 `disable_grad_buffers_cpu_backup` 与 `disable_param_buffers_cpu_backup` 都置真；这两个开关由 slime 的 `docker/patch/latest/megatron.patch` 消费（`_ParamAndGradBuffer` 把对应 buffer 分配在 `torch_memory_saver.region(enable_cpu_backup=False)` 内，sleep 时不做 CPU 备份，param 侧只在 distributed optimizer 下生效）。deepcopy 保证这次改写不回写 actor 的 args，所以效果是 critic 的 param buffer 在 sleep 时仍做 CPU 备份、actor 不做；源码没有说明 critic 为何需要保留备份，补丁内 buffer 的实际行为属于依赖侧，本页只按补丁代码陈述，未运行验证。
 
-trainer 进程的环境在创建时注入：`NCCL_CUMEM_ENABLE` 环境未设置时为 `0`（与 SGLang 保持一致）、`NVTE_FP8_BLOCK_SCALING_FP32_SCALES` 默认 `1`、整组 `RAY_EXPERIMENTAL_NOSET_*`、用户的 `--train-env-vars`；Megatron 后端开 `offload_train` 时搜索 `torch_memory_saver` 的预加载动态库并设置 `LD_PRELOAD`、`TMS_INIT_ENABLE`、`TMS_INIT_ENABLE_CPU_BACKUP`，找不到直接 `FileNotFoundError`；actor 角色在 `--use-routing-replay` 下得到 `ENABLE_ROUTING_REPLAY=1`，critic 不注入。`--use-rollout-routing-replay` 在参数归一化时同时开启 `--use-routing-replay`，两个开关的含义见 [[17_slime_train_inference_consistency_analysis|routing replay]]。所有 actor 都叠加 `RAY_DEFAULT_ENV_VARS`：`RAY_USE_UVLOOP=0` 与 slime JIT kernel 头文件目录。
+trainer 进程的环境在创建时注入：`NCCL_CUMEM_ENABLE` 环境未设置时为 `0`（与 SGLang 保持一致）、`NVTE_FP8_BLOCK_SCALING_FP32_SCALES` 默认 `1`、整组 `RAY_EXPERIMENTAL_NOSET_*`、用户的 `--train-env-vars`；开 `offload_train` 时搜索 `torch_memory_saver` 的预加载动态库并设置 `LD_PRELOAD`、`TMS_INIT_ENABLE`、`TMS_INIT_ENABLE_CPU_BACKUP`，找不到直接 `FileNotFoundError`；actor 角色在 `--use-routing-replay` 下得到 `ENABLE_ROUTING_REPLAY=1`，critic 不注入。`--use-rollout-routing-replay` 在参数归一化时同时开启 `--use-routing-replay`，两个开关的含义见 [[17_slime_train_inference_consistency_analysis|routing replay]]。所有 actor 都叠加 `RAY_DEFAULT_ENV_VARS`：`RAY_USE_UVLOOP=0` 与 `SGLANG_JIT_KERNEL_EXTRA_PATH`（slime JIT kernel 头文件目录）；`rollout_data_transport=nixl` 时 trainer 以 `enable_tensor_transport=True` 创建。
 
 **代价与边界。** `release()` 直接 `ray.kill(actor, no_restart=True)` 并固定等待 5 秒，比 `sleep/wake` 释放得彻底但只能靠 checkpoint 复原；`save_model` 在 release 模式下把 `args.load` 改为 `args.save`、清空 `ckpt_step`、`finetune=False`、按 `no_save_optim` 设 `no_load_optim`、`no_load_rng=False`，保证重建后从已保存训练状态恢复。共享发布目录是 serving 权重通道，`args.save` 是恢复 optimizer 等训练状态的 checkpoint，两者不能混淆。
 
 #### 2.2.3 RolloutManager：生成侧的唯一控制主体
 
-**职责。** 单个 `num_cpus=1, num_gpus=0` 的 Ray actor。`__init__` 先 `start_rollout_servers` 拉起 router、group 与 engine 并拿到未完成的 `engine.init` 句柄，再加载 DataSource、rollout/eval 函数与转换 hooks，然后 `ray.get` 全部 init 句柄，最后创建指标跟踪、`Lock` actor，并在开 `use_fault_tolerance` 时为每个 group 起一个健康监控线程。它对外提供 `generate/eval/save/load`、显存生命周期 `offload/onload/onload_weights/onload_kv`、发现接口 `get_updatable_engines_and_lock` 与恢复接口 `recover_updatable_engines`。
+**职责。** 单个 `num_cpus=1, num_gpus=0` 的 Ray actor。`__init__` 在非 `debug_train_only` 时先初始化 HTTP 客户端并调用 `slime/backends/sglang_utils/deployment.py::start_rollout_servers` 拉起 router、group 与 engine、拿到未完成的 `engine.init` 句柄（`debug_train_only` 时服务表为空）；再加载 DataSource、rollout/eval 函数与转换 hooks，然后 `ray.get` 全部 init 句柄，最后初始化指标跟踪、创建 `Lock` actor，并在开 `use_fault_tolerance` 时为每个 group 起一个健康监控线程。它对外提供 `generate/eval/save/load`、显存生命周期 `offload/onload/onload_weights/onload_kv`、发现接口 `get_updatable_engines_and_lock` 与恢复接口 `recover_updatable_engines`。
 
 **为什么先于 trainer 创建。** driver 在 `num_rollout` 未给时要用它的 DataSource 算 `len(data_source) // rollout_batch_size`，再乘 `num_epoch` 并断言大于零；trainer 初始化又要把 RolloutManager 句柄下发给各 rank。**是否等待 engine 健康后才建 trainer**，取决于 driver 在创建 trainer 前是否向 RolloutManager 发了同步调用：`num_rollout` 未给、`check_weight_update_equal`、`offload_rollout` 任一成立时，driver 在 `create_rollout_manager` 内 `ray.get`，而按 Ray 的 actor 语义这些调用都排在 `__init__` 之后，于是 trainer 创建与 engine 拉起串行；否则两者可以重叠，但 rank 0 回报并行配置的调用仍排在 `__init__` 之后。colocate 归一化在 `offload_rollout` 未显式给出时把它置真，只有显式 `--no-offload-rollout` 且非 release 模式才保持为假，所以默认参数下的共卡部署总是串行。参数帮助文本写的是 colocate 下"always be true"，与实现的 `is None` 判定不一致，本页以实现为准。
 
-**代价与边界。** `Lock` 是显式 `@ray.remote` 的 actor：`acquire()` 非阻塞返回 bool，调用方必须轮询；`release()` 对未持锁状态断言。RolloutManager 是同步 actor，`generate()` 执行期间发给它的后续 RPC 不会并行进入其可变状态。`recover_updatable_engines` 在尚未 `generate` 过（`rollout_id == -1`）或没有 updatable model 时直接返回。`rollout_data_transport=nixl` 时 RolloutManager 与 trainer 都打开 `enable_tensor_transport`。
+**代价与边界。** `Lock` 是显式 `@ray.remote` 的 actor（以 `num_cpus=1, num_gpus=0` 创建）：`acquire()` 非阻塞返回 bool，调用方必须轮询；`release()` 对未持锁状态断言。RolloutManager 是同步 actor，`generate()` 执行期间发给它的后续 RPC 不会并行进入其可变状态。`generate` 开头恢复健康监控，`offload` 与 `recover_updatable_engines` 开头暂停健康监控；`recover_updatable_engines` 在尚未 `generate` 过（`rollout_id == -1`）或没有 updatable model 时随即返回。`rollout_data_transport=nixl` 时 RolloutManager 与 trainer 都打开 `enable_tensor_transport`。
 
 #### 2.2.4 RolloutServer 与 ServerGroup：模型级配置与同构拓扑不是一回事
 
-**职责。** 两者都是 dataclass，不是 actor。`RolloutServer` 对应一个模型、一个 router、若干 group 与 `update_weights` 标记，聚合 `recover/offload/onload`，暴露 node-0 engine handles 及与之按位置对应的 GPU 数、GPU 偏移、并行配置三张列表。`ServerGroup` 统一 `worker_type`、每 engine GPU 数、rank/GPU 偏移、SGLang overrides 与 `needs_offload`，负责创建 engine actor 并向组内 node-0 engine 扇出显存生命周期 RPC。
+**职责。** 两者都是 `slime/backends/sglang_utils/engine_group.py` 里的 dataclass，不是 actor。`RolloutServer` 对应一个模型、一个 router、若干 group 与 `update_weights` 标记，聚合 `recover/offload/onload`，暴露 node-0 engine handles 及与之按位置对应的 GPU 数、GPU 偏移、并行配置三张列表。`ServerGroup` 统一 `worker_type`、每 engine GPU 数、rank/GPU 偏移、SGLang overrides 与 `needs_offload`，负责创建 engine actor 并向组内 node-0 engine 扇出显存生命周期 RPC；`ServerGroup.start_engines` 只返回 `engine.init` 句柄与端口 cursor，不保存句柄，由调用方决定何时等待。按配置顺序累加 engine 与 GPU 偏移、判定 `needs_offload` 的是同文件的 `ServerGroupPlacement`。
 
 **为什么分两层。** 官方配置文档规定"每模型一个 router"、"模型内 group 可异构"、"权重更新按模型选择"（`docs/en/advanced/sglang-config.md`）。server 回答"哪个模型、哪个 router、是否接收训练权重"，group 回答"这批 engine 是 prefill、decode、regular、encoder 还是 placeholder，用几张卡，是否与训练重叠"。`worker_type` 的合法集合由 `ServerGroupConfig.__post_init__` 断言为这五种；placeholder 只推进 GPU offset 而不创建 engine，证明 group 首先是拓扑单元。`engine_gpu_offsets` 会把 placeholder 占的槽位算进去，所以 updater 拿到的偏移与真实 bundle 对齐。把两层都做成 actor 只会为本地聚合增加序列化，这也是 group/manager/server/engine 四个名字不能互换的原因：group 聚合同类句柄，manager 持有跨轮生成状态，server 建立模型级服务边界，engine 对应可独立放置与恢复的控制进程。
 
-**代价与边界。** `RolloutServer.nodes_per_engine` 遇到异构或空的有效集合抛 `ValueError`；`validate_server_group_gpu_indices` 在 `gpu_offset + num_engines × per_engine_on_node` 超过可用槽位时抛 `ValueError`；`_resolve_sglang_config` 断言 YAML 内 GPU 总数等于 `--rollout-num-gpus`。`ServerGroup.engines` 只取 `all_engines[::nodes_per_engine]`，多节点 engine 的非首节点 actor 不对上层暴露。
+**代价与边界。** `RolloutServer.nodes_per_engine` 遇到异构或空的有效集合抛 `ValueError`；`ServerGroup.start_engines` 在 `gpu_offset + num_engines × per_engine_on_node` 超过可用槽位时抛 `ValueError`，提示对齐三个参数；`resolve_sglang_config` 断言 YAML 内 GPU 总数等于 `--rollout-num-gpus`。`ServerGroup.engines` 只取 `all_engines[::nodes_per_engine]`，多节点 engine 的非首节点 actor 不对上层暴露。
 
 #### 2.2.5 SGLangEngine actor 与 router：服务进程的控制壳
 
-**职责。** `SGLangEngine` 由 `ray.remote(SGLangEngine)` 动态包装，持有 rank、worker type、`base_gpu_id`、overrides 与子进程句柄。`init` 先由 `_compute_server_args` 算出 SGLang `ServerArgs`，再按 `args.rollout_external` 选择两条活跃路径，这是本组件变体集合的枚举依据：**normal** 路径 `launch_server_process` 用 spawn 起 HTTP server，node-0 轮询 `/health_generate`（每 2 秒一次，进程退出则抛异常）直到 200，再 `POST /workers` 注册到 router；`encoder_only` 的 server 改由 SGLang 的 `encode_server.launch_server_process(wait_for_server=True)` 拉起，健康等待在依赖内部，本页只按其参数契约陈述；**external** 路径读取已存在服务的 `/server_info` 并逐字段核对，然后只做注册。encoder 类型不注册 router；prefill 注册时必须带 `disaggregation_bootstrap_port`，缺失即 `RuntimeError`。`_make_request` 在 `node_rank != 0` 时直接返回，所以对非首节点 actor 的 RPC 是空操作。
+**职责。** `SGLangEngine` 由 `ray.remote(SGLangEngine)` 动态包装，持有 rank、worker type、`base_gpu_id`、overrides 与子进程句柄。`init` 先由 `_compute_server_args` 算出 SGLang `ServerArgs`，再按 `args.rollout_external` 选择两条活跃路径，这是本组件变体集合的枚举依据：**normal** 路径 `_init_normal` → `launch_server_process` 先从环境删掉 `PYTORCH_CUDA_ALLOC_CONF`/`PYTORCH_ALLOC_CONF`（源码注释：SGLang 的分配器与 sleep 路径不支持 expandable segments），用 spawn 起 HTTP server，node-0 由 `_wait_server_healthy` 轮询 `/health_generate`（每 2 秒一次，进程退出则抛异常）直到 200，再 `_register_to_router` 以 `POST /workers` 注册；`encoder_only` 的 server 改由 SGLang 的 `encode_server.launch_server_process(wait_for_server=True)` 拉起，健康等待在依赖内部，本页只按其参数契约陈述；**external** 路径读取已存在服务的 `/server_info` 并逐字段核对，然后只做注册。encoder 类型不注册 router；prefill 注册时必须带 `disaggregation_bootstrap_port`，缺失即 `RuntimeError`。`_make_request` 在 `node_rank != 0` 时直接返回，所以对非首节点 actor 的 RPC 是空操作。
+
+`ServerGroup.start_engines` 给每个 engine actor 注入 8 个环境默认值（环境里已有同名变量时以环境为准），例如 `SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=false`、`SGLANG_MEMORY_SAVER_CUDA_GRAPH=true`、`SGLANG_JIT_DEEPGEMM_PRECOMPILE=false`。按上游 `sgl-project/sglang@v0.5.15.post1` 的 `python/sglang/srt/entrypoints/http_server.py::health_generate`，前者只让 `/health` 不做生成直接返回 200，`/health_generate` 仍生成一个 token；slime 的 `docker/patch/latest/sglang.patch` 不改这段（上游契约，本页未运行验证），因此 slime 自己的启动等待与健康监控都走 `/health_generate`。
 
 **为什么 engine 是控制壳而不是 decoding engine 本体。** 连续批处理、KV cache 调度与 token 生成都发生在 SGLang 服务进程树内；Ray actor 只负责放置、启动、RPC 与故障隔离。让 actor 进程自己跑推理，会把 SGLang 的重启与 Ray actor 的重启绑成一件事，也无法接入外部已存在的服务。external 路径正是这条边界的证据：外部 engine 的 actor 以 `num_gpus=0` 创建、`base_gpu_id=0`、不进 placement group，仍能走同一套注册与 RPC。
 
-**router。** `_start_router` 对首模型可复用用户给的 `--sglang-router-ip/port`，后续模型总是新建；它显式 `disable_health_check=True` 并关闭 circuit breaker（注释说明是为了避免 RDMA 传输超时把 decode worker 误判为死亡），启动为 daemon 子进程后固定等待 3 秒并断言 `is_alive()`。slime 自己的 `RolloutHealthMonitor` 才负责本仓的恢复控制，不能把 router 健康检查当成同一机制。
+**router。** `slime/backends/sglang_utils/deployment.py::_start_router` 对首模型可复用用户给的 `--sglang-router-ip/port`，后续模型总是新建；它设置 `request_timeout_secs=--sglang-router-request-timeout-secs`，关闭 circuit breaker（注释说明是为了避免 RDMA 传输超时把 decode worker 误判为死亡），在 `RouterArgs` 有 `disable_health_check` 字段时置真，启动为 daemon 子进程后固定等待 3 秒并断言 `is_alive()`。slime 自己的 `RolloutHealthMonitor` 才负责本仓的恢复控制，不能把 router 健康检查当成同一机制。
 
-**代价与边界。** 每个 engine 进程占 0.2 GPU 声明与一组端口；normal 路径的健康等待没有超时上界；SGLang 内部的行为本页只按其 HTTP 接口契约陈述，未读其源码。
+**代价与边界。** 每个 engine 进程占 0.2 GPU 声明与一组端口；normal 路径的健康等待没有超时上界；SGLang 内部的行为本页只按其 HTTP 接口契约与上述上游源码陈述。
 
 #### 2.2.6 weight updater 与版本归属：调用发起方不等于状态责任方
 
-**变体枚举。** `MegatronTrainRayActor.init` 按 `--update-weight-mode`（`full`/`delta`）、`--update-weight-transport`（`nccl`/`disk`）与 `colocate` 选择实现：`delta` 必须 disk 且非 colocate，用 `UpdateWeightFromDiskDelta`；transport 为 disk 用 `UpdateWeightFromDisk`；colocate 用 `UpdateWeightFromTensor`；否则断言 `full` + `nccl`，用 `UpdateWeightFromDistributed`。updater 的 `weight_version` 以 `args.update_weight_start_version` 为种子；该属性不是 CLI 参数，由 `RayTrainGroup.create` 在重建前写入。`RayTrainGroup.update_weights` 只在 actor 角色且 `full` + `disk` 时进入自持版本的分支；其余组合（包括 delta）只 `ray.get` 全部 trainer 的 `update_weights`。delta 模式的发布协议按源码注释为"每台主机 `/pull_weights` 应用增量、engine 再 `update_weights_from_disk`"，本页未展开其实现，归 [[16_slime_weight_sync_analysis|权重同步]]。
+**变体枚举。** `MegatronTrainRayActor.init` 在备份 actor 权重后调用 `slime/backends/megatron_utils/update_weight/__init__.py::create_weight_updater`，由它按 `--update-weight-mode`（`full`/`delta`）、`--update-weight-transport`（`nccl`/`disk`）与 `colocate` 选择实现：`delta` 必须 disk 且非 colocate，用 `UpdateWeightFromDiskDelta`；transport 为 disk 用 `UpdateWeightFromDisk`；colocate 用 `UpdateWeightFromTensor`；否则断言 `full` + `nccl`，用 `UpdateWeightFromDistributed`。工厂按需导入所选模块，并把构造出的 updater 的 `weight_version` 设为 `args.update_weight_start_version`（属性缺失时 0）；该属性不是 CLI 参数，由 `RayTrainGroup.create` 在重建前写入。四种选择由 `tests/test_update_weight_factory.py::test_create_weight_updater_selects_implementation` 钉住，选择矩阵与各 updater 的数据面见 [[16_slime_weight_sync_analysis|权重同步]]。`RayTrainGroup.update_weights` 只在 actor 角色且 `full` + `disk` 时进入自持版本的分支；其余组合（包括 delta）只 `ray.get` 全部 trainer 的 `update_weights`。delta 模式的发布协议按源码注释为"每台主机 `/pull_weights` 应用增量、engine 再 `update_weights_from_disk`"，本页未展开其实现，归 [[16_slime_weight_sync_analysis|权重同步]]。
 
-**tensor/distributed：trainer 查询，updater 执行。** 每个 trainer 在 `update_weights` 内先（开了 `use_fault_tolerance` 时由 rank 0）请 RolloutManager 恢复 updatable engine 并 gloo barrier，再查询六元组；`num_new_engines > 0` 或"启用 PPO（`use_critic`）且 offload_train 且非 colocate"的重连条件成立时调用 updater 的 `connect_rollout_engines`，随后 rank 0 让 RolloutManager 清零 `num_new_engines`；没有 engine 且无需重连时直接跳过。distributed 每个 bucket 的 Ray 载荷是 `names/dtypes/shapes/group_name/weight_version/load_format`，tensor 字节另走 NCCL broadcast；metadata RPC 创建不等于传输结束，helper 等每个 broadcast handle 后返回 engine refs，上层还要等 engine 完成。RolloutManager 只返回第一个 `update_weights=True` 的模型，"多模型 serving"不等于"多模型联合权重发布"。
+**tensor/distributed：trainer 查询，updater 执行。** 每个 trainer 在 `update_weights` 内先（开了 `use_fault_tolerance` 时由 rank 0）请 RolloutManager 恢复 updatable engine 并 gloo barrier，再查询六元组；"启用 PPO（`use_critic`）且 offload_train 且非 colocate"时需要重连。没有 engine 且无需重连时直接返回；否则重连时 `wake_up`，不重连但 `offload_train` 时只 `reload_process_groups`，二者互斥。`num_new_engines > 0` 或需要重连时调用 updater 的 `connect_rollout_engines`，随后 gloo barrier，rank 0 让 RolloutManager 清零 `num_new_engines`。distributed 每个 bucket 的 Ray 载荷是 `names/dtypes/shapes/group_name/weight_version/load_format`，tensor 字节另走设备通信组的 broadcast（后端取 `accelerator.weight_update_backend()`：CUDA 为 NCCL，MUSA 为 `cpu:gloo,musa:mccl`）；metadata RPC 创建不等于传输结束，helper 等每个 broadcast handle 后返回 engine refs，上层还要等 engine 完成。RolloutManager 只返回第一个 `update_weights=True` 的模型，"多模型 serving"不等于"多模型联合权重发布"。
 
-**full+disk：版本属于 RayTrainGroup。** `_disk_weight_version` 初值取 `args.update_weight_start_version`（属性缺失时 0）。每次调用先取下一版本与 `weight_v000001` 这类目录名，等待全部 trainer 写出 HF 权重，成功后推进计数；开 `release_train` 时随即 `release()` 杀掉训练 actor，再由 group 自己 `_reload_rollout_weights_from_disk`，不依赖已经消失的 updater。完整调用树见 §3.2.3。
+**full+disk：版本属于 RayTrainGroup。** `_disk_weight_version` 初值取 `args.update_weight_start_version`（属性缺失时 0）。每次调用先取下一版本与 `weight_v000001` 这类目录名，等待全部 trainer 写出 HF 权重，成功后推进计数；开 `release_train` 时随即 `release()` 杀掉训练 actor，再由 group 自己 `_reload_rollout_weights_from_disk`，不依赖已经消失的 updater。trainer 侧的 `UpdateWeightFromDisk.update_weights` 也把自己的 `weight_version` 加一并以它命名目录，两边靠同一种子与"每次调用各加一"保持同名。完整调用树见 §3.2.3。
 
 **为什么版本跟随执行者。** 若把版本统一交给 RolloutManager，release 模式下 trainer 消失后仍需要一个活着的对象推进版本并驱动 reload，而 RolloutManager 并不知道权重何时写盘完成；若统一交给 updater，full+disk 下 updater 随 actor 一起被 kill。让"谁驱动 engine 完成发布，谁持有版本"是唯一不需要额外同步状态的选择。这是推断；源码事实是两处版本各自推进且 seed 相同。
 
-**代价与边界。** full+disk 路径取六元组后只使用 engines，**没有** acquire 其中的 lock；CI 检测到版本不一致抛 `RuntimeError`，源码没有 `finally` 恢复或跨 engine 回滚，失败可留下已更新的部分 engine、暂停状态或发布目录。
+**代价与边界。** full+disk 路径取六元组后只使用 engines，**没有** acquire 其中的 lock；CI 检测到版本不一致抛 `RuntimeError`，源码没有 `finally` 恢复或跨 engine 回滚，失败可留下已更新的部分 engine、暂停状态或发布目录。两个计数器只有在每次调用都真正写盘时才同步：trainer 在没有 updatable engine 时提前返回、不写盘也不加一，而 group 计数照常推进（分析判断：只在始终没有本地或外部 engine 的部署出现，此时也没有 reload 的读者）。
 
 ### 2.3 并发模型与整体开销
 
@@ -192,13 +198,13 @@ Ray 官方语义区分"不同 actor 可并行"和"同一同步 actor 的方法�
 |---|---|---|
 | 启动串行化 | placement group 就绪 → 逐 bundle `InfoActor`（4 或 8 次创建与 kill）→ router 固定 3 s → engine 健康轮询（2 s 一次，无上界）→ 共卡时 trainer 才开始创建 | §2.1.2、§2.2.3、§2.2.5 |
 | 每轮阶段屏障 | 生成一次 `ray.get`；训练一次 `ray.get`（4 个 ref）；权重发布至少一次 `ray.get`（4 个 ref） | §2.3 表、[[10_slime_end_to_end_iteration_analysis\|端到端迭代]] |
-| 一次 tensor/distributed 发布的控制 RPC | 每个 trainer 各查一次六元组（4 次），新 engine 出现时再做一次 connect 与一次清零 | §2.2.6 |
-| 一次 full+disk 发布的控制 RPC | trainer 写盘（4 次）+ 可选 onload_weights + 六元组 1 次 + 逐 engine 的 pull（可选）、pause、flush、update、get_version（仅 CI）、continue（必做 4 步、可选 2 步，每步 2 次），每步一个 `ray.get` 屏障 | §3.2.3 |
+| 一次 tensor/distributed 发布的控制 RPC | 每个 trainer 各查一次六元组（4 次）；开容错时多一次恢复 RPC 与一次 gloo barrier；新 engine 出现时再做一次 connect、一次 gloo barrier 与一次清零；updater 内 pause/flush/continue 各一次 `ray.get` | §2.2.6、§3.2.2 |
+| 一次 full+disk 发布的控制 RPC | trainer 侧：六元组每 rank 一次（4 次）+ 每 rank 3 次 gloo barrier（清旧目录后、写盘后、post-write hook 后）+ 可选 post-write hook（每 rank 一次）+ 写盘（4 个 rank 并行）；group 侧：可选 onload_weights + 六元组再 1 次 + 逐 engine 的 pull（可选）、pause、flush、update、get_version（仅 CI）、continue（必做 4 步、可选 2 步，每步 2 次 RPC 一个 `ray.get` 屏障）；合计六元组 5 次 | §3.2.3 |
 | release 模式 | 每轮 kill 全部 trainer 并固定等待 5 s，再重建并等 `init`；Megatron 从 checkpoint 重载 | §2.2.2 |
 | 端口与进程 | 每个 engine 2 个端口加 31 个预留端口，router 与 Prometheus 各一个；开 `use_fault_tolerance` 时每个 group 一个健康监控线程 | §2.1.3、§2.2.3 |
 | 实现复杂度 | 句柄、锁、GPU 偏移、版本号与六元组是解耦的必要状态，不是可删样板 | §2.2 |
 
-**总体代价与运行包络。** 控制面为每个阶段增加与 trainer 数、engine 数线性相关的 RPC 以及若干 `ray.get` 屏障；这些开销全部发生在阶段边界，不进入 Megatron 前反向或 SGLang 请求处理的关键路径。它换来的是 colocate、disaggregate、external、release 四种部署只改变布局与生命周期参数而不改变对象结构。本页没有测量这些 RPC 的墙钟耗时；固定等待（router 3 s、release 5 s）是源码常数，其余等待随集群状态变化。
+**总体代价与运行包络。** 控制面为每个阶段增加与 trainer 数、engine 数线性相关的 RPC 以及若干 `ray.get` 与 gloo 屏障；这些开销全部发生在阶段边界，不进入 Megatron 前反向或 SGLang 请求处理的关键路径。full+disk 的写盘本身（整份 HF checkpoint）是数据面成本，归 [[16_slime_weight_sync_analysis|权重同步]]。控制面换来的是 colocate、disaggregate、external、release 四种部署只改变布局与生命周期参数而不改变对象结构。本页没有测量这些 RPC 的墙钟耗时；固定等待（router 3 s、release 5 s）是源码常数，其余等待随集群状态变化。
 
 ---
 
@@ -234,15 +240,15 @@ flowchart TB
 
 | 对象 | 是否 Ray actor | GPU 声明 | 创建者 | 创建位置 |
 |---|---|---:|---|---|
-| `InfoActor` | 是，临时 | 1 | driver | `placement_group.py::_create_placement_group` |
-| `RayTrainGroup` | 否 | 无 | driver | `placement_group.py::allocate_train_group` |
-| `MegatronTrainRayActor` | 是，逐 rank | 0.4 | RayTrainGroup | `actor_group.py::RayTrainGroup._allocate_gpus_for_actor` |
-| `RolloutManager` | 是 | 0 | driver | `placement_group.py::create_rollout_manager` |
-| `RolloutServer` / `ServerGroup` | 否，dataclass | 无 | RolloutManager | `rollout.py::start_rollout_servers` |
-| 内部 `SGLangEngine` | 是 | 0.2 | ServerGroup | `rollout.py::ServerGroup.start_engines` |
-| 外部 `SGLangEngine` | 是 | 0 | RolloutManager | `sglang_utils/external.py::start_external_rollout_servers` |
-| `Lock` | 是 | 0 | RolloutManager | `rollout.py::RolloutManager.__init__` |
-| weight updater | 否 | 无 | trainer actor | `backends/megatron_utils/actor.py::MegatronTrainRayActor.init` |
+| `InfoActor` | 是，临时 | 1 | driver | `slime/ray/placement_group.py::_create_placement_group` |
+| `RayTrainGroup` | 否 | 无 | driver | `slime/ray/placement_group.py::allocate_train_group` |
+| `MegatronTrainRayActor` | 是，逐 rank | 0.4 | RayTrainGroup | `slime/ray/actor_group.py::RayTrainGroup._allocate_gpus_for_actor` |
+| `RolloutManager` | 是 | 0 | driver | `slime/ray/placement_group.py::create_rollout_manager` |
+| `RolloutServer` / `ServerGroup` | 否，dataclass | 无 | RolloutManager | `slime/backends/sglang_utils/deployment.py::start_rollout_servers`（PD/EPD 经 `slime/backends/sglang_utils/disaggregation.py`），group 由 `slime/backends/sglang_utils/engine_group.py::ServerGroupPlacement.create` 构造 |
+| 内部 `SGLangEngine` | 是 | 0.2 | ServerGroup | `slime/backends/sglang_utils/engine_group.py::ServerGroup.start_engines` |
+| 外部 `SGLangEngine` | 是 | 0 | RolloutManager | `slime/backends/sglang_utils/external.py::start_external_rollout_servers` |
+| `Lock` | 是 | 0 | RolloutManager | `slime/ray/rollout.py::RolloutManager.__init__` |
+| weight updater | 否 | 无 | trainer actor | `slime/backends/megatron_utils/update_weight/__init__.py::create_weight_updater`（由 `MegatronTrainRayActor.init` 调用） |
 
 `slime/ray/ray_actor.py::RayActor` 只是共享地址与空闲端口查询、master address 返回方法的基类，不会自行创建远程进程。
 
@@ -269,7 +275,7 @@ sequenceDiagram
     D->>TA: 首次 update weights
 ```
 
-下面的树从 `train.py` 走到首次权重发布；方括号是条件分支，`train_async.py` 的差别只在开头多一条 `assert not args.colocate` 和主循环。
+下面的树从 `train.py` 走到首次权重发布；方括号是条件分支，`|` 分隔互斥分支，`train_async.py::train` 开头多一条 `assert not args.colocate`，首次 `update_weights` 前没有 `onload_weights`、之后没有 `onload_kv`，也没有 eval-only 分支，主循环另见端到端页。
 
 ```text
 train.train(args)
@@ -280,30 +286,36 @@ train.train(args)
 |       +-- InfoActor.get_ip_and_gpu_id x num_gpus ; ray.kill
 |       `-- sorted(sort_key) --> reordered_bundle_indices, reordered_gpu_ids
 +-- create_rollout_manager
-|   +-- RolloutManager.remote(args, pg)            [num_gpus=0]
-|   |   +-- start_rollout_servers
-|   |   |   +-- [rollout_external] start_external_rollout_servers
-|   |   |   `-- per model: _start_router ; per group: ServerGroup.start_engines
-|   |   |       +-- SGLangEngine.remote(...)          [0.2 GPU, bundle=reordered[gpu_index]]
-|   |   |       +-- _allocate_rollout_engine_addr_and_ports_normal
-|   |   |       `-- engine.init.remote(...)           [不等待]
+|   +-- RolloutManager.remote(args, pg)                           [num_cpus=1, num_gpus=0]
+|   |   +-- [debug_train_only] servers = {} | init_http_client ; deployment.start_rollout_servers
+|   |   |   +-- [rollout_external] start_external_rollout_servers(start_router=_start_router) ; return
+|   |   |   `-- resolve_sglang_config ; ServerGroupPlacement(rollout_pg_offset, megatron_num_gpus)
+|   |   |       `-- per model: _start_router
+|   |   |           +-- [EPD] disaggregation.start_epd_server_groups   [encoder 组先 ray.get，再注入 encoder_urls]
+|   |   |           +-- [PD]  disaggregation.start_pd_server_groups
+|   |   |           `-- [否则] per group: placement.create --> ServerGroup.start_engines
+|   |   |               +-- 校验 GPU 槽位 ; SGLangEngine.remote(...)  [0.2 GPU, bundle=reordered[gpu_index]]
+|   |   |               +-- _allocate_rollout_engine_addr_and_ports_normal
+|   |   |               `-- engine.init.remote(...)                  [返回句柄，不等待]
+|   |   |                   `-- _init_normal --> launch_server_process --> _wait_server_healthy ; _register_to_router
 |   |   +-- load DataSource / rollout fns
-|   |   +-- ray.get(rollout_init_handles)             [engine 健康]
-|   |   `-- Lock.remote ; [use_fault_tolerance] RolloutHealthMonitor x groups
+|   |   +-- ray.get(rollout_init_handles)                         [engine 健康并注册]
+|   |   `-- init_tracking ; Lock.remote ; [use_fault_tolerance] RolloutHealthMonitor x groups
 |   +-- [num_rollout is None] ray.get(get_num_rollout_per_epoch)
 |   +-- [check_weight_update_equal] check_weights snapshot / reset_tensors
 |   `-- [offload_rollout] ray.get(offload)
 +-- create_training_models
 |   +-- create_actor_model --> RayTrainGroup.create
 |   |   +-- _allocate_gpus_for_actor: TrainRayActor.remote x world_size  [0.4 GPU]
-|   |   +-- ray.get(actor.init ...)  --> start_rollout_ids
-|   |   `-- set_rollout_manager --> rank 0: RolloutManager.set_train_parallel_config
-|   +-- [use_critic] allocate_train_group(role=critic) ; create
+|   |   +-- ray.get(actor.init ...)  --> start_rollout_ids      [debug_rollout_only: init 立即返回 0]
+|   |   `-- set_rollout_manager --> [非 debug_rollout_only] rank 0: RolloutManager.set_train_parallel_config
+|   +-- [use_critic and num_rollout != 0] allocate_train_group(role=critic) ; create
 |   `-- assert len(set(start_rollout_ids)) == 1 ; [rollout_global_dataset] RolloutManager.load
 +-- [offload_rollout and not release_train] RolloutManager.onload_weights
 +-- actor_model.update_weights                      --> §3.2.2 / §3.2.3
 +-- [check_weight_update_equal] RolloutManager.check_weights(compare)
-`-- [offload_rollout] RolloutManager.onload_kv
++-- [offload_rollout] RolloutManager.onload_kv
+`-- [num_rollout == 0 and eval_interval] RolloutManager.eval(0)   [eval-only]
 ```
 
 每轮的生成、训练与发布顺序只有一个说明入口：[[10_slime_end_to_end_iteration_analysis|端到端迭代]]。本页只保留一条跨角色契约：`RayTrainGroup.async_train(rollout_id, rollout_data_ref, external_data)` 收到列表时断言长度等于 worker 数并逐 rank 传入，收到单个 dict 或 `None` 时广播；critic 的 ref 返回 `{"values": [...]}`，非最后 PP stage 返回空 dict，actor 的 ref 返回 `None`。driver 把 critic 的 ref 直接作为 actor 的 `external_data`，由 Ray 形成数据依赖，而不是让 `RayTrainGroup` 聚合 values；实际消费见 [[14_slime_megatron_training_analysis|Megatron 训练]]。
@@ -314,17 +326,20 @@ train.train(args)
 RayTrainGroup.update_weights                       [driver 内对象；非 full+disk]
 `-- ray.get([trainer.update_weights.remote() x ranks])
     `-- MegatronTrainRayActor.update_weights        [每个 rank]
+        +-- [debug_train_only or debug_rollout_only] return
         +-- [use_fault_tolerance] rank 0: RolloutManager.recover_updatable_engines ; gloo barrier
         +-- RolloutManager.get_updatable_engines_and_lock --> 六元组
         +-- [no engines and no reconnect] return
-        +-- [reconnect] self.wake_up ; [offload_train] reload_process_groups
+        +-- [reconnect] self.wake_up | [elif offload_train] reload_process_groups
         +-- [num_new_engines > 0 or reconnect] weight_updater.connect_rollout_engines
         |   `-- gloo barrier ; rank 0: RolloutManager.clear_updatable_num_new_engines
-        +-- weight_updater.update_weights           --> 传输与提交见权重同步页
-        |   +-- rank 0: engine.pause_generation / flush_cache
-        |   +-- per bucket: Lock.acquire 轮询 ; engine.update_weights_from_distributed.remote(metadata) ; NCCL broadcast ; ray.get(refs) ; Lock.release
-        |   `-- rank 0: engine.continue_generation
-        `-- [reconnect] self.sleep ; [offload_train] destroy_process_groups
+        +-- [offload_train] torch_memory_saver.disable() 内：
+        |   +-- weight_updater.update_weights           --> 传输与提交见权重同步页
+        |   |   +-- rank 0: engine.pause_generation / flush_cache ; gloo barrier
+        |   |   +-- per bucket: Lock.acquire 轮询 ; engine.update_weights_from_distributed.remote(metadata) ; broadcast ; ray.get(refs) ; Lock.release
+        |   |   `-- rank 0: engine.continue_generation ; gloo barrier
+        |   `-- [keep_old_actor] weights_backuper 轮换 old_actor / rollout_actor
+        `-- [reconnect] self.sleep | [elif offload_train] destroy_process_groups
 ```
 
 完成边界是 updater 内最后一次对 engine refs 的 `ray.get` 与 `continue_generation` 返回；六元组 RPC 返回只证明"发现完成"。分工是 driver 决定何时调用、RolloutManager 发现目标、trainer 持有源分片、updater 驱动发布。
@@ -332,34 +347,49 @@ RayTrainGroup.update_weights                       [driver 内对象；非 full+
 #### 3.2.3 full+disk 的版本属于 RayTrainGroup
 
 ```text
-RayTrainGroup.update_weights [driver 内对象，actor 角色且 full+disk]
-├─ trainer.update_weights.remote [全部 ranks；ray.get 等写盘完成]
-├─ self._disk_weight_version = weight_version
-├─ self.release [仅 release_train；kill actors 后等待 5 s]
-└─ self._reload_rollout_weights_from_disk
-   ├─ RolloutManager.onload_weights.remote [仅 offload_rollout；等待]
-   ├─ RolloutManager.get_updatable_engines_and_lock.remote [只取 engines]
-   ├─ [no engines] 删除版本目录（除非 keep_files）并返回
-   ├─ engine.pull_weights.remote [仅 update_weight_local_checkpoint_dir；先于 pause]
-   ├─ engine.pause_generation.remote [全部等待]
-   ├─ engine.flush_cache.remote [全部等待]
-   ├─ engine.update_weights_from_disk.remote [model_path, weight_version；全部等待]
-   ├─ engine.get_weight_version.remote [仅 CI；逐 engine 比较，不一致 RuntimeError]
-   ├─ 删除版本目录 [除非 keep_files]
-   └─ engine.continue_generation.remote [全部等待]
+RayTrainGroup.update_weights                         [driver 内对象，actor 角色且 full+disk]
++-- weight_version = _disk_weight_version + 1 ; disk_weight_dir = <update_weight_disk_dir>/weight_vNNNNNN
++-- ray.get([trainer.update_weights.remote() x ranks])          [等全部 rank 写盘与屏障完成]
+|   `-- MegatronTrainRayActor.update_weights                    [每个 rank]
+|       +-- [debug 模式] return
+|       +-- [use_fault_tolerance] rank 0: recover_updatable_engines ; gloo barrier
+|       +-- RolloutManager.get_updatable_engines_and_lock --> 六元组      [每个 rank 各一次]
+|       +-- [no engines and no reconnect] return                          [不写盘，updater 版本不加一]
+|       +-- [reconnect] self.wake_up | [elif offload_train] reload_process_groups
+|       +-- [num_new_engines > 0 or reconnect] UpdateWeightFromDisk.connect_rollout_engines [只记句柄] ; gloo barrier ; rank 0: clear
+|       `-- UpdateWeightFromDisk.update_weights                          [weight_version += 1]
+|           +-- rank 0: rmtree(weight_vNNNNNN) ; gloo barrier
+|           +-- 每个 rank: mkdir ; save_hf_model_to_path ; gloo barrier
+|           +-- [custom_update_weight_post_write_path] hook(args, version_dir, engines)
+|           `-- gloo barrier                                              [无条件]
++-- self._disk_weight_version = weight_version
++-- [release_train] self.release                                        [kill actors 后等待 5 s]
+`-- self._reload_rollout_weights_from_disk
+    +-- [offload_rollout] RolloutManager.onload_weights.remote           [等待]
+    +-- RolloutManager.get_updatable_engines_and_lock.remote             [只取 engines]
+    +-- [no engines] 删除版本目录（除非 keep_files）并返回
+    +-- [update_weight_local_checkpoint_dir] engine.pull_weights.remote  [先于 pause]
+    +-- engine.pause_generation.remote                                    [全部等待]
+    +-- engine.flush_cache.remote                                         [全部等待]
+    +-- engine.update_weights_from_disk.remote(model_path, weight_version) [全部等待]
+    +-- [ci_test] engine.get_weight_version.remote                        [逐 engine 比较，不一致 RuntimeError]
+    +-- 删除版本目录                                                      [除非 keep_files]
+    `-- engine.continue_generation.remote                                 [全部等待]
 ```
 
-存在本地 checkpoint 目录时，所有 engine 先把发布版本拉到主机本地盘再从该路径 reload，拉取发生在 pause 之前并与生成重叠。完成边界是 `_reload_rollout_weights_from_disk` 最后一次 `ray.get` 返回；计数推进和目录写出都早于这一点，不能单凭 `_disk_weight_version` 证明整个集群已恢复服务。非 keep-files 路径在恢复生成前删除共享发布目录。`release_train` 重建时 `create()` 把版本种子交给新的训练 actor。
+trainer 侧的三次 gloo barrier 把"旧目录已清""全部 rank 写完""各容器的写入已发布"变成全 rank 同步点：post-write hook 在每个 rank 上都会被调用并自行决定是否动作，用于对象存储背书的共享文件系统在跨主机读前显式发布写入（参数 help 与 `UpdateWeightFromDisk.__init__` 注释）。存在本地 checkpoint 目录时，所有 engine 先把发布版本拉到主机本地盘再从该路径 reload，拉取发生在 pause 之前并与生成重叠。完成边界是 `_reload_rollout_weights_from_disk` 最后一次 `ray.get` 返回；计数推进和目录写出都早于这一点，不能单凭 `_disk_weight_version` 证明整个集群已恢复服务。非 keep-files 路径在恢复生成前删除共享发布目录。`release_train` 重建时 `create()` 把版本种子交给新的训练 actor。
+
+依赖边界：`/pull_weights` 端点由 slime 的 `docker/patch/latest/sglang-pull_weights.patch` 新增；上游 `sgl-project/sglang@v0.5.15.post1` 的 `/get_weight_version` 返回 404（已弃用），CI 版本比对依赖 `docker/patch/latest/sglang.patch` 把它改回返回 `weight_version`。镜像是否打这些补丁由 `docker/Dockerfile` 的 `ENABLE_SGLANG_PATCH` 决定；`/pause_generation`、`/flush_cache`、`/update_weights_from_disk` 在服务端的执行语义本页不叙述，补丁与闸门的完整交接归 [[16_slime_weight_sync_analysis|权重同步]]。
 
 ### 3.3 源码阅读路线
 
-1. 入口与布局：`train.py::train` / `train_async.py::train` → `slime/ray/placement_group.py::_get_placement_group_layout` / `_create_placement_group` / `sort_key` / `create_placement_groups` → `tests/test_placement_group.py::test_placement_group_layout`。
-2. 训练角色：`slime/ray/placement_group.py::allocate_train_group` / `create_actor_model` / `create_training_models` → `slime/ray/actor_group.py::RayTrainGroup.__init__` / `_allocate_gpus_for_actor` / `create` / `async_train` / `save_model` / `release` → `slime/ray/train_actor.py::get_local_gpu_id` / `TrainRayActor.__init__` / `TrainRayActor.init` / `TrainRayActor.set_rollout_manager` → `slime/backends/megatron_utils/actor.py::MegatronTrainRayActor.init`。
+1. 入口与布局：`train.py::train` / `train_async.py::train` → `slime/ray/placement_group.py::_get_placement_group_layout` / `_create_placement_group` / `sort_key` / `create_placement_groups` → `tests/test_placement_group.py::test_placement_group_layout` / `test_create_zero_gpu_placement_group_is_empty`。
+2. 训练角色：`slime/ray/placement_group.py::allocate_train_group` / `create_actor_model` / `create_training_models` → `slime/ray/actor_group.py::RayTrainGroup.__init__` / `_allocate_gpus_for_actor` / `create` / `async_train` / `save_model` / `release` → `slime/ray/train_actor.py::get_local_gpu_id` / `TrainRayActor.__init__` / `TrainRayActor.init` / `TrainRayActor.set_rollout_manager` → `slime/utils/accelerator/__init__.py::resolve_visible_device_id` / `set_device` / `process_group_backend` / `weight_update_backend` → `slime/utils/accelerator/base.py::Accelerator.resolve_visible_device_id` → `tests/test_accelerator.py::test_cuda_visible_device_mapping` → `slime/backends/megatron_utils/actor.py::MegatronTrainRayActor.init` → `slime/backends/megatron_utils/initialize.py::init`。
 3. 生成控制：`slime/ray/placement_group.py::create_rollout_manager` → `slime/ray/rollout.py::RolloutManager.__init__` / `get_num_rollout_per_epoch` / `_get_updatable_server` / `get_updatable_engines_and_lock` / `recover_updatable_engines` / `offload` → `slime/ray/utils.py::Lock` / `RAY_DEFAULT_ENV_VARS` / `add_default_ray_env_vars` / `get_physical_gpu_id`。
-4. 服务拓扑：`slime/ray/rollout.py::start_rollout_servers` / `_resolve_sglang_config` / `_compute_rollout_offset` / `_compute_megatron_num_gpus` / `_start_router` / `_allocate_rollout_engine_addr_and_ports_normal` → `RolloutServer` / `ServerGroup.start_engines` / `ServerGroup.engines` / `RolloutServer.engine_gpu_offsets` / `RolloutServer.nodes_per_engine` / `RolloutServer.recover` → `slime/ray/rollout_validation.py::validate_server_group_gpu_indices` → `slime/backends/sglang_utils/sglang_config.py::ServerGroupConfig.__post_init__` / `ModelConfig.resolve` / `SglangConfig.from_yaml`。
-5. 服务进程：`slime/backends/sglang_utils/sglang_engine.py::SGLangEngine.init` / `_init_normal` / `_init_external` / `_register_to_router` / `_make_request` / `launch_server_process` / `_wait_server_healthy` → `slime/backends/sglang_utils/external.py::start_external_rollout_servers` / `get_server_info` → `slime/utils/misc.py::get_free_port`。
-6. 权重发布控制：`slime/backends/megatron_utils/actor.py::MegatronTrainRayActor.update_weights` → `slime/ray/actor_group.py::RayTrainGroup.update_weights` / `_full_disk_weight_update_enabled` / `_reload_rollout_weights_from_disk` → `slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py::UpdateWeightFromDistributed.connect_rollout_engines` / `update_weights` / `_update_bucket_weights_from_distributed` / `update_weights_from_distributed`。
-7. 参数归一化与守卫：`slime/utils/arguments.py` 中 `colocate` / `release_train` / `use_critic` 对 `offload_train` / `offload_rollout` / `rollout_num_gpus` 的改写，`--release-train` 与 `--update-weight-mode=delta` 的 `ValueError`。
+4. 服务拓扑：`slime/backends/sglang_utils/deployment.py::start_rollout_servers` / `_compute_rollout_offset` / `_compute_megatron_num_gpus` / `_start_router` → `slime/backends/sglang_utils/sglang_config.py::resolve_sglang_config` / `ServerGroupConfig.__post_init__` / `ModelConfig.resolve` / `SglangConfig.from_yaml` → `slime/backends/sglang_utils/disaggregation.py::start_epd_server_groups` / `start_pd_server_groups` → `slime/backends/sglang_utils/engine_group.py::ServerGroupPlacement.create` / `ServerGroup.start_engines` / `ServerGroup.engines` / `_allocate_rollout_engine_addr_and_ports_normal` / `RolloutServer.engine_gpu_offsets` / `RolloutServer.nodes_per_engine` / `RolloutServer.recover` → `tests/test_sglang_config_mixed_offload.py`。
+5. 服务进程：`slime/backends/sglang_utils/sglang_engine.py::SGLangEngine.init` / `_init_normal` / `_init_external` / `_register_to_router` / `_make_request` / `launch_server_process` / `_wait_server_healthy` / `_compute_server_args` → `slime/backends/sglang_utils/external.py::start_external_rollout_servers` / `get_server_info` → `slime/utils/misc.py::get_free_port`。
+6. 权重发布控制：`slime/backends/megatron_utils/actor.py::MegatronTrainRayActor.update_weights` → `slime/backends/megatron_utils/update_weight/__init__.py::create_weight_updater` → `tests/test_update_weight_factory.py::test_create_weight_updater_selects_implementation` → `slime/ray/actor_group.py::RayTrainGroup.update_weights` / `_full_disk_weight_update_enabled` / `_reload_rollout_weights_from_disk` → `slime/backends/megatron_utils/update_weight/update_weight_from_disk.py::UpdateWeightFromDisk.update_weights` → `slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py::UpdateWeightFromDistributed.connect_rollout_engines` / `update_weights` / `_update_bucket_weights_from_distributed` / `update_weights_from_distributed` → `tests/test_full_disk_weight_update.py` / `tests/test_release_train.py`。
+7. 参数归一化与守卫：`slime/utils/arguments.py::slime_validate_args` 中 `debug_rollout_only` / `colocate` / `release_train` / `use_critic` 对 `actor_num_*` / `offload_train` / `offload_rollout` / `rollout_num_gpus` 的改写，disk transport、`--release-train` 与 `--update-weight-mode=delta` 的 `ValueError`；`slime/utils/arguments.py::parse_args` 在 `debug_rollout_only` 下跳过 Megatron 参数校验。
 
 ---
 
@@ -367,7 +397,7 @@ RayTrainGroup.update_weights [driver 内对象，actor 角色且 full+disk]
 
 ### 4.1 资源复用与生命周期：共享 GPU 不等于共享对象
 
-slime 有两条独立的 GPU 复用轴：colocate 让 train 与 rollout 的逻辑 GPU 区间重叠；PPO 则令 critic 与 actor 指向同一张 train placement group。官方文档明确说 actor/critic 是两个独立训练 process group，只是轮流占用同一组 GPU，并为此强制 `offload_train`（`docs/en/get_started/usage.md` PPO 小节）；参数归一化把 critic 的节点数与每节点 GPU 数直接取自 actor。ref、Megatron OPD teacher 与 old actor 也不是各自一组 Ray actor：它们由 actor trainer 内的 `TensorBackuper` 以不同 tag 保存与切换，critic 因为有独立可训练状态才建立第二个 `RayTrainGroup`。group 边界对应独立训练角色，而不等于每个模型身份都起一组进程。
+slime 有两条独立的 GPU 复用轴：colocate 让 train 与 rollout 的逻辑 GPU 区间重叠；PPO 则令 critic 与 actor 指向同一张 train placement group。官方文档明确说 actor/critic 是两个独立训练 process group，只是轮流占用同一组 GPU，并为此强制 `offload_train`（`docs/en/get_started/usage.md` PPO 小节）；参数归一化把 critic 的节点数与每节点 GPU 数直接取自 actor。ref、Megatron OPD teacher 与 old actor 也不是各自一组 Ray actor：它们由 actor trainer 内的 `TensorBackuper` 以不同 tag 保存与切换，critic 因为有独立可训练状态才建立第二个 `RayTrainGroup`。group 边界对应独立训练角色，而不等于每个模型身份都起一组进程。作为对照，Megatron-LM 自带的 RL 运行时让同一批 GPU 在 Megatron 进程内先当推理引擎、再当训练器，靠 optimizer offload、独立推理权重与 KV cache 处置腾挪显存，不经 Ray 与外部 SGLang 服务，见 [[33_megatron_rl_runtime_analysis|Megatron RL 运行时]]（该页基线 `85902ef5`，新于 slime 镜像钉的 `1dcf0daf`；slime 不调用 `megatron/rl`）。
 
 训练 actor 的 0.4 与 engine 的 0.2 只是 Ray 用于资源准入的声明，不代表显存配额；实际显存让渡由下表的四种动作完成，它们分别改变服务显存、训练驻留、actor 存活或故障实例，恢复成本不同。
 
@@ -378,15 +408,15 @@ slime 有两条独立的 GPU 复用轴：colocate 让 train 与 rollout 的逻�
 | train `release/create` | trainer actor 被 kill/重建 | `RayTrainGroup` | 以 checkpoint 换取更彻底的资源释放；固定等待 5 s |
 | rollout `recover` | 死 engine actor 被替换 | RolloutManager → updatable server → group | 并发重建 `all_engines` 中为 `None` 的槽位，`needs_offload` 的新 engine 先 release 再 resume weights；trainer 随后按 `num_new_engines` 让 updater 重连 |
 
-固定基线的恢复入口只选择 updatable model；冻结模型的完整恢复边界由 [[18_slime_fault_tolerance_observability_analysis|容错与可观测性]] 讨论，本页不把"有 health monitor"误写成"所有模型都会自动恢复"。
+重建时 `_allocate_rollout_engine_addr_and_ports_normal` 仍按"本节点从该 rank 到节点末尾"的槽位逐个探测并记录端口，但只有被重建的 engine 调用 `init` 使用结果，在役 engine 不重新初始化（分析判断：代价是多几次 `get_free_port` RPC 与 cursor 前移，不扩大故障域）。固定基线的恢复入口只选择 updatable model；冻结模型的完整恢复边界由 [[18_slime_fault_tolerance_observability_analysis|容错与可观测性]] 讨论，本页不把"有 health monitor"误写成"所有模型都会自动恢复"。
 
 ### 4.2 多模型、EPD 与外部引擎的启动依赖
 
-`_resolve_sglang_config` 按优先级选择配置来源：`--sglang-config` YAML（断言 GPU 总数等于 `--rollout-num-gpus`）→ rollout GPU 为零时的空模型 → 旧的 `--prefill-num-servers` 转成 prefill/decode 两组 → 默认单个 regular group。`ModelConfig.resolve` 在未显式给出 `update_weights` 时按 `model_path` 是否等于 `--hf-checkpoint` 推断，并要求同一模型内所有 group 的 `model_path` 一致。
+`resolve_sglang_config` 按优先级选择配置来源：`--sglang-config` YAML（断言 GPU 总数等于 `--rollout-num-gpus`）→ rollout GPU 为零时的空模型 → 旧的 `--prefill-num-servers` 转成 prefill/decode 两组 → 默认单个 regular group。`ModelConfig.resolve` 在未显式给出 `update_weights` 时按 `model_path` 是否等于 `--hf-checkpoint` 推断，并要求同一模型内所有 group 的 `model_path` 一致。
 
-EPD 拓扑分两阶段：encoder group 先同步启动并 `ray.get` 其 init，再收集 URL；随后 prefill 与 regular group 以 `setdefault` 注入 `language_only=True` 与 `encoder_urls`，其 init 句柄留给 RolloutManager 稍后统一等待。否则 LLM 初始化拿不到远程编码目标。EPD 数据面见 [[26_slime_multimodal_vlm_path_analysis|多模态路径]]。
+EPD 拓扑由 `start_epd_server_groups` 分两阶段：encoder group 先启动并 `ray.get` 其 init，再收集 URL；随后 prefill 与 regular group 以 `setdefault` 注入 `language_only=True` 与 `encoder_urls`，其 init 句柄留给 RolloutManager 稍后统一等待。否则 LLM 初始化拿不到远程编码目标。PD 模型走 `start_pd_server_groups`，逐 group 启动方式与普通路径相同，差别在该模型的 router 以 PD 模式启动；PD 的请求与服务路径归 [[13_slime_sglang_rollout_engine_analysis|SGLang rollout 引擎]]。EPD 数据面见 [[26_slime_multimodal_vlm_path_analysis|多模态路径]]。
 
-external 路径（`--rollout-external-engine-addrs` 非空即 `rollout_external`）不建 placement group 切片：`start_external_rollout_servers` 为每个地址创建一个 `num_gpus=0` 的 engine actor，按 `/server_info` 推导 GPU 数与并行配置并累加偏移，同样先起 router 再注册。完整 backend 替换边界见 [[19_slime_rollout_backend_extension_analysis|rollout backend 扩展]]。
+external 路径（`--rollout-external-engine-addrs` 非空即 `rollout_external`）不建 placement group 切片：在 §2.1 的输入下 PG GPU 数 = 4、rollout offset = 4，rollout 切片为 0 个槽位。`start_external_rollout_servers` 为每个地址创建一个 `num_gpus=0` 的 engine actor，按 `/server_info` 推导 GPU 数与并行配置并累加偏移，同样先起 router 再注册；参数解析期 `apply_external_engine_info_to_args` 已按同一信息改写 `rollout_num_gpus`。完整 backend 替换边界见 [[19_slime_rollout_backend_extension_analysis|rollout backend 扩展]]。
 
 ---
 
@@ -396,20 +426,24 @@ external 路径（`--rollout-external-engine-addrs` 非空即 `rollout_external`
 
 | 前提 | 源码边界 | 破坏后的行为 |
 |---|---|---|
-| 训练 world 由 rank 0 提供 master addr/port，其余 rank 用同一组参数加入 | `actor_group.py::RayTrainGroup._allocate_gpus_for_actor` | 少一个 rank 整个 world 起不来；Ray 不会补位，`init_process_group` 按 `--distributed-timeout-minutes` 超时 |
+| 训练 world 由 rank 0 提供 master addr/port，其余 rank 用同一组参数加入 | `slime/ray/actor_group.py::RayTrainGroup._allocate_gpus_for_actor` | 少一个 rank 整个 world 起不来；Ray 不会补位，`init_process_group` 按 `--distributed-timeout-minutes` 超时 |
+| trainer 分到的 physical id 在当前可见设备列表内（或是合法本地序号） | `slime/utils/accelerator/base.py::Accelerator.resolve_visible_device_id` | `RuntimeError` |
+| 显式 `SLIME_ACCELERATOR` 指定的后端可用 | `slime/utils/accelerator/__init__.py::get_accelerator` | `RuntimeError`；未知名称 `ValueError` |
 | 异步入口要求训练与 rollout 分离资源 | `train_async.py::train` 开头 `assert not args.colocate` | 断言失败 |
-| `--release-train` 必须 full+disk | `arguments.py` 参数校验 | `ValueError` |
-| `--update-weight-mode=delta` 必须 disk、非 colocate、带本地 checkpoint 目录 | `arguments.py` 参数校验；`MegatronTrainRayActor.init` 再次断言 | `ValueError` / `AssertionError` |
-| YAML 内 GPU 总数等于 `--rollout-num-gpus` | `rollout.py::_resolve_sglang_config` | `AssertionError` |
-| group 的槽位需求不超过可用 bundle | `rollout_validation.py::validate_server_group_gpu_indices` | `ValueError`，提示对齐三个参数 |
-| 有效 group 的 `nodes_per_engine` 一致 | `rollout.py::RolloutServer.nodes_per_engine` | `ValueError` |
-| `worker_type` 属于五种合法值且 `num_gpus > 0` | `sglang_config.py::ServerGroupConfig.__post_init__` | `AssertionError` |
-| prefill worker 注册 router 时带 bootstrap 端口 | `sglang_engine.py::SGLangEngine._register_to_router` | `RuntimeError` |
-| router 子进程在 3 s 后仍存活 | `rollout.py::_start_router` | `AssertionError` |
-| Megatron offload 需要 `torch_memory_saver` 预加载库 | `actor_group.py::RayTrainGroup._allocate_gpus_for_actor` | `FileNotFoundError` |
-| `Lock.release` 只能在持锁时调用 | `utils.py::Lock.release` | `AssertionError` |
-| CI 下 disk reload 后各 engine 版本一致 | `actor_group.py::RayTrainGroup._reload_rollout_weights_from_disk` | `RuntimeError`，无回滚 |
-| 多 updatable model 未支持 | `rollout.py::RolloutManager._get_updatable_server` docstring | 静默只取第一个，没有运行时守卫 |
+| `--release-train` 不带 critic、不带 `--keep-old-actor`、必须给 `--save`、必须 full+disk | `slime/utils/arguments.py::slime_validate_args` | `ValueError`；未给 `--save-interval` 时置为 1 |
+| disk transport 必须给共享的 `--update-weight-disk-dir` | 同上 | `ValueError` |
+| `--update-weight-mode=delta` 必须 disk、非 colocate、带本地 checkpoint 目录 | 同上；`create_weight_updater` 只再次断言 disk 与非 colocate | `ValueError` / `AssertionError` |
+| `--save-interval` 需要 `--save` | 同上 | `AssertionError` |
+| YAML 内 GPU 总数等于 `--rollout-num-gpus` | `slime/backends/sglang_utils/sglang_config.py::resolve_sglang_config` | `AssertionError` |
+| group 的槽位需求不超过可用 bundle | `slime/backends/sglang_utils/engine_group.py::ServerGroup.start_engines` | `ValueError`，提示对齐三个参数 |
+| 有效 group 的 `nodes_per_engine` 一致 | `slime/backends/sglang_utils/engine_group.py::RolloutServer.nodes_per_engine` | `ValueError` |
+| `worker_type` 属于五种合法值且 `num_gpus > 0` | `slime/backends/sglang_utils/sglang_config.py::ServerGroupConfig.__post_init__` | `AssertionError` |
+| prefill worker 注册 router 时带 bootstrap 端口 | `slime/backends/sglang_utils/sglang_engine.py::SGLangEngine._register_to_router` | `RuntimeError` |
+| router 子进程在 3 s 后仍存活 | `slime/backends/sglang_utils/deployment.py::_start_router` | `AssertionError` |
+| `offload_train` 需要 `torch_memory_saver` 预加载库 | `slime/ray/actor_group.py::RayTrainGroup._allocate_gpus_for_actor` | `FileNotFoundError` |
+| `Lock.release` 只能在持锁时调用 | `slime/ray/utils.py::Lock.release` | `AssertionError` |
+| CI 下 disk reload 后各 engine 版本一致 | `slime/ray/actor_group.py::RayTrainGroup._reload_rollout_weights_from_disk` | `RuntimeError`，无回滚 |
+| 多 updatable model 未支持 | `slime/ray/rollout.py::RolloutManager._get_updatable_server` docstring | 静默只取第一个，没有运行时守卫 |
 
 placement group 就绪与 engine 健康两处等待没有超时守卫：前者每 30 s 打日志，后者每 2 s 重试并只在子进程退出时抛异常。
 
@@ -419,13 +453,14 @@ placement group 就绪与 engine 健康两处等待没有超时守卫：前者�
 |---|---|
 | placement group 是一组训练 actor | 它只预留和排序资源；actor 后续绑定 bundle |
 | `RayTrainGroup` 自己是 Ray actor | 它是 driver 内的 Python 封装对象，内部才持有一组 actor 句柄 |
+| `--debug-rollout-only` 不建 trainer | trainer actor 照常按 rank 创建并占 0.4 GPU 声明，只是 `init` 立即返回、不建进程组也不加载模型 |
 | `RolloutServer` 就是监听 HTTP 的 server | 它是 RolloutManager 内模型级 dataclass；HTTP server 是 engine actor 拉起的子进程 |
 | 一个 `ServerGroup` 等于一个 engine | group 可含多个同构 engine；多节点 engine 的上层控制只暴露 node-0 handle |
 | `SGLangEngine` 执行全部 decoding | 它是进程控制与 RPC 壳，实际 forward/KV/token 服务在 SGLang 进程树 |
 | Ray actor 就是训练并行 | Ray 负责进程放置与 RPC；Megatron collective 在 trainer actor 内初始化和执行 |
 | RolloutManager 拿着 engine handles，所以拥有权重同步 | 它拥有服务注册与 lock；tensor/distributed 的版本与传输状态在 trainer 内的 updater；full+disk 的版本由 `RayTrainGroup` 自持并直接驱动 reload |
 | `offload`、`sleep`、`release`、`recover` 都是"释放 GPU" | 它们分别改变服务显存、训练驻留、actor 存活或故障实例，恢复成本不同 |
-| `LOCAL_RANK` 是 Ray 分配的相对序号 | 训练进程禁用了 Ray 的可见设备改写；`CUDA_VISIBLE_DEVICES` 未设置时 `LOCAL_RANK` 是 physical GPU id，已设置时是该 id 在其中的位置 |
+| `LOCAL_RANK` 是 Ray 分配的相对序号 | 训练进程禁用了 Ray 的可见设备改写；可见设备变量未设置时 `LOCAL_RANK` 是 physical GPU id，已设置时是该 id 在其中的位置 |
 
 ### 5.3 何时使用
 
@@ -436,47 +471,51 @@ placement group 就绪与 engine 健康两处等待没有超时守卫：前者�
 | 复用已部署的 SGLang 服务 | `--rollout-external-engine-addrs` | 不占本任务 rollout bundle，仍走同一套 router 注册与 RPC |
 | 训练进程需要彻底释放显存 | `--release-train` + full+disk | 每轮 kill 并重建 trainer，代价是 5 s 等待与 checkpoint 重载 |
 | 多模型 serving（ref/reward 冻结） | `--sglang-config` 多模型 YAML | 每模型一个 router；只有一个模型接收训练权重 |
+| 只调生成或只调训练 | `--debug-rollout-only` / `--load-debug-rollout-data` | 前者 trainer 空转、只跑 rollout；后者强制 `debug_train_only`，不拉起 SGLang |
 
 ### 5.4 当前演进方向
 
-固定基线在 `slime/ray/` 下留了三处与本页职责边界直接相关的在途标记：
+固定基线在本页覆盖的模块里留了两处与职责边界直接相关的在途标记：
 
 | 位置 | 注释原文 | 落在本页哪条边界上 |
 |---|---|---|
 | `slime/ray/train_actor.py::TrainRayActor.__init__` | `# TODO: currently this doesn't work as ray has already set torch.cuda.device_count().` 其下 `CUDA_VISIBLE_DEVICES` 与 `LOCAL_RANK` 两行赋值被注释掉，改用 `get_local_gpu_id()` | §2.1.4 的"Ray actor 进程身份 → distributed rank"那一跳：设备可见性已被 Ray 占住，slime 只能绕开 |
-| `slime/ray/rollout.py::_allocate_rollout_engine_addr_and_ports_normal` | `# TODO: currently when restarting engines, we will set port for all engines on this node starting with this rank.` 注释举例重启 gpu 3 上的 engine 会连带重设该节点上 3–7 号 engine 的端口 | §4.1 `recover` 的粒度：故障隔离目前只到"节点内的一段 rank 后缀"，不是单个 engine |
 | `slime/ray/placement_group.py::create_training_models` | `# TODO how to decide rollout start id when critic is involved? For now we just require user to specify it via args.` | §2.2 的状态归属：actor 与 critic 两个训练组各自返回 start id，恢复游标该归谁尚未收敛 |
 
+端口分配函数迁入 `slime/backends/sglang_utils/engine_group.py` 后，原先那条"重建 engine 会为本节点后续槽位重设端口"的 TODO 注释已删除，行为本身未变，§4.1 已按源码说明它只多做端口探测、不重启在役 engine。
+
 > [!note] 推断
-> 三条指向同一类未完成的事：**Ray actor 的进程身份与它所代表的资源、角色身份还没有完全对齐**——设备可见性归 Ray，端口归节点，恢复游标归"哪个训练组"。§2.2.2 那条判据（是否需要独立进程、资源放置、故障边界或远程串行状态）解释了为什么这三处会同时落在这条缝上。源码只写了"目前如此"，没有陈述改法、接口或时间；这层归纳由本页承担，不代表项目路线图。
+> 两条指向同一类未完成的事：**Ray actor 的进程身份与它所代表的资源、角色身份还没有完全对齐**——设备可见性归 Ray（slime 经 accelerator 抽象换算而不是接管），恢复游标归"哪个训练组"尚未定论。§2.2.2 那条判据（是否需要独立进程、资源放置、故障边界或远程串行状态）解释了为什么这些问题会落在这条缝上。源码只写了"目前如此"，没有陈述改法、接口或时间；这层归纳由本页承担，不代表项目路线图。
 
 ---
 
 ## 6. 配置契约
 
-slime 域没有配置 coverage ledger；下表只列本页控制路径直接读取的 CLI 参数，按用途分组，默认值取自 `slime/utils/arguments.py`。其余参数与脚本、YAML 的对应关系归 [[02_slime_quickstart_and_configuration_guide|配置指南]]。
+slime 域没有配置 coverage ledger；下表只列本页控制路径直接读取的 CLI 参数，按用途分组，默认值取自 `slime/utils/arguments.py` 与 `slime/backends/sglang_utils/arguments.py`。其余参数与脚本、YAML 的对应关系归 [[02_slime_quickstart_and_configuration_guide|配置指南]]，本域全部页面见 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识地图]]。
 
 ### 资源与布局
 
 | 参数 | 默认 | 契约 |
 |---|---|---|
-| `--actor-num-nodes` / `--actor-num-gpus-per-node` | 1 / 8 | 训练 world 大小与 placement group 前缀区间；critic 直接沿用 |
-| `--rollout-num-gpus` | None | 本地 rollout GPU 数；colocate 下未给时取 actor GPU 数，为 0 时不建本地 engine |
+| `--actor-num-nodes` / `--actor-num-gpus-per-node` | 1 / 8 | 训练 world 大小与 placement group 前缀区间；critic 直接沿用；`debug_rollout_only` 下按 rollout GPU 数改写 |
+| `--rollout-num-gpus` | None | 本地 rollout GPU 数；colocate 下未给时取 actor GPU 数，为 0 时不建本地 engine；external 下由 `/server_info` 派生 |
 | `--rollout-num-gpus-per-engine` | 1 | 每 engine GPU 数（SGLang tp_size），可被 YAML 逐 group 覆盖 |
-| `--num-gpus-per-node` | 8 | rollout 一侧的每节点 GPU 数；决定端口分配与多节点 engine 的判定 |
+| `--num-gpus-per-node` | 8 | rollout 一侧的每节点 GPU 数，决定端口分配与多节点 engine 的判定；trainer 也用它按 `RANK % num_gpus_per_node` 设 NUMA 亲和与串行读 HF 配置 |
 | `--colocate` | False | 训练与 rollout 前缀区间重叠；`offload_train/offload_rollout` 未显式给出时置真；release 模式强制 `offload_train=False`、`offload_rollout=True` |
 | `--sglang-config` | None | 多模型、多 group 拓扑 YAML；GPU 总数必须等于 `--rollout-num-gpus` |
 | `--rollout-external-engine-addrs` | None | 非空即进入 external 路径，不为 rollout 预留 bundle |
+| `--debug-rollout-only` / `--debug-train-only` | False / False | 二者互斥；前者 trainer 照建但 `init` 立即返回，后者不拉起本地 engine；`--load-debug-rollout-data` 强制后者 |
 
 ### 生命周期与权重发布
 
 | 参数 | 默认 | 契约 |
 |---|---|---|
 | `--offload-train` / `--offload-rollout` | None → False | 显存让渡开关；colocate、`--offload`、PPO 会改写 |
-| `--release-train` | False | 每轮 kill 并重建 trainer；要求 full+disk |
+| `--release-train` | False | 每轮 kill 并重建 trainer；要求 full+disk、`--save`，不支持 critic 与 `--keep-old-actor` |
 | `--update-weight-mode` | `full` | `full` 或 `delta`；`delta` 只支持 disk 且非 colocate |
 | `--update-weight-transport` | `nccl` | `nccl` 或 `disk`；与 mode、colocate 共同决定 updater 实现 |
-| `--update-weight-disk-dir` / `--update-weight-disk-keep-files` / `--update-weight-local-checkpoint-dir` | None / False / None | full+disk 的发布目录、是否保留版本目录、主机本地拉取目录 |
+| `--update-weight-disk-dir` / `--update-weight-disk-keep-files` / `--update-weight-local-checkpoint-dir` | None / False / None | full+disk 的发布目录（disk transport 必填）、是否保留版本目录、主机本地拉取目录 |
+| `--custom-update-weight-post-write-path` | None | 每个 trainer rank 写盘后、engine 读取前调用的 hook，签名 `hook(args, version_dir, rollout_engines)` |
 | `--use-fault-tolerance` | False | 每 group 一个健康监控线程；发布前由 rank 0 触发 updatable engine 恢复 |
 | `args.update_weight_start_version` | 属性缺失按 0 | 不是 CLI 参数：`RayTrainGroup.create` 在重建前写入自持版本，updater 与 group 都以它为种子 |
 | `--use-rollout-routing-replay` | False | 归一化时同时打开 `--use-routing-replay`，actor 进程注入 `ENABLE_ROUTING_REPLAY=1` |
@@ -486,8 +525,11 @@ slime 域没有配置 coverage ledger；下表只列本页控制路径直接读�
 | 参数 | 默认 | 契约 |
 |---|---|---|
 | `--sglang-router-ip` / `--sglang-router-port` | None | 首模型可复用的 router 地址；未给时自动分配 |
-| `--distributed-backend` / `--distributed-timeout-minutes` | `nccl` / 10 | trainer 的 `init_process_group` 参数 |
+| `--sglang-router-request-timeout-secs` | 14400 | 写入 router 的 `request_timeout_secs` |
+| `--distributed-backend` / `--distributed-timeout-minutes` | `nccl` / 10 | trainer 的 `init_process_group` 参数；后端名经 accelerator 映射（MUSA 下 `nccl` → `mccl`） |
 | `--train-env-vars` | `{}` | 追加到 trainer 进程的环境变量 |
+
+另有两个环境变量影响本页路径：`SLIME_ACCELERATOR`（显式选择 `cuda`/`musa`，缺省按可用性自动选择）与 `SLIME_ENABLE_EXPANDABLE_SEGMENTS`（默认 `0`，为 `1` 时 trainer 打开分配器 `expandable_segments`；SGLang 子进程启动前会删掉分配器配置变量）。
 
 ## Related Pages
 
@@ -495,6 +537,6 @@ slime 域没有配置 coverage ledger；下表只列本页控制路径直接读�
 - [[12_slime_sample_datasource_analysis]] — 深入 RolloutManager 所有的 DataSource、Sample 与 train-data conversion 契约。
 - [[13_slime_sglang_rollout_engine_analysis]] — 深入 router 后的请求调度、生成状态与 SGLang 数据面。
 - [[14_slime_megatron_training_analysis]] — 深入 trainer actor 内的 Megatron 初始化、数据迭代与 forward/backward。
-- [[16_slime_weight_sync_analysis]] — 深入 weight updater 的提交协议、拓扑变换与 transport 数据面。
+- [[16_slime_weight_sync_analysis]] — 深入 weight updater 的提交协议、拓扑变换、transport 数据面与 SGLang 补丁交接。
 - [[18_slime_fault_tolerance_observability_analysis]] — 深入 health monitor、engine recover 与分层故障域。
-- [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识地图]] — 返回本域全部页面的入口。
+- [[11_verl_single_controller_analysis]] — verl 用注册式 WorkerGroup 把 SPMD ranks 暴露成一个 controller 对象，可与 slime 的显式广播对照。

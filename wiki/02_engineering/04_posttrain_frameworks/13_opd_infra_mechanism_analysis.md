@@ -5,7 +5,7 @@ title: "OPD 基础设施机制分析：训练回路、信号带宽账与八项�
 # OPD 基础设施机制分析：训练回路、信号带宽账与八项工程工作
 
 > **定位**：本页回答"如果要在自建集群上跑 on-policy distillation（OPD），基础设施要多建什么、多花什么、卡在哪里"。算法层的散度之争与目标函数演化见 [[15_opd_divergence_and_objective_evolution_analysis]]，厂商格局见 [[32_opd_industrial_landscape_analysis]]，框架逐项对照与选型见 [[32_opd_framework_support_comparison]]。
-> **最后更新: 2026-08-11**
+> **最后更新: 2026-09-17**（slime 条目按 `THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e` 源码更正）
 > **保真度约定**（与知识库其余 OPD 页一致）：正文默认为一手核实内容（技术报告原文指定章节 / 框架官方文档 URL）；**⚠️** = 仅有二手来源或本轮未能独立核实；**【推断】** = 本页作者的分析推断，非来源声称；**【本文推算】** = 本页作者的算术推算，**不是文献给出的数字**。§9 单列本页相对上游综述稿的三条独立核验更正。
 
 ---
@@ -116,7 +116,10 @@ $$
 | 全词表 logits | $\approx 4.2\ \mathrm{GB}$ | $1\times$ | DeepSeek-V4（配专用教师调度与内核，arXiv:2606.19348 §5.2.2） |
 | top-$k$（$k=64$，id + logprob） | $\approx 8.4\ \mathrm{MB}$ | $\sim 1/500$ | veRL `forward_kl_topk`（https://verl.readthedocs.io/en/latest/algo/opd.html ）；Gemini 2.5 的 k-sparse 预计算存储（arXiv:2507.06261 p.3） |
 | 教师隐藏状态（学生端重算 logits） | $\approx 0.23\ \mathrm{GB}$ | $\sim 1/18$ | KDFlow（共享内存零拷贝、数学等价，arXiv:2603.01875）；DeepSeek-V4 缓存教师 hidden states ⚠️（Labonne 二手分析，与报告 §5.2.2 相容） |
-| 仅采样 token logprob | $\approx 64\ \mathrm{KB}$ | $\sim 1/65000$ | slime `k1`/`k3`、GLM-5、MiMo、K3、Nemotron-Cascade 2 |
+| 仅采样 token logprob | $\approx 64\ \mathrm{KB}$ | $\sim 1/65000$ | slime（逐位置 student − teacher logprob 差，见下注）、GLM-5、MiMo、K3、Nemotron-Cascade 2 |
+
+> [!note] slime 的 OPD 信号不是 `k1`/`k3`
+> `slime/backends/megatron_utils/loss.py::apply_opd_kl_to_advantages` 在基础估计器算完 advantage 后，对每个 response 位置计算采样 token 上的 `student_logp − teacher_logp`，按 `--opd-kl-coef` 加权后从 advantage 中减去；OPD 没有估计量选项。`k1`、`k2`、`k3`、`low_var_kl` 是 `--kl-loss-type` 的取值，由 `slime/utils/ppo_utils.py::compute_approx_kl` 估计相对 **ref 模型**的 KL（供 `--use-kl-loss` 与 `--kl-coef` 路径使用），与 teacher 无关。学生项来源、teacher 温度与三种 teacher 放置见 [[20_slime_on_policy_distillation_analysis|slime OPD]]（源码基线 `THUDM/slime@4c193f1f`）。
 
 **四档之间跨越约 4.8 个数量级**（$4.2\ \mathrm{GB}$ vs $64\ \mathrm{KB}$）。这不是"优化 20%"级别的差异，而是决定了架构形态本身。
 
@@ -167,7 +170,7 @@ $$
 
 - **问题**：教师前向不能挤占训练引擎的显存与算力；教师可能比学生大、架构异构、甚至不止一个。
 - **生产做法**：生态已收敛出三条教师取数路径（主稿 §6.2 归纳）：
-  - **(a) 独立推理服务返回 logprob / top-k**——veRL 用独立教师资源池（`distillation.nnodes`）+ ZMQ top-k logprob 服务（`recipe/gkd/teacher/start_server.sh`，https://verl.readthedocs.io/en/latest/advance/async-on-policy-distill.html ）；slime `--opd-type sglang` 在 rollout 阶段经 API 取 token 级 logprob，官方文档明确该模式适合"教师过大或架构异构"（https://thudm.github.io/slime/zh/advanced/on-policy-distillation.html ）；Tinker 把它抽象成 `compute_logprobs` API（https://github.com/thinking-machines-lab/tinker-cookbook/tree/main/tinker_cookbook/recipes/distillation ）。
+  - **(a) 独立推理服务返回 logprob / top-k**——veRL 用独立教师资源池（`distillation.nnodes`）+ ZMQ top-k logprob 服务（`recipe/gkd/teacher/start_server.sh`，https://verl.readthedocs.io/en/latest/advance/async-on-policy-distill.html ）；slime `--opd-type sglang` 在 rollout 阶段经 API 取 token 级 logprob，官方文档明确该模式适合"教师过大或架构异构"（https://thudm.github.io/slime/zh/advanced/on-policy-distillation.html ）；slime 仓内另有独立的 Megatron teacher server（`slime/backends/megatron_utils/server/megatron_server.py`），用 Megatron 并行前向对外提供 `/generate` 评分，但响应格式与现成 OPD helper 不兼容，需自定义 reward 适配（见 [[20_slime_on_policy_distillation_analysis|slime OPD]]）；Tinker 把它抽象成 `compute_logprobs` API（https://github.com/thinking-machines-lab/tinker-cookbook/tree/main/tinker_cookbook/recipes/distillation ）。
   - **(b) 共置训练框架内前向**——TRL（https://huggingface.co/docs/trl/gkd_trainer ）、slime `--opd-type megatron`、NeMo-RL（DTensor 路径，https://docs.nvidia.com/nemo/rl/latest/about/algorithms/on-policy-distillation.html ）。
   - **(c) 传隐藏状态**——KDFlow：SGLang 教师 + FSDP2 学生解耦，共享内存零拷贝传 hidden states、学生端重算 logits（arXiv:2603.01875，https://github.com/songmzhang/KDFlow ）。
 - **落地要点**：① 教师服务按 **prefill-only** 负载做容量规划（大 batch、prefix caching、无 KV 增量），不要复用在线服务的 SLO 模板；② 打分请求天然可与下一轮 rollout 重叠（W3）；③ **接口层面尽早定死 top-k 传输格式**（id + logprob 的紧凑编码）——这是后续所有带宽优化的边界，改起来最贵。
@@ -322,4 +325,4 @@ $$
 - [[11_rl_sandbox_design_analysis]] —— 沙箱与环境设计（W4 长程 agent 的环境侧）
 - [[01_posttraining_infra_mechanism_analysis]] —— 后训练基础设施总览（本页的上位页）
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] —— veRL 框架索引
-- [[slime/index]] —— slime 软件架构与实现分析
+- [[20_slime_on_policy_distillation_analysis|slime OPD]] · [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]] —— slime 的 OPD 信号、teacher 放置与整体架构

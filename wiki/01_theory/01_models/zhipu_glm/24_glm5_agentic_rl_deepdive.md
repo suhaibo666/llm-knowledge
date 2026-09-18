@@ -5,6 +5,7 @@ title: "GLM-5 Agentic RL 基础设施深挖 — slime · 全异步解耦 · 环�
 # GLM-5 Agentic RL 基础设施深挖 — slime · 全异步解耦 · 环境扩展的「长尾延迟 × 任务异构」工程
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)
+> **源码基线**：`THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）
 > **维度**: Deep Dive（机制级）
 > 本页深挖论文 §3.6（slime RL 基础设施, pp.13–15）、§4.1（全异步解耦 RL + Multi-Task Rollout Orchestrator + DP-aware routing, pp.15–17）、§4.2（可验证环境扩展：SWE/Terminal/Search/Slides, pp.17–20）。**异步 RL 的稳定性机制**（TITO 网关、双边重要性采样、丢弃 off-policy/噪声样本、优化器重置、心跳容错）只在本页一句带过并指向 [[25_glm5_training_stability_deepdive]]，不在此深挖。概要见 [[01_glm_5_analysis]]，算法侧（GRPO/IcePop/蒸馏）见 [[23_glm5_posttraining_deepdive]]。
 
@@ -49,7 +50,7 @@ GLM-5 的工程答卷由三块组成，本页逐块深挖：
 
 ### 2.3 鲁棒性：心跳容错 + router 级生命周期（§3.6.3, p15）
 
-slime 的 robustness 杠杆是**心跳驱动容错**：rollout 服务器周期性发心跳，编排层监控、主动终止不健康节点并从 router 注销，重试自动绕开故障/降级节点（§3.6.3, p15）。该机制属于稳定性主线，本页一句带过，机制细节见 **[[25_glm5_training_stability_deepdive]]**。
+slime 的 robustness 杠杆是**心跳驱动容错**：rollout 服务器周期性发心跳，编排层监控、主动终止不健康节点并从 router 注销，重试自动绕开故障/降级节点（§3.6.3, p15）。该机制属于稳定性主线，本页一句带过，机制细节见 **[[25_glm5_training_stability_deepdive]]**。开源 slime 并不是服务器主动发心跳，而是由训练编排侧 `RolloutManager`（Ray actor）内的线程轮询，失败即 shutdown 并 kill 整个逻辑 engine，到下一次 `update_weights` 才重建，差异见本页 §7 与 [[18_slime_fault_tolerance_observability_analysis|slime 容错与可观测性]]。
 
 ---
 
@@ -198,6 +199,24 @@ GLM-5 用两条互补 pipeline 在规模上造终端 agent 环境，均产出 **
 **效果**：严格符合 **16:9** 宽高比的页面占比从 **40% → 92%**，page overflow 大幅减少；人评中相对 GLM-4.5，GLM-5 取得 win rate：内容质量 **60%** / 布局合理性 **57.5%** / 视觉美感 **65%** / 总体 **67.5%**（§4.2.5, p21）。
 
 **为什么分三级**：单看静态 HTML 文本（L1）测不出实际渲染后的几何与观感，而 L2/L3 在真实渲染上取 grounded 属性值，使评估对「硬截断/灌间距」这类只改文本不改观感的 hack **天然鲁棒**（这也是 Figure 9 的论点）。三级从「能解析」到「几何对」再到「看着美」逐层加严。
+
+---
+
+## 7. 论文 vs 开源基线：slime@4c193f1f 提供了哪些部分
+
+论文描述的是 GLM-5 训练时的系统；开源 slime（`THUDM/slime@4c193f1f`）是它的公开框架，但并非论文每个组件都在仓库里，已有的实现与论文表述也不总是一致。下表按本页章节对照，只列源码事实；“源码中没有”指基线仓库没有对应组件，不排除 GLM-5 内部部署另有实现。
+
+| 论文组件（本页章节） | 开源 slime 对应 | 差异与边界 | 详见 |
+|---|---|---|---|
+| 可定制 rollout（§2.1） | `--custom-generate-function-path` 把一次执行转成 `Sample`；`--rollout-function-path` 替换整段 rollout 编排 | 与论文一致：训练后端不随任务类型 fork | [[19_slime_rollout_backend_extension_analysis\|slime rollout 后端扩展]] |
+| server-based rollout（§2.2） | 推理经 router 的 HTTP 端点访问；agent 适配层 `slime/agent/adapters/openai.py::OpenAIAdapter` 与 `slime/agent/adapters/anthropic.py::AnthropicAdapter` 暴露 `/v1/chat/completions`、`/v1/messages`，按轮记录采样 token；`--rollout-external-engine-addrs` 可接训练作业之外部署的引擎 | 外部 engine 不在 slime 的健康监控与重建范围内 | [[24_slime_agent_workflow_examples_analysis\|slime Agent 工作流]] |
+| 心跳容错与 router 生命周期（§2.3） | `slime/utils/health_monitor.py::RolloutHealthMonitor` 在 `RolloutManager`（Ray actor）内轮询各 engine 的 `health_generate` | 无服务器心跳；失败即 shutdown 并 kill 整个逻辑 engine，到下一次 `update_weights` 才重建；默认关（`--use-fault-tolerance`） | [[18_slime_fault_tolerance_observability_analysis\|slime 容错与可观测性]] |
+| FP8 rollout（§3.2） | rollout 的 FP8 schema 由 HF checkpoint `quantization_config` 决定，每次在线同步经 `slime/backends/megatron_utils/megatron_to_hf/processors/__init__.py::quantize_params` 重新量化 | 训练表示与 rollout 表示分开，scale 格式有运行时分支 | [[22_slime_low_precision_training_rollout_analysis\|slime 低精度训推]] |
+| MTP 加速长尾（§3.2） | SGLang 投机解码参数经 `--sglang-` 前缀透传；`--enable-mtp-training` 让 MTP 层参数在 RL 训练中更新（层数由 `--mtp-num-layers` 给出） | MTP 参数进入权重发布列表，但不同传输方式对 rollout 侧 draft 模型的覆盖不同 | [[21_slime_speculative_decoding_mtp_analysis\|slime 投机解码与 MTP]] |
+| PD 解耦（§3.3） | `--sglang-config` 声明 prefill/decode server group，`slime/backends/sglang_utils/disaggregation.py::start_pd_server_groups` 启动，`slime/backends/sglang_utils/deployment.py::_start_router` 以 PD 模式启动 router | prefill/decode 调度本身属于 SGLang 与 router 的上游契约 | [[13_slime_sglang_rollout_engine_analysis\|slime SGLang rollout 引擎]] |
+| 全异步解耦 + 每 K 次更新同步（§4.2） | `train_async.py` 提前发起下一轮 rollout，按 `--update-weights-interval` 推送权重；`slime.rollout.fully_async_rollout.generate_rollout_fully_async` 的后台 worker 持续生成，每轮收齐 `rollout_batch_size` 个完成组 | interval 以 rollout 轮次计，一轮可含多个 optimizer step，且只有 `train_async.py` 读取；优化器重置的对应开关见 [[25_glm5_training_stability_deepdive\|训练稳定性]] §7 | [[13_slime_sglang_rollout_engine_analysis\|slime SGLang rollout 引擎]] |
+| Multi-Task Rollout Orchestrator（§4.3） | 同一批次内的任务异构靠逐样本字段：`slime/utils/types.py::Sample` 的 `generate_function_path`、`custom_rm_path` 与 `metadata.rm_type` | 源码中没有任务注册、配比与生成速度调度的 orchestrator 组件 | [[13_slime_sglang_rollout_engine_analysis\|slime SGLang rollout 引擎]] |
+| DP-aware routing（§5） | 默认生成路径在 `--router-policy consistent_hashing` 时把 `sample.session_id` 放进 `X-SMG-Routing-Key` 请求头；agent 适配层对非 `default` 会话总是携带该头 | 亲和粒度是 router 背后的 worker，哈希与负载均衡由 SGLang Model Gateway 完成（上游契约）；`slime/rollout/sglang_rollout.py::GenerateState.dp_rank_context` 选出的 rank 不进入请求，slime 侧没有 DP rank 级的有状态路由与再平衡 | [[30_slime_rollout_optimization_analysis\|slime rollout 优化]] |
 
 ---
 

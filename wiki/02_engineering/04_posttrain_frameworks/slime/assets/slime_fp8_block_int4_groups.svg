@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="690" viewBox="0 0 1180 690" role="img" aria-labelledby="title desc">
+<title id="title">slime INT4 group 量化：训练侧 fake-QAT 与 rollout 打包对同一输入的映射</title>
+<desc id="desc">三个面板。①同一个 256×256 输入按行、每 128 列分一组，scale 形状为 256×2，给出每组的 max、scale 与整数 q；②megatron.patch 中 _FakeInt4QuantizationSTE 的前向 round/clamp 与反向直通；③rollout 侧 pack_layer 用同一公式得到 q，把 scale 按 BF16 存储，并把 q+8 的 nibble 拼成 int32，给出字节数与 direct 转换器默认非对称的冲突。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .tb{font-size:12px;font-weight:700;fill:#1F2430}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .dot1{fill:#2563EB}
+  .dot2{fill:#C3651F}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="690" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一个输入在 INT4 group=128 下：训练侧 fake-QAT 与 rollout 打包各算一遍</text>
+<text x="24" y="56" class="su" text-anchor="start">输入同图 ②：W[0,0]=1.0，W[128,128]=2⁻²⁰，其余为 0 · 块 (1, 128)：每行按列切组 · 对称 q ∈ [−7, 7] · scale 下限 1e-5</text>
+<rect x="24" y="72" width="1132" height="226" rx="10" class="panel"/>
+<text x="40" y="98" class="pt" text-anchor="start">① 分组：256 列切成 2 组，scale 形状 256×2（每行每组一个）</text>
+<text x="106" y="160" class="tb" text-anchor="end">行 0</text>
+<rect x="118" y="120" width="500" height="70" rx="0" class="acc1"/>
+<text x="132" y="140" class="tb" text-anchor="start">G0 列 [0,128)：max 1.0</text>
+<text x="132" y="159" class="tx" text-anchor="start">s = 1/7，q = round(7) = 7</text>
+<text x="132" y="178" class="tx" text-anchor="start">前向 q·s = 1</text>
+<rect x="618" y="120" width="500" height="70" rx="0" class="cell"/>
+<text x="632" y="140" class="tb" text-anchor="start">G1 列 [128,256)：max 0</text>
+<text x="632" y="159" class="tx" text-anchor="start">s = 下限 1e-5</text>
+<text x="632" y="178" class="tx" text-anchor="start">q = 0</text>
+<text x="106" y="240" class="tb" text-anchor="end">行 128</text>
+<rect x="118" y="200" width="500" height="70" rx="0" class="cell"/>
+<text x="132" y="220" class="tb" text-anchor="start">G0 列 [0,128)：max 0</text>
+<text x="132" y="239" class="tx" text-anchor="start">s = 下限 1e-5</text>
+<text x="132" y="258" class="tx" text-anchor="start">q = 0</text>
+<rect x="618" y="200" width="500" height="70" rx="0" class="acc2"/>
+<text x="632" y="220" class="tb" text-anchor="start">G1：max 2⁻²⁰，max/7 = 1.362e-7 &lt; 1e-5</text>
+<text x="632" y="239" class="tx" text-anchor="start">s = 1e-5，W/s = 0.0954</text>
+<text x="632" y="258" class="tx" text-anchor="start">q = 0 → 前向 0（小值被舍掉）</text>
+<circle cx="124" cy="126" r="4" class="dot1"/>
+<circle cx="624" cy="206" r="4" class="dot2"/>
+<text x="40" y="288" class="cap" text-anchor="start">其余 254 行全零：每组 s 取下限、q = 0。块 (1, group) 要求 group·1 是 32 的倍数（fake_int4_quant_cuda 的 TORCH_CHECK）。</text>
+<rect x="24" y="312" width="552" height="312" rx="10" class="panel"/>
+<text x="40" y="338" class="pt" text-anchor="start">② 训练侧 fake-QAT（megatron.patch）</text>
+<rect x="40" y="354" width="520" height="58" rx="8" class="neutral"/>
+<text x="52" y="374" class="tx" text-anchor="start">只包在 TEGroupedLinear._get_weight_tensors 外：MoE experts 的权重</text>
+<text x="52" y="394" class="tx" text-anchor="start">开关 OPEN_TRAINING_INT4_FAKE_QAT_FLAG=1，group 读 …_GROUP_SIZE</text>
+<rect x="40" y="424" width="520" height="78" rx="8" class="acc1"/>
+<text x="52" y="444" class="tb" text-anchor="start">前向：_FakeInt4QuantizationSTE.forward</text>
+<text x="52" y="464" class="mono" text-anchor="start">s = (max|W| / 7).clamp(1e-5)，Ŵ = clamp(round(W/s), −7, 7) · s</text>
+<text x="52" y="484" class="tx" text-anchor="start">本例 Ŵ[0,0] = 1，Ŵ[128,128] = 0；s 在 FP32 中参与重建，结果转回 BF16</text>
+<path d="M300 504 L300 520" class="main"/>
+<rect x="40" y="522" width="520" height="78" rx="8" class="acc2"/>
+<text x="52" y="542" class="tb" text-anchor="start">反向：_FakeInt4QuantizationSTE.backward</text>
+<text x="52" y="562" class="mono" text-anchor="start">∂L/∂W = ∂L/∂Ŵ（round 与 clamp 不求导，梯度直通）</text>
+<text x="52" y="582" class="tx" text-anchor="start">W[128,128] 前向被舍成 0，梯度仍原样流回；optimizer 更新的是 BF16 主权重</text>
+<rect x="590" y="312" width="566" height="312" rx="10" class="panel"/>
+<text x="606" y="338" class="pt" text-anchor="start">③ rollout 打包（quantizer_compressed_tensors.py::pack_layer）</text>
+<rect x="606" y="354" width="534" height="58" rx="8" class="neutral"/>
+<text x="618" y="374" class="tx" text-anchor="start">kernel 对称分支：s = max(max·(1/7), 1e-5)，q = rint(W/s) → q[0,0] = 7，q[128,128] = 0</text>
+<text x="618" y="394" class="tx" text-anchor="start">weight_scale 取权重 dtype：BF16(1/7) = 0.142578125，不是 FP32 的 1/7</text>
+<rect x="606" y="424" width="534" height="78" rx="8" class="acc1"/>
+<text x="618" y="444" class="tb" text-anchor="start">pack_to_int32：q + 8 ∈ [1, 15]，每 8 个 nibble 左移 4k 求和成一个 int32</text>
+<text x="618" y="464" class="mono" text-anchor="start">行 0 的前 8 列 nibble = [15, 8, 8, 8, 8, 8, 8, 8]</text>
+<text x="618" y="484" class="mono" text-anchor="start">→ 第 1 个字位模式 0x8888888F；每行 32 个字</text>
+<rect x="606" y="514" width="534" height="44" rx="8" class="neutral"/>
+<text x="618" y="534" class="tx" text-anchor="start">weight_packed int32 256×32 = 32768 · weight_scale BF16 256×2 = 1024</text>
+<text x="618" y="551" class="tx" text-anchor="start">weight_shape int32×2 = 8 → 共 33800 字节（BF16 原权重 131072）</text>
+<rect x="606" y="568" width="534" height="44" rx="8" class="acc2"/>
+<text x="618" y="588" class="tx" text-anchor="start">convert_hf_to_int4_direct.py 默认非对称（--is-symmetric 未给）：</text>
+<text x="618" y="605" class="tx" text-anchor="start">s = (max−min)/15，另存 weight_zero_point——与 STE 的对称 q_max=7 不是同一映射</text>
+<text x="24" y="654" class="cap" text-anchor="start">阅读顺序：① 先确定每个元素属于哪一组、得到哪个 q → ② 训练前向看到的是 q·s，反向直通 → ③ rollout 收到的是 q 的 nibble 与 BF16 scale。</text>
+<text x="24" y="674" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f37 · 复现 docker/patch/latest/megatron.patch::_FakeInt4QuantizationSTE、kernels/int4_qat/fake_int4_quant_cuda.cu 对称分支、pack_layer / pack_to_int32</text>
+</svg>

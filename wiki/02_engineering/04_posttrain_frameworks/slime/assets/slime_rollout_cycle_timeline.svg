@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="818" viewBox="0 0 1180 818" role="img" aria-labelledby="title desc">
+<title id="title">slime 训练闭环关键路径：同一组阶段时长在 train.py 与 train_async.py 上的周期、计时键与残差</title>
+<desc id="desc">上面两块面板共用时间轴：train.py 每轮串行生成、训练、保存、发布，一轮 13；train_async.py 轮首提交下一轮生成并同时训练，保存轮的 DataSource 保存排在下一轮生成之后，一轮 max(7, 5) + 1 = 8，driver 等待 2 包含在 max 内。每块面板底部的 actor Timer 泳道给出 perf/train_wait_time 与 train 的窗口。第三块把第 1 轮的 train_wait 窗口拆段：data_preprocess、save_model、update_weights 有默认键，同步的 rollout 转换与异步的 driver 等待没有。</desc>
+<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#FCF1E6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#E7B98E" stroke-width="2"/></pattern></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .hatch{fill:url(#hatch);stroke:#C3651F;stroke-width:1.5}
+  .axis{stroke:#AEB6C2;stroke-width:1}
+  .tick{stroke:#D9DEE7;stroke-width:1}
+  .ruler{fill:none;stroke:#2563EB;stroke-width:1.6}
+</style><rect width="1180" height="818" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">训练闭环关键路径：train.py 把各段相加，train_async.py 取两条臂的较大者再加发布</text>
+<text x="24" y="56" class="su" text-anchor="start">示例时长：rollout 6、数据转换 1、data_preprocess 1、训练块 3、save 1、update_weights 1；每轮保存，--update-weights-interval 1；t=0 时首推已完成</text>
+<rect x="24" y="72" width="1132" height="218" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① train.py：一轮 = 6 + 1 + 1 + 3 + 1 + 1 = 13；训练批 D1 由 v1 生成，版本滞后 0</text>
+<text x="40" y="127" class="sm" text-anchor="start">RolloutManager.generate</text>
+<rect x="200" y="112" width="174" height="22" rx="3" class="neutral"/>
+<text x="287" y="127" class="sm" text-anchor="middle">rollout D0·v0</text>
+<rect x="374" y="112" width="29" height="22" rx="3" class="ghost"/>
+<text x="388.5" y="127" class="sm" text-anchor="middle">data</text>
+<rect x="577" y="112" width="174" height="22" rx="3" class="neutral"/>
+<text x="664" y="127" class="sm" text-anchor="middle">rollout D1·v1</text>
+<rect x="751" y="112" width="29" height="22" rx="3" class="ghost"/>
+<text x="765.5" y="127" class="sm" text-anchor="middle">data</text>
+<text x="40" y="159" class="sm" text-anchor="start">actor.train / save_model</text>
+<rect x="403" y="144" width="29" height="22" rx="3" class="ghost"/>
+<text x="417.5" y="159" class="sm" text-anchor="middle">pre</text>
+<rect x="432" y="144" width="87" height="22" rx="3" class="acc1"/>
+<text x="475.5" y="159" class="sm" text-anchor="middle">train D0</text>
+<rect x="519" y="144" width="29" height="22" rx="3" class="neutral"/>
+<text x="533.5" y="159" class="sm" text-anchor="middle">save</text>
+<rect x="780" y="144" width="29" height="22" rx="3" class="ghost"/>
+<text x="794.5" y="159" class="sm" text-anchor="middle">pre</text>
+<rect x="809" y="144" width="87" height="22" rx="3" class="acc1"/>
+<text x="852.5" y="159" class="sm" text-anchor="middle">train D1</text>
+<rect x="896" y="144" width="29" height="22" rx="3" class="neutral"/>
+<text x="910.5" y="159" class="sm" text-anchor="middle">save</text>
+<text x="40" y="191" class="sm" text-anchor="start">update_weights</text>
+<rect x="548" y="176" width="29" height="22" rx="3" class="neutral"/>
+<text x="562.5" y="191" class="sm" text-anchor="middle">pub</text>
+<rect x="925" y="176" width="29" height="22" rx="3" class="neutral"/>
+<text x="939.5" y="191" class="sm" text-anchor="middle">pub</text>
+<text x="40" y="223" class="sm" text-anchor="start">actor Timer</text>
+<rect x="200" y="208" width="232" height="22" rx="3" class="ghost"/>
+<text x="316" y="223" class="sm" text-anchor="middle">train_wait</text>
+<rect x="432" y="208" width="87" height="22" rx="3" class="neutral"/>
+<text x="475.5" y="223" class="sm" text-anchor="middle">train</text>
+<rect x="519" y="208" width="290" height="22" rx="3" class="ghost"/>
+<text x="664" y="223" class="sm" text-anchor="middle">train_wait 10</text>
+<rect x="809" y="208" width="87" height="22" rx="3" class="neutral"/>
+<text x="852.5" y="223" class="sm" text-anchor="middle">train</text>
+<line x1="200" y1="236" x2="1128" y2="236" class="axis"/>
+<line x1="200" y1="236" x2="200" y2="242" class="axis"/>
+<text x="200" y="254" class="sm" text-anchor="middle">0</text>
+<line x1="258" y1="236" x2="258" y2="239" class="axis"/>
+<line x1="316" y1="236" x2="316" y2="242" class="axis"/>
+<text x="316" y="254" class="sm" text-anchor="middle">4</text>
+<line x1="374" y1="236" x2="374" y2="239" class="axis"/>
+<line x1="432" y1="236" x2="432" y2="242" class="axis"/>
+<text x="432" y="254" class="sm" text-anchor="middle">8</text>
+<line x1="490" y1="236" x2="490" y2="239" class="axis"/>
+<line x1="548" y1="236" x2="548" y2="242" class="axis"/>
+<text x="548" y="254" class="sm" text-anchor="middle">12</text>
+<line x1="606" y1="236" x2="606" y2="239" class="axis"/>
+<line x1="664" y1="236" x2="664" y2="242" class="axis"/>
+<text x="664" y="254" class="sm" text-anchor="middle">16</text>
+<line x1="722" y1="236" x2="722" y2="239" class="axis"/>
+<line x1="780" y1="236" x2="780" y2="242" class="axis"/>
+<text x="780" y="254" class="sm" text-anchor="middle">20</text>
+<line x1="838" y1="236" x2="838" y2="239" class="axis"/>
+<line x1="896" y1="236" x2="896" y2="242" class="axis"/>
+<text x="896" y="254" class="sm" text-anchor="middle">24</text>
+<line x1="954" y1="236" x2="954" y2="239" class="axis"/>
+<line x1="1012" y1="236" x2="1012" y2="242" class="axis"/>
+<text x="1012" y="254" class="sm" text-anchor="middle">28</text>
+<line x1="1070" y1="236" x2="1070" y2="239" class="axis"/>
+<line x1="1128" y1="236" x2="1128" y2="242" class="axis"/>
+<text x="1128" y="254" class="sm" text-anchor="middle">32</text>
+<text x="40" y="276" class="sm" text-anchor="start">第 1 轮 perf：train_wait 10 + train 3 = step_time 13，wait_time_ratio = 10/13 = 0.769；推理侧每轮空闲 6</text>
+<rect x="24" y="304" width="1132" height="280" rx="10" class="panel"/>
+<text x="40" y="328" class="pt" text-anchor="start">② train_async.py：一轮 = max(6 + 1, 1 + 3 + 1) + 1 = 8；driver 等待 2 已在 max 内，D2 由 v1 生成，滞后 1</text>
+<text x="40" y="359" class="sm" text-anchor="start">RolloutManager.generate</text>
+<rect x="200" y="344" width="174" height="22" rx="3" class="neutral"/>
+<text x="287" y="359" class="sm" text-anchor="middle">rollout D0·v0</text>
+<rect x="374" y="344" width="29" height="22" rx="3" class="ghost"/>
+<text x="388.5" y="359" class="sm" text-anchor="middle">data</text>
+<rect x="403" y="344" width="174" height="22" rx="3" class="neutral"/>
+<text x="490" y="359" class="sm" text-anchor="middle">rollout D1·v0</text>
+<rect x="577" y="344" width="29" height="22" rx="3" class="ghost"/>
+<text x="591.5" y="359" class="sm" text-anchor="middle">data</text>
+<rect x="635" y="344" width="174" height="22" rx="3" class="neutral"/>
+<text x="722" y="359" class="sm" text-anchor="middle">rollout D2·v1</text>
+<rect x="809" y="344" width="29" height="22" rx="3" class="ghost"/>
+<text x="823.5" y="359" class="sm" text-anchor="middle">data</text>
+<text x="40" y="391" class="sm" text-anchor="start">actor.train / save_model</text>
+<rect x="403" y="376" width="29" height="22" rx="3" class="ghost"/>
+<text x="417.5" y="391" class="sm" text-anchor="middle">pre</text>
+<rect x="432" y="376" width="87" height="22" rx="3" class="acc1"/>
+<text x="475.5" y="391" class="sm" text-anchor="middle">train D0</text>
+<rect x="519" y="376" width="29" height="22" rx="3" class="neutral"/>
+<text x="533.5" y="391" class="sm" text-anchor="middle">save</text>
+<rect x="548" y="376" width="58" height="22" rx="3" class="hatch"/>
+<text x="577" y="391" class="sm" text-anchor="middle">排队 2</text>
+<rect x="635" y="376" width="29" height="22" rx="3" class="ghost"/>
+<text x="649.5" y="391" class="sm" text-anchor="middle">pre</text>
+<rect x="664" y="376" width="87" height="22" rx="3" class="acc1"/>
+<text x="707.5" y="391" class="sm" text-anchor="middle">train D1</text>
+<rect x="751" y="376" width="29" height="22" rx="3" class="neutral"/>
+<text x="765.5" y="391" class="sm" text-anchor="middle">save</text>
+<rect x="780" y="376" width="58" height="22" rx="3" class="hatch"/>
+<text x="809" y="391" class="sm" text-anchor="middle">排队 2</text>
+<rect x="867" y="376" width="29" height="22" rx="3" class="ghost"/>
+<text x="881.5" y="391" class="sm" text-anchor="middle">pre</text>
+<rect x="896" y="376" width="87" height="22" rx="3" class="acc1"/>
+<text x="939.5" y="391" class="sm" text-anchor="middle">train D2</text>
+<rect x="983" y="376" width="29" height="22" rx="3" class="neutral"/>
+<text x="997.5" y="391" class="sm" text-anchor="middle">save</text>
+<text x="40" y="423" class="sm" text-anchor="start">update_weights</text>
+<rect x="606" y="408" width="29" height="22" rx="3" class="neutral"/>
+<text x="620.5" y="423" class="sm" text-anchor="middle">pub</text>
+<rect x="838" y="408" width="29" height="22" rx="3" class="neutral"/>
+<text x="852.5" y="423" class="sm" text-anchor="middle">pub</text>
+<rect x="1012" y="408" width="29" height="22" rx="3" class="neutral"/>
+<text x="1026.5" y="423" class="sm" text-anchor="middle">pub</text>
+<text x="40" y="455" class="sm" text-anchor="start">actor Timer</text>
+<rect x="200" y="440" width="232" height="22" rx="3" class="ghost"/>
+<text x="316" y="455" class="sm" text-anchor="middle">train_wait</text>
+<rect x="432" y="440" width="87" height="22" rx="3" class="neutral"/>
+<text x="475.5" y="455" class="sm" text-anchor="middle">train</text>
+<rect x="519" y="440" width="145" height="22" rx="3" class="ghost"/>
+<text x="591.5" y="455" class="sm" text-anchor="middle">train_wait 5</text>
+<rect x="664" y="440" width="87" height="22" rx="3" class="neutral"/>
+<text x="707.5" y="455" class="sm" text-anchor="middle">train</text>
+<rect x="751" y="440" width="145" height="22" rx="3" class="ghost"/>
+<text x="823.5" y="455" class="sm" text-anchor="middle">train_wait 5</text>
+<rect x="896" y="440" width="87" height="22" rx="3" class="neutral"/>
+<text x="939.5" y="455" class="sm" text-anchor="middle">train</text>
+<text x="40" y="487" class="sm" text-anchor="start">轮首间隔</text>
+<path d="M403 476 L403 488 M403 482 L635 482 M635 476 L635 488" class="ruler"/>
+<text x="519" y="478" class="sm" text-anchor="middle">8</text>
+<path d="M635 476 L635 488 M635 482 L867 482 M867 476 L867 488" class="ruler"/>
+<text x="751" y="478" class="sm" text-anchor="middle">8</text>
+<line x1="200" y1="498" x2="1128" y2="498" class="axis"/>
+<line x1="200" y1="498" x2="200" y2="504" class="axis"/>
+<text x="200" y="516" class="sm" text-anchor="middle">0</text>
+<line x1="258" y1="498" x2="258" y2="501" class="axis"/>
+<line x1="316" y1="498" x2="316" y2="504" class="axis"/>
+<text x="316" y="516" class="sm" text-anchor="middle">4</text>
+<line x1="374" y1="498" x2="374" y2="501" class="axis"/>
+<line x1="432" y1="498" x2="432" y2="504" class="axis"/>
+<text x="432" y="516" class="sm" text-anchor="middle">8</text>
+<line x1="490" y1="498" x2="490" y2="501" class="axis"/>
+<line x1="548" y1="498" x2="548" y2="504" class="axis"/>
+<text x="548" y="516" class="sm" text-anchor="middle">12</text>
+<line x1="606" y1="498" x2="606" y2="501" class="axis"/>
+<line x1="664" y1="498" x2="664" y2="504" class="axis"/>
+<text x="664" y="516" class="sm" text-anchor="middle">16</text>
+<line x1="722" y1="498" x2="722" y2="501" class="axis"/>
+<line x1="780" y1="498" x2="780" y2="504" class="axis"/>
+<text x="780" y="516" class="sm" text-anchor="middle">20</text>
+<line x1="838" y1="498" x2="838" y2="501" class="axis"/>
+<line x1="896" y1="498" x2="896" y2="504" class="axis"/>
+<text x="896" y="516" class="sm" text-anchor="middle">24</text>
+<line x1="954" y1="498" x2="954" y2="501" class="axis"/>
+<line x1="1012" y1="498" x2="1012" y2="504" class="axis"/>
+<text x="1012" y="516" class="sm" text-anchor="middle">28</text>
+<line x1="1070" y1="498" x2="1070" y2="501" class="axis"/>
+<line x1="1128" y1="498" x2="1128" y2="504" class="axis"/>
+<text x="1128" y="516" class="sm" text-anchor="middle">32</text>
+<text x="40" y="534" class="sm" text-anchor="start">第 1 轮 perf：train_wait 5 + train 3 = step_time 8，wait_time_ratio = 5/8 = 0.625；推理侧每轮空闲 1</text>
+<text x="40" y="552" class="sm" text-anchor="start">排队 = driver 在 ray.get(rollout_manager.save) 上等已提交的 generate，fence 随即返回；--save-interval 2 时不保存的轮次改在 fence 上等 3</text>
+<text x="40" y="570" class="sm" text-anchor="start">max(7, 4) + 2 + 1 = 10 把等待在 max 外又算一次；interval 2 时轮首间隔 7、8 交替，滞后 1、2 交替</text>
+<rect x="24" y="598" width="1132" height="176" rx="10" class="panel"/>
+<text x="40" y="622" class="pt" text-anchor="start">③ 第 1 轮 perf/train_wait_time 按时间顺序拆段：有默认键的段与只剩残差的段</text>
+<text x="40" y="657" class="tx" text-anchor="start">train.py</text>
+<rect x="200" y="642" width="60" height="22" rx="3" class="ghost"/>
+<text x="230" y="657" class="sm" text-anchor="middle">save 1</text>
+<rect x="260" y="642" width="60" height="22" rx="3" class="ghost"/>
+<text x="290" y="657" class="sm" text-anchor="middle">pub 1</text>
+<rect x="320" y="642" width="360" height="22" rx="3" class="neutral"/>
+<text x="500" y="657" class="sm" text-anchor="middle">rollout 6</text>
+<rect x="680" y="642" width="60" height="22" rx="3" class="acc2"/>
+<text x="710" y="657" class="sm" text-anchor="middle">data 1</text>
+<rect x="740" y="642" width="60" height="22" rx="3" class="ghost"/>
+<text x="770" y="657" class="sm" text-anchor="middle">pre 1</text>
+<text x="812" y="657" class="sm" text-anchor="start">= 10：有键 3，残差 7（rollout_time 6 + 转换 1）</text>
+<text x="40" y="693" class="tx" text-anchor="start">train_async.py</text>
+<rect x="200" y="678" width="60" height="22" rx="3" class="ghost"/>
+<text x="230" y="693" class="sm" text-anchor="middle">save 1</text>
+<rect x="260" y="678" width="120" height="22" rx="3" class="hatch"/>
+<text x="320" y="693" class="sm" text-anchor="middle">排队 2</text>
+<rect x="380" y="678" width="60" height="22" rx="3" class="ghost"/>
+<text x="410" y="693" class="sm" text-anchor="middle">pub 1</text>
+<rect x="440" y="678" width="60" height="22" rx="3" class="ghost"/>
+<text x="470" y="693" class="sm" text-anchor="middle">pre 1</text>
+<text x="512" y="693" class="sm" text-anchor="start">= 5：有键 3，残差 2（driver 等待：本轮在 rollout_manager.save 排队）</text>
+<text x="40" y="726" class="sm" text-anchor="start">键：save → perf/save_model_time，pub → perf/update_weights_time，pre → perf/data_preprocess_time，rollout → perf/rollout_time（rollout 侧记录）</text>
+<text x="40" y="744" class="sm" text-anchor="start">data（样本转训练 dict、DP 切分、ray.put）与排队/fence 等待没有默认键；橙色段只能用 train_wait 减去同一条记录里的有键段得到，或在 driver 侧自建计时</text>
+<text x="40" y="762" class="sm" text-anchor="start">update_weights 与 save_model 由 driver 在上一轮训练块之后调用，因此出现在下一条 perf 记录里；offload、整份磁盘 reload、eval、actor 权重 CPU 备份在本例取 0</text>
+<text x="24" y="798" class="cap" text-anchor="start">阅读顺序：①② 对齐同一时间轴看关键路径 → ② 的橙色等待是两臂之差 → ③ 同一条 perf 记录里减去有键段，剩下的才是 driver 侧等待。</text>
+</svg>

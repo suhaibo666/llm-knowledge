@@ -200,7 +200,7 @@ PaLM 时代的人工流程（观察 → 回滚 → 跳批）已经产品化：**
 ### （4）RL 阶段成为稳定性的新前沿，并与问题 2 合流
 
 - **Kimi K2.5** 在 K2 基础上引入 **token 级裁剪的梯度 mask** 实现：对数比率落在 $[\alpha, \beta]$ 内的 token 正常回传，**出界 token 梯度直接置零**——双边严格限界，与 PPO clip 的语义不同，报告明确其动机是**训练与推理框架差异放大的 off-policy 问题**（即问题 2 的训推不一致），并认定该机制对长程多步工具调用场景的训练稳定性至关重要。
-- **GLM-5 的 slime 异步 RL** 给出另一组配方：**TITO（Token-in-Token-out）网关**保留 token 级精确对应、消除重分词不匹配；**直接双边重要性采样**（token 级 $[1-\varepsilon_l, 1+\varepsilon_h]$ 裁剪）在不追踪历史策略 checkpoint 的前提下控制离策偏差；外加一个非常规动作——**每次权重推送到推理端后重置优化器状态**以对冲策略滞后。
+- **GLM-5 的 slime 异步 RL** 给出另一组配方：**TITO（Token-in-Token-out）网关**保留 token 级精确对应、消除重分词不匹配；**直接双边重要性采样**（token 级 $[1-\varepsilon_l, 1+\varepsilon_h]$ 裁剪）在不追踪历史策略 checkpoint 的前提下控制离策偏差；外加一个非常规动作——**每次权重推送到推理端后重置优化器状态**以对冲策略滞后。开源 slime（`THUDM/slime@4c193f1f`）把这一动作拆成两个默认关闭的开关，粒度与论文表述不完全相同：`--reset-optimizer-states` 在每次训练调用（一个 rollout 轮次）开头把 Adam 的 `step`、`exp_avg`、`exp_avg_sq` 清零，而非按权重推送计数，`train_async.py` 下 `--update-weights-interval` 大于 1 时两者不再重合；`--use-stateless-adam` 让每个 optimizer step 都从零矩起算，要求 `--optimizer adam` 与 `--no-save-optim`。实现见 [[14_slime_megatron_training_analysis#4.5 优化器状态重置：--reset-optimizer-states 与 --use-stateless-adam|slime 优化器状态重置]]。
 
 几家不约而同把「训推数值/分词差异」列为 RL 稳定性的头号敌人，**TIS 系校正正在成为事实标准**。
 

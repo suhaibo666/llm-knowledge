@@ -1,5 +1,5 @@
-// 锁住 slime Megatron 训练后端原理图的可执行契约：图上每个数字都由同一份 CFG/SAMPLES 经源码算法的复现推导，
-// 并且必须与 14_slime_megatron_training_analysis.md 正文引用的数值一致。
+// 锁住 slime Megatron 训练后端两张原理图的可执行契约：图上每个数字都由同一份 CFG/SAMPLES 经源码算法的复现推导，
+// 必须与 14_slime_megatron_training_analysis.md 正文引用的数值一致，且注释不越出所在面板或方框。
 //
 // 运行：node --test tools/figs/svg/lib/slime_megatron_train_step_figures.test.mjs
 
@@ -12,14 +12,14 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import {
-  CFG, SAMPLES, buildDpSchedule, expandBinsBySplitting, firstFitPack, getBatch, getSeqlenBalancedPartitions, logitsTokensOffsetWithCp, model, ownedResponseIdx, roundPlan, sliceWithCp, splitBinByTokens,
+  CFG, SAMPLES, buildDpSchedule, criticPlan, estimateTextWidth, expandBinsBySplitting, firstFitPack, getBatch, getSeqlenBalancedPartitions, logitsTokensOffsetWithCp, model, ownedResponseIdx, ppoModel, renderFigures, roundPlan, sliceWithCp, splitBinByTokens,
 } from '../slime_megatron_train_step_figures.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const generator = join(here, '..', 'slime_megatron_train_step_figures.mjs');
 const slimeDir = join(here, '..', '..', '..', '..', 'wiki', '02_engineering', '04_posttrain_frameworks', 'slime');
 const pagePath = join(slimeDir, '14_slime_megatron_training_analysis.md');
-const trackedSvg = join(slimeDir, 'assets', 'slime_megatron_train_step.svg');
+const FIGURES = ['slime_megatron_train_step.svg', 'slime_megatron_train_round.svg'];
 
 function viewBox(svg) {
   const match = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
@@ -149,28 +149,57 @@ test('一轮 actor 的前向计数与 scheduler 计数', () => {
   assert.deepEqual(m.scheduler, { trainIters: 100, lrDecaySteps: 400, incrementPerStep: 4 });
 });
 
-test('生成器产出原理图，且与已跟踪的 SVG 一致', async () => {
+test('PPO 回放：同一 schedule 上 critic 与 actor 的计数', () => {
+  const p = ppoModel();
+  assert.equal(p.sameSchedule, true, 'cp_size=1、cap 不变时 schedule 必须与主例逐项相同');
+  assert.deepEqual(p.sched.partitions, model().dynamic.partitions);
+  assert.deepEqual(p.emptyAtCp0, ['s1', 's2b', 's3'], 'cp_size=2 时 cp0 本地 response 片为空的样本');
+  assert.equal(p.actor.canReuse, false, 'use_critic 让复用条件失效');
+  assert.deepEqual(p.actor.phases.map((ph) => ph.kind), ['forward_only', 'forward_only', 'external_data', 'advantages', 'train', 'backup']);
+  assert.deepEqual([p.critic.fullBatchForwards, p.actor.fullBatchForwards, p.totals.fullBatchForwards], [2, 3, 5]);
+  assert.deepEqual([p.totals.optimizerSteps, p.totals.wakeSleep, p.totals.updateWeightsRebuild, p.totals.schedulerIncrement], [2, 2, 1, 4]);
+  assert.equal(criticPlan({ numSteps: 2 }).optimizerSteps, 2);
+  assert.equal(p.grpoFullBatchForwards, 2);
+});
+
+test('生成器产出两张原理图，版面检查无问题，且与已跟踪的 SVG 一致', async () => {
   const outputDir = await mkdtemp(join(tmpdir(), 'slime-train-step-'));
   try {
     const run = spawnSync(process.execPath, [generator, outputDir], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr || run.stdout);
-    const svg = await readFile(join(outputDir, 'slime_megatron_train_step.svg'), 'utf8');
-    assertInsideCanvas(svg);
-    assert.match(svg, /\[s0 s1\]=18 {2}\[s2a s2b\]=18 {2}\[s3\]=6 {2}→ K=3/);
-    assert.match(svg, /target_K = ceil\(3\/2\)×2 = 4/);
-    assert.match(svg, /partition=\[0,1,4\]/);
-    assert.match(svg, /cu_seqlens=\[0,12,20,32\]/);
-    assert.match(svg, /全批前向 = ref 1 \+ 训练 1 = 2（forward_backward_func 调用 2 次）/);
-    assert.match(svg, /cu_seqlens=\[0,12,18,32\]（不乘 cp）/);
-    assert.match(svg, /balance_by_flops：KK 先分 3 组 \{s0\} \{s1,s2b\} \{s2a,s3\}/);
-    assert.match(svg, /本例对任意 aL\+bL² 也得 \{bin0,bin2\} \/ \{bin1,bin3\}/);
-    assert.match(svg, /scheduler\.step\(\+4\)/);
-    assert.doesNotMatch(svg, /\[\[\d+_|\[\[[A-Za-z\u4e00-\u9fff]/, 'SVG 不得泄漏 wikilink 标记');
-    const tracked = await readFile(trackedSvg, 'utf8');
-    assert.equal(tracked, svg, '已跟踪的 SVG 必须由当前生成器重新生成');
+    const figures = renderFigures();
+    for (const name of FIGURES) {
+      assert.deepEqual(figures[name].issues, [], `${name} 的注释越出面板或压线`);
+      const svg = await readFile(join(outputDir, name), 'utf8');
+      assertInsideCanvas(svg);
+      assert.doesNotMatch(svg, /\[\[\d+_|\[\[[A-Za-z一-鿿]/, 'SVG 不得泄漏 wikilink 标记');
+      assert.doesNotMatch(svg, /\d+ 页/, 'SVG 不用裸页号导航');
+      const tracked = await readFile(join(slimeDir, 'assets', name), 'utf8');
+      assert.equal(tracked, svg, `已跟踪的 ${name} 必须由当前生成器重新生成`);
+    }
+    const step = await readFile(join(outputDir, FIGURES[0]), 'utf8');
+    assert.match(step, /\[s0 s1\]=18 {2}\[s2a s2b\]=18 {2}\[s3\]=6 {2}→ K=3/);
+    assert.match(step, /target_K = ceil\(3\/2\)×2 = 4/);
+    assert.match(step, /partition=\[0,1,4\]/);
+    assert.match(step, /cu_seqlens=\[0,12,20,32\]/);
+    assert.match(step, /cu_seqlens=\[0,12,18,32\]（不乘 cp）/);
+    assert.match(step, /CP&gt;1 只允许 DSA 架构，否则解析期 ValueError/);
+    assert.match(step, /balance_by_flops：KK 先分 3 组 \{s0\} \{s1,s2b\} \{s2a,s3\}/);
+    assert.match(step, /本例对任意 aL\+bL² 也得 \{bin0,bin2\} \/ \{bin1,bin3\}/);
+    const round = await readFile(join(outputDir, FIGURES[1]), 'utf8');
+    assert.match(round, /全批前向 = ref 1 \+ 训练 1 = 2（forward_backward_func 调用 2 次）/);
+    assert.match(round, /训练阶段每 GPU：全批前向 critic 2 \+ actor 3 = 5（默认 grpo 为 2）；optimizer\.step 2 次；wake_up\/sleep 2 次，update_weights 再重建 1 次/);
+    assert.match(round, /s1、s2b、s3 在 cp0 没有 response 位置/);
+    assert.match(round, /scheduler\.step\(\+4\)/);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+test('字宽估计偏保守：CJK 按整字宽、ASCII 不低于 0.56 倍字号', () => {
+  assert.equal(estimateTextWidth('调度', 'tx'), 24);
+  assert.ok(estimateTextWidth('abcd', 'tx') >= 4 * 12 * 0.56 - 1e-9);
+  assert.ok(estimateTextWidth('abcd', 'mono') > estimateTextWidth('abcd', 'sm'));
 });
 
 test('正文引用的数值与模型一致', async () => {
@@ -182,6 +211,7 @@ test('正文引用的数值与模型一致', async () => {
   const [cp0, cp1] = m.batches;
   const [a0, a1] = m.allgather;
   const fA = m.flops.find((f) => f.regime === 'a>22b'); const fB = m.flops.find((f) => f.regime === 'a<=22b');
+  const p = ppoModel();
   for (const needle of [
     `cap = ${CFG.maxTokensPerGpu} × ${CFG.cpSize} = ${step.maxPerBin}`,
     `\`${step.packed.map((b) => binStr(b, step.stepLengths)).join(' ')} → K=${step.packed.length}\``,
@@ -206,8 +236,15 @@ test('正文引用的数值与模型一致', async () => {
     `a ≤ 22b 时给 rank 0 \`${fB.rankBins[0].join(' ')}\`、rank 1 \`${fB.rankBins[1].join(' ')}\``,
     `本例最大 bin ${fA.maxBinTokens} 个 token`,
     `K=${step.packed.length} 不是 ${step.alignTo} 的倍数`,
+    `全批前向 critic ${p.critic.fullBatchForwards} + actor ${p.actor.fullBatchForwards} = ${p.totals.fullBatchForwards}（默认 grpo 为 ${p.grpoFullBatchForwards}），optimizer.step ${p.totals.optimizerSteps} 次，wake_up/sleep 与 process group 重建各 ${p.totals.wakeSleep} 次`,
+    `而 ${p.emptyAtCp0.join('、')} 在 cp0 上本地片为空`,
+    `所以一轮合计重建 ${p.totals.wakeSleep + p.totals.updateWeightsRebuild} 次`,
+    `取 \`cp_size=${p.cfgPpo.cpSize}\`、\`max_tokens_per_gpu=${p.cfgPpo.maxTokensPerGpu}\`：cap 仍为 ${p.cfgPpo.maxTokensPerGpu * p.cfgPpo.cpSize}`,
+    `每 GPU 一轮全批前向 critic ${p.critic.fullBatchForwards} + actor ${p.actor.fullBatchForwards} = ${p.totals.fullBatchForwards}，optimizer.step ${p.totals.optimizerSteps} 次`,
+    '`DeepseekV32ForCausalLM`',
+    '`GlmMoeDsaForCausalLM`',
   ]) {
     assert.ok(page.includes(needle), `正文必须出现 ${needle}`);
   }
-  assert.ok(page.includes('assets/slime_megatron_train_step.svg'), '正文必须引用原理图');
+  for (const name of FIGURES) assert.ok(page.includes(`assets/${name}`), `正文必须引用 ${name}`);
 });

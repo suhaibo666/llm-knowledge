@@ -1,9 +1,9 @@
-// 图：slime Megatron 训练后端怎样把一份 rollout 训练字典变成一次 optimizer step：
-// build_dp_schedule 先按 rollout id 组步、first-fit 打包、拆 bin 对齐、再分给 DP rank；
-// get_batch 把一个 micro-batch 切成 zigzag CP 片、拼成 THD 流并对齐 next-token mask；
-// actor 一轮内按 CPU tag 切换 ref / old_actor / actor 只做前向；train_one_step 跑完全部
-// micro-batch 的前反向后做一次 optimizer.step 并以逻辑 rollout 数推进 LR scheduler。
-// 源码基线：THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9。
+// 图：slime Megatron 训练后端怎样把一份 rollout 训练字典变成 optimizer step。拆成两张图：
+//   上图 slime_megatron_train_step.svg —— build_dp_schedule 组步、first-fit 打包、拆 bin 对齐、分给 DP rank；
+//        get_batch 把一个 micro-batch 切成 zigzag CP 片、拼成 THD 流并对齐 next-token mask，并对照 allgather_cp。
+//   下图 slime_megatron_train_round.svg —— actor 一轮按 CPU tag 切换 ref / actor 只做前向；
+//        同一 schedule 走 --advantage-estimator ppo 时 critic 与 actor 的分时数据面；train_one_step 的闭环。
+// 源码基线：THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e。
 //
 // ---- spec（先写 spec 再画，见 skills/drawing-wiki-figures/SKILL.md §4）----
 // 要讲清楚：
@@ -11,14 +11,15 @@
 //  2. 动态打包是 first-fit + 拆最大多样本 bin 对齐到 dp_size × mb_group；静态路径不对齐就直接断言。
 //  3. CP 切片是 zigzag 两段：每条样本各自补齐到 2·cp·chunk，rank r 拿第 r 段与第 2cp−1−r 段；
 //     mask 左补 prompt_len−1、右补 1 后再同样切片，所以 mask 位置对应"预测下一个 token 的 logit"。
+//     allgather_cp 是只允许 DSA 架构（CP>1 时）的兄弟布局：整体拼接后连续等分。
 //  4. 一轮训练里 ref/teacher/old_actor 都是同一份 GPU 模型换入 CPU tag 后的前向；
 //     单步且无 KL 等条件满足时跳过独立的 old-policy 前向，训练前向的 detached logprob 充当 old logprob。
-//  5. optimizer 每个训练步只推进一次，LR scheduler 的 increment 是该步的逻辑 rollout 数。
+//  5. PPO：critic 是独立 RayTrainGroup，与 actor 共用 GPU、强制 offload_train；critic 先 forward_only 取 V_old、
+//     因为自己不算 log_probs，KL 恒为零，按自身 args 算 returns、训练 value head，再把 V_old 经 Ray ref 交给同 rank 的 actor。
+//  6. optimizer 每个训练步只推进一次，LR scheduler 的 increment 是该步的逻辑 rollout 数。
 //
-// 布局：四条泳道。A 调度（5 条样本 → 4 个 bin → 2 rank × 2 mb，右侧静态路径的断言）；
-// B get_batch（rank0 mb0 两个 CP rank 的 token 流、cu_seqlens、mask 对齐）；
-// C 一轮 actor 的 tag 切换与前向计数；D train_one_step 的闭环与缩放入口。
-// acc1 标决定性转换与承重结果，acc2 标断言、代价与被拒路径。
+// 布局：上图两条泳道 A 调度、B get_batch；下图三条泳道 C GRPO 一轮、D PPO 一轮（critic 行 + actor 行）、E train_one_step。
+// acc1 标决定性转换与承重结果，acc2 标断言、代价与被拒路径。注释每条一行，完整解释在正文。
 //
 // 用法：node tools/figs/svg/slime_megatron_train_step_figures.mjs [output-directory]
 
@@ -329,6 +330,44 @@ export function model(cfg = CFG) {
   return { cfg, samples: SAMPLES, dynamic, staticError, rankView, rank0Mb0, batches, allgather, kk, flops, round, roundTwoSteps, scheduler: schedulerCounters(cfg), rolloutMaskSums };
 }
 
+
+// ---------------- PPO：同一 schedule 上 critic 先训、actor 后训（actor.py::train_critic / train.py::train） ----------------
+// critic 一轮：forward_only(get_values) 取 V_old → compute_advantages_and_returns（critic 不算 log_probs，KL 取零）
+// → value_loss 训练 → PP last stage 把 values 搬回 CPU；actor 一轮复用 roundPlan(useCritic)。
+export function criticPlan({ numSteps }) {
+  const phases = [
+    { tag: 'critic', kind: 'wake_up', store: 'offload_train 强制开' },
+    { tag: 'critic', kind: 'forward_only', store: 'values = V_old' },
+    { tag: 'critic', kind: 'advantages', store: '无 log_probs → KL 为零' },
+    { tag: 'critic', kind: 'train', store: `${numSteps} × train_one_step（value_loss）` },
+    { tag: 'critic', kind: 'return_values', store: 'values → CPU，sleep' },
+  ];
+  const forwardPasses = phases.filter((p) => p.kind === 'forward_only').length;
+  return { phases, forwardPasses, fullBatchForwards: forwardPasses + 1, optimizerSteps: numSteps };
+}
+
+export function ppoModel(cfg = CFG) {
+  const main = model(cfg);
+  // cp_size=2 时 ppo 分支在 cp_rank 0 对本地 response 片做 token_level_rewards[-1] += reward，本地片为空的样本会 IndexError
+  const emptyAtCp0 = SAMPLES.filter((s) => ownedResponseIdx(s, 0, cfg.cpSize).length === 0).map((s) => s.name);
+  // 回放改用 cp_size=1，并把 max_tokens_per_gpu 乘回 cp 倍：cap 不变，schedule 与主例逐项相同
+  const cfgPpo = { ...cfg, cpSize: 1, maxTokensPerGpu: cfg.maxTokensPerGpu * cfg.cpSize };
+  const sched = buildDpSchedule({ cfg: cfgPpo, totalLengths: SAMPLES.map((s) => s.totalLen), rolloutIndices: SAMPLES.map((s) => s.rolloutId) });
+  const sameSchedule = JSON.stringify([sched.partitions, sched.microBatchIndices, sched.numMicrobatches, sched.globalBatchSizes])
+    === JSON.stringify([main.dynamic.partitions, main.dynamic.microBatchIndices, main.dynamic.numMicrobatches, main.dynamic.globalBatchSizes]);
+  const numSteps = sched.numMicrobatches.length;
+  const actor = roundPlan({ cfg: cfgPpo, numSteps, useCritic: true });
+  const critic = criticPlan({ numSteps });
+  const totals = {
+    fullBatchForwards: critic.fullBatchForwards + actor.fullBatchForwards,
+    optimizerSteps: critic.optimizerSteps + numSteps,
+    wakeSleep: 2, // 训练阶段 critic 与 actor 各一次 wake_up → train → sleep（参数校验在 use_critic 时强制 offload_train）
+    updateWeightsRebuild: 1, // 之后 actor 的 update_weights 再重建一次 process group（非 colocate 时是完整 wake_up/sleep）
+    schedulerIncrement: cfg.globalBatchSize,
+  };
+  return { cfgPpo, sched, sameSchedule, emptyAtCp0, numSteps, actor, critic, totals, grpoFullBatchForwards: main.round.fullBatchForwards };
+}
+
 // ---------------- 渲染 ----------------
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const STYLE = `
@@ -353,84 +392,119 @@ const STYLE = `
   .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
 `;
 
-function render(m) {
-  const W = 1180; const H = 1420;
-  const o = [];
-  const rect = (x, y, w, h, cls = 'neutral', r = 7) => o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" class="${cls}"/>`);
-  const text = (x, y, s, cls = 'tx', anchor = 'start') => o.push(`<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${esc(s)}</text>`);
-  const arrow = (x1, y1, x2, y2, cls = 'main') => o.push(`<path d="M${x1} ${y1} L${x2} ${y2}" class="${cls}"/>`);
-  const c = m.cfg;
-  const step = m.dynamic.steps[0];
+// 保守的字宽估计（比 Chrome/PingFang 实测偏宽）：用来在生成时拒绝越出所在面板或方框的注释。
+const FONT = { ti: [19, false], su: [12, false], pt: [14, false], tx: [12, false], sm: [10.5, false], cap: [11.5, false], mono: [11, true], mono2: [9.5, true] };
+export function estimateTextWidth(s, cls) {
+  const [size, mono] = FONT[cls];
+  let w = 0;
+  for (const ch of String(s)) {
+    const cp = ch.codePointAt(0);
+    if ((cp >= 0x2e80 && cp <= 0x9fff) || (cp >= 0xf900 && cp <= 0xffef)) w += size; // CJK 与全角标点
+    else if (cp >= 0x2000 && cp <= 0x2bff) w += size * 0.75; // → × ∧ ¬ ≤ 等符号
+    else w += size * (mono ? 0.62 : 0.56);
+  }
+  return w;
+}
 
+function canvas(W, H, title, desc) {
+  const o = []; const issues = [];
+  let bound = [16, W - 16];
+  const setBound = (lo, hi) => { bound = [lo, hi]; };
+  const rect = (x, y, w, h, cls = 'neutral', r = 7) => o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" class="${cls}"/>`);
+  const text = (x, y, s, cls = 'tx', anchor = 'start', b = bound) => {
+    const w = estimateTextWidth(s, cls);
+    const left = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+    if (left < b[0] - 0.5 || left + w > b[1] + 0.5) issues.push(`text 超出 [${b[0]}, ${b[1]}]：${String(s).slice(0, 40)}（${Math.round(left)}–${Math.round(left + w)}）`);
+    o.push(`<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${esc(s)}</text>`);
+  };
+  // 带文字的方框：逐行居中（或左对齐），检查宽度与底边留白，避免末行压线
+  const box = (x, y, w, h, cls, lines, { align = 'middle', top = 18, step = 17 } = {}) => {
+    rect(x, y, w, h, cls, 6);
+    lines.forEach(([s, lcls], i) => {
+      const by = y + top + i * step;
+      const size = FONT[lcls][0];
+      if (by + size * 0.3 > y + h - 5) issues.push(`方框末行压线：${String(s).slice(0, 40)}`);
+      if (align === 'middle') text(x + w / 2, by, s, lcls, 'middle', [x + 5, x + w - 5]);
+      else text(x + 12, by, s, lcls, 'start', [x + 5, x + w - 5]);
+    });
+  };
+  const arrow = (x1, y1, x2, y2, cls = 'main') => o.push(`<path d="M${x1} ${y1} L${x2} ${y2}" class="${cls}"/>`);
   o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="title desc">`);
-  o.push('<title id="title">slime Megatron 训练后端：从训练字典到一次 optimizer step 的四次决定性转换</title>');
-  o.push('<desc id="desc">泳道 A 复现 build_dp_schedule 的按 rollout 组步、first-fit 打包、拆 bin 对齐与轮询分发；泳道 B 复现 get_batch 对一个 micro-batch 的 zigzag CP 切片、THD 拼接、cu_seqlens 与 next-token mask 对齐，并用同一 micro-batch 对照 allgather_cp 的整体拼接与连续等分；泳道 C 复现 actor 一轮内 ref、old_actor、actor 三个 CPU tag 的切换，以及全批前向次数与 forward_backward_func 调用次数；泳道 D 复现 train_one_step 的清梯度、全部 micro-batch 前反向、一次 optimizer step 与按逻辑 rollout 数推进 LR scheduler。</desc>');
+  o.push(`<title id="title">${esc(title)}</title>`);
+  o.push(`<desc id="desc">${esc(desc)}</desc>`);
   o.push(`<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>`);
   o.push(`<style>${STYLE}</style><rect width="${W}" height="${H}" fill="white"/>`);
+  const panel = (y, h, heading) => { rect(24, y, 1132, h, 'panel', 10); setBound(32, 1148); text(40, y + 24, heading, 'pt'); };
+  const done = () => { o.push('</svg>'); return { svg: o.join('\n'), issues }; };
+  return { rect, text, box, arrow, panel, setBound, done };
+}
 
-  text(24, 34, '一份训练字典 → 一次 optimizer step：调度、打包、角色切换、训练步', 'ti');
+const BASELINE = 'THUDM/slime@4c193f1f3750';
+
+// 上图：A 调度、B get_batch
+function renderStep(m) {
+  const W = 1180; const H = 860;
+  const cv = canvas(W, H, 'slime Megatron 训练后端（上）：DP 调度与 CP 打包',
+    '泳道 A 复现 build_dp_schedule 的按 rollout 组步、first-fit 打包、拆 bin 对齐与轮询分发，并对照静态路径的断言与 balance_by_flops；泳道 B 复现 get_batch 对 rank 0 第一个 micro-batch 的 zigzag CP 切片、THD 拼接、cu_seqlens 与 next-token mask 对齐，并用同一 micro-batch 对照只允许 DSA 架构的 allgather_cp 整体拼接与连续等分。');
+  const { rect, text, box, panel } = cv;
+  const c = m.cfg;
+  const step = m.dynamic.steps[0];
+  const nm = (i) => m.samples[step.sampleIndices[i]].name;
+
+  text(24, 34, '一份训练字典怎样落到 GPU（上）：DP 调度与 CP 打包', 'ti');
   text(24, 56, `dp_size=${c.dpSize} · cp_size=${c.cpSize} · tp=${c.tpSize} · global_batch_size=${c.globalBatchSize} 个逻辑 rollout · max_tokens_per_gpu=${c.maxTokensPerGpu} → cap ${step.maxPerBin} · data_pad_size_multiplier=${c.dataPadSizeMultiplier} · prompt 长 ${c.promptLen}`, 'su');
 
   // ---- 泳道 A：调度 ----
-  const yA = 74; const hA = 336;
-  rect(24, yA, 1132, hA, 'panel', 10);
-  text(40, yA + 24, 'A  build_dp_schedule：先按 rollout id 组步，再 first-fit 打包，拆 bin 对齐到 dp_size，最后轮询分给 rank', 'pt');
+  const yA = 74; const hA = 340;
+  panel(yA, hA, 'A  build_dp_schedule：先按 rollout id 组步，再 first-fit 打包，拆 bin 对齐到 dp_size，最后分给 rank');
   const sx = 40; const sy = yA + 46;
   text(sx, sy + 12, '样本（total = prompt + response，mask 和）', 'sm');
   m.samples.forEach((s, i) => {
-    const x = sx + i * 118;
-    rect(x, sy + 20, 110, 44, s.rolloutId === 2 ? 'acc1' : 'cell', 5);
-    text(x + 55, sy + 37, `${s.name} · r${s.rolloutId}`, 'mono', 'middle');
-    text(x + 55, sy + 54, `${c.promptLen}+${s.responseLen}=${s.totalLen}，mask ${s.lossMask.reduce((a, b) => a + b, 0)}`, 'mono2', 'middle');
+    box(sx + i * 118, sy + 20, 110, 44, s.rolloutId === 2 ? 'acc1' : 'cell', [[`${s.name} · r${s.rolloutId}`, 'mono'], [`${c.promptLen}+${s.responseLen}=${s.totalLen}，mask ${s.lossMask.reduce((a, b) => a + b, 0)}`, 'mono2']], { top: 17, step: 17 });
   });
-  text(sx, sy + 82, `① 按 rollout_id 首次出现顺序分组：r0 r1 r2 r3 → ${step.stepRollouts.length} // ${c.globalBatchSize} = ${m.dynamic.numMicrobatches.length} 步；r2 的两个片段同步`, 'tx');
-  text(sx, sy + 100, `② first-fit（cap ${step.maxPerBin}）：${step.packed.map((b) => `[${b.map((i) => m.samples[step.sampleIndices[i]].name).join(' ')}]=${b.reduce((a, i) => a + step.stepLengths[i], 0)}`).join('  ')}  → K=${step.packed.length}`, 'tx');
+  text(sx, sy + 82, `① 按 rollout_id 首次出现顺序分组：r0 r1 r2 r3 → ${step.stepRollouts.length} // ${c.globalBatchSize} = ${m.dynamic.numMicrobatches.length} 步；r2 的两个片段同步；尾部不足一步的 rollout 丢弃`, 'tx', 'start', [32, 790]);
+  text(sx, sy + 100, `② first-fit（cap ${step.maxPerBin}）：${step.packed.map((b) => `[${b.map(nm).join(' ')}]=${b.reduce((a, i) => a + step.stepLengths[i], 0)}`).join('  ')}  → K=${step.packed.length}`, 'tx', 'start', [32, 790]);
   const sp = step.splitTrace[0];
-  text(sx, sy + 118, `③ 对齐：target_K = ceil(${step.packed.length}/${step.alignTo})×${step.alignTo} = ${step.targetK}；拆最大的多样本 bin（和相同取下标大者）bin${sp.splitBin} [${sp.before.map((i) => m.samples[step.sampleIndices[i]].name).join(' ')}] → [${sp.left.map((i) => m.samples[step.sampleIndices[i]].name).join(' ')}] + [${sp.right.map((i) => m.samples[step.sampleIndices[i]].name).join(' ')}]`, 'tx');
+  text(sx, sy + 118, `③ 对齐：target_K = ceil(${step.packed.length}/${step.alignTo})×${step.alignTo} = ${step.targetK}；拆最大的多样本 bin（和相同取下标大者）bin${sp.splitBin} [${sp.before.map(nm).join(' ')}] → [${sp.left.map(nm).join(' ')}] + [${sp.right.map(nm).join(' ')}]`, 'tx', 'start', [32, 790]);
   const by = sy + 132;
   step.bins.forEach((b, k) => {
-    const x = sx + k * 150;
-    rect(x, by, 140, 30, k === sp.splitBin || k === step.bins.length - 1 ? 'acc1' : 'cell', 5);
-    text(x + 70, by + 19, `bin${k} [${b.map((g) => m.samples[g].name).join(' ')}] = ${b.reduce((a, g) => a + m.samples[g].totalLen, 0)}`, 'mono', 'middle');
+    box(sx + k * 150, by, 140, 30, k === sp.splitBin || k === step.bins.length - 1 ? 'acc1' : 'cell', [[`bin${k} [${b.map((g) => m.samples[g].name).join(' ')}] = ${b.reduce((a, g) => a + m.samples[g].totalLen, 0)}`, 'mono']], { top: 19 });
   });
   const kkSets = m.kk[0].partitions.map((p) => `{${p.map((i) => `bin${i}`).join(',')}}`).join(' / ');
   text(sx, by + 58, `④ 分发：balance_data=False 时 rank r 取 bin r, r+${c.dpSize}, …（各 ${m.dynamic.numMicrobatches[0]} 个 mb）；=True 时 KK 按估算 FLOPs 配对，本例对任意 aL+bL² 也得 ${kkSets}`, 'tx');
   m.rankView.forEach((rv, r) => {
-    const x = sx + r * 560;
-    rect(x, by + 66, 540, 48, 'neutral', 6);
-    text(x + 10, by + 84, `DP rank ${r}: partition=[${rv.partition.join(',')}]  mbs = ${rv.mbs.map((mb) => `[${mb.join(' ')}]`).join(' ')}`, 'mono');
-    text(x + 10, by + 102, `micro_batch_indices=${JSON.stringify(m.dynamic.microBatchIndices[r])}  num_microbatches=[${m.dynamic.numMicrobatches.join(',')}]  global_batch_sizes=[${m.dynamic.globalBatchSizes.join(',')}]`, 'mono2');
+    box(sx + r * 560, by + 66, 540, 48, 'neutral', [
+      [`DP rank ${r}: partition=[${rv.partition.join(',')}]  mbs = ${rv.mbs.map((mb) => `[${mb.join(' ')}]`).join(' ')}`, 'mono'],
+      [`micro_batch_indices=${JSON.stringify(m.dynamic.microBatchIndices[r])}  num_microbatches=[${m.dynamic.numMicrobatches.join(',')}]  global_batch_sizes=[${m.dynamic.globalBatchSizes.join(',')}]`, 'mono2'],
+    ], { align: 'start', top: 18, step: 18 });
   });
-  // 静态路径
-  const rx = 800; const ry = sy + 78;
-  rect(rx, ry, 340, 96, 'acc2', 8);
-  text(rx + 12, ry + 20, `静态路径（micro_batch_size=${c.microBatchSize}）：固定步长切块`, 'pt');
-  text(rx + 12, ry + 40, '[s0 s1] [s2a s2b] [s3] → K=3，不是 dp_size 的倍数', 'tx');
-  text(rx + 12, ry + 58, '不拆块，直接 AssertionError（拆会破坏定长不变量）', 'tx');
-  text(rx + 12, ry + 76, '→ 调 step_size / micro_batch_size / DP·VPP 使其整除', 'tx');
-  text(rx + 12, ry + 92, `尾部凑不满一整步的 rollout 连同片段被丢出 schedule`, 'cap');
+  // 静态路径：标题 + 三行，底边留白
+  box(800, sy + 78, 340, 90, 'acc2', [
+    [`静态路径（micro_batch_size=${c.microBatchSize}）：固定步长切块`, 'pt'],
+    ['[s0 s1] [s2a s2b] [s3] → K=3，不是 dp_size 的倍数', 'tx'],
+    ['不拆块，直接 AssertionError（拆会破坏定长不变量）', 'tx'],
+    ['→ 需调整 step、micro batch 或 DP/VPP 使其整除', 'tx'],
+  ], { align: 'start', top: 20, step: 19 });
   const fA = m.flops.find((f) => f.regime === 'a>22b'); const fB = m.flops.find((f) => f.regime === 'a<=22b');
-  text(sx, yA + hA - 28, `balance_by_flops：KK 先分 ${fA.numGroups} 组 ${fA.groups.map((g) => `{${g}}`).join(' ')}（与系数无关）→ 拆 [${fA.split[0].before.join(' ')}] 为 [${fA.split[0].left.join(' ')}]+[${fA.split[0].right.join(' ')}]；强制 balance_data 时 a > 22b 给 rank0 ${fA.rankBins[0].join(' ')}，a ≤ 22b 给 rank0 ${fB.rankBins[0].join(' ')}`, 'cap');
-  text(sx, yA + hA - 10, `每条样本还带 rollout_mask_sums=[${m.rolloutMaskSums.join(',')}]（同一 rollout 的片段共用；见 12 页）→ 切分前算好，切分后 s2a、s2b 已在不同 mb`, 'cap');
+  text(sx, yA + hA - 30, `balance_by_flops：KK 先分 ${fA.numGroups} 组 ${fA.groups.map((g) => `{${g}}`).join(' ')}（与系数无关）→ 拆出 [${fA.split[0].left.join(' ')}]+[${fA.split[0].right.join(' ')}]；强制 balance_data：a > 22b 时 rank0 取 ${fA.rankBins[0].join(' ')}，否则 ${fB.rankBins[0].join(' ')}`, 'cap');
+  text(sx, yA + hA - 12, `rollout_mask_sums=[${m.rolloutMaskSums.join(',')}] 由 converter 在切分前算好，同一 rollout 的片段共用；切分后 s2a、s2b 已在不同 mb`, 'cap');
 
   // ---- 泳道 B：get_batch ----
-  const yB = yA + hA + 12; const hB = 484;
-  rect(24, yB, 1132, hB, 'panel', 10);
-  text(40, yB + 24, `B  get_batch：rank 0 的 mb0 [${m.rank0Mb0.map((s) => s.name).join(' ')}] 在 cp_size=${c.cpSize} 下的 zigzag 切片、THD 拼接与 next-token mask 对齐`, 'pt');
+  const yB = yA + hA + 12; const hB = 400;
+  panel(yB, hB, `B  get_batch：rank 0 的 mb0 [${m.rank0Mb0.map((s) => s.name).join(' ')}] 在 cp_size=${c.cpSize} 下的 zigzag 切片、THD 拼接与 next-token mask 对齐`);
   const cellW = 34; const cellH = 22; const bx0 = 150;
   const drawStream = (y, label, items, clsFn, textFn) => {
     text(bx0 - 8, y + 15, label, 'mono', 'end');
     items.forEach((it, i) => {
       rect(bx0 + i * cellW, y, cellW - 2, cellH, clsFn(it, i), 3);
-      text(bx0 + i * cellW + (cellW - 2) / 2, y + 15, textFn(it, i), 'mono2', 'middle');
+      text(bx0 + i * cellW + (cellW - 2) / 2, y + 15, textFn(it, i), 'mono2', 'middle', [bx0 + i * cellW - 2, bx0 + i * cellW + cellW]);
     });
   };
-  // 原始 token 流（两条样本）
   let yy = yB + 40;
   const s0 = m.rank0Mb0[0]; const s1 = m.rank0Mb0[1];
   const srcItems = [...Array.from({ length: s0.totalLen }, (_, i) => ({ s: s0, i })), ...Array.from({ length: s1.totalLen }, (_, i) => ({ s: s1, i }))];
   drawStream(yy, '原 tokens', srcItems, (it) => (it.i >= c.promptLen ? (it.s.lossMask[it.i - c.promptLen] ? 'h1' : 'x') : 'cell'), (it) => `${it.s.name}:${it.i}`);
-  text(bx0 + srcItems.length * cellW + 8, yy + 15, `蓝 = 可训练 response，灰 = prompt / 工具 token（${s0.name}:${c.promptLen + s0.maskedResponseIdx[0]}）`, 'sm');
+  text(bx0 + srcItems.length * cellW + 8, yy + 15, '蓝：可训练 response · 灰：prompt 与工具 token', 'sm');
   yy += 30;
   text(bx0, yy + 10, `每条样本各自 chunk = ceil(total / (2·cp))：${s0.name} chunk=${Math.ceil(s0.totalLen / (2 * c.cpSize))} 无补齐；${s1.name} chunk=${Math.ceil(s1.totalLen / (2 * c.cpSize))} 补 ${2 * c.cpSize * Math.ceil(s1.totalLen / (2 * c.cpSize)) - s1.totalLen} 个 pad → rank r 取第 r 段与第 ${2 * c.cpSize - 1}−r 段`, 'sm');
   yy += 22;
@@ -443,7 +517,7 @@ function render(m) {
     yy += cellH + 12;
   });
   const ag = m.allgather;
-  text(40, yy + 12, `allgather_cp（DSA 模式）对照：先把整个 mb 拼接、补到 cp × pad_size = ${c.cpSize * m.batches[0].padSize} 的倍数（这里补 ${ag[0].pad}），再按 rank 连续等分`, 'sm');
+  text(40, yy + 12, `allgather_cp 对照（CP>1 只允许 DSA 架构，否则解析期 ValueError）：整个 mb 拼接、补到 cp × pad_size = ${c.cpSize * m.batches[0].padSize} 的倍数（补 ${ag[0].pad}），再按 rank 连续等分`, 'tx');
   yy += 20;
   ag.forEach((b, cpRank) => {
     drawStream(yy, `ag cp${cpRank} tokens`, b.tokens, (t) => (t === 'P' ? 'x' : 'cell'), (t) => (t === 'P' ? 'pad' : t));
@@ -453,64 +527,103 @@ function render(m) {
     text(bx0 + b.fullLossMasks.length * cellW + 8, yy + 15, `有效 ${b.maskedValid}`, 'mono2');
     yy += cellH + 12;
   });
-  const cu0 = m.batches[0].cuSeqlens;
-  const paddedLens = m.rank0Mb0.map((smp, i) => `${smp.name} ${cu0[i + 1] - cu0[i]}`).join('、');
-  rect(40, yy, 1100, 114, 'ghost', 8);
-  text(52, yy + 20, `mask 先按样本左补 prompt_len−1=${c.promptLen - 1}、右补 1，再与 tokens 同样切片：位置 p 的 mask 属于"预测 token p+1 的 logit"，`, 'tx');
-  text(52, yy + 38, `所以 response 第 r 个 token 的 mask 落在 p = prompt_len + r − 1。zigzag 拼接后补到 pad_size = tp × ${c.dataPadSizeMultiplier} = ${m.batches[0].padSize} 的倍数（这里补 ${m.batches[0].pad}），`, 'tx');
-  text(52, yy + 56, `局部 cu_seqlens 乘 cp_size 得到每条样本补齐后的全局长度（${paddedLens}，${s1.name} 原长 ${s1.totalLen}）。两个 CP rank 的 mask 有效数 ${m.batches.map((b) => b.maskedValid).join(' + ')} = ${m.batches.reduce((a, b) => a + b.maskedValid, 0)} = 两条样本的 mask 和。`, 'tx');
-  text(52, yy + 76, `${s1.name} 在 cp0 上一个 response 位置都没有：它分到的两段是 prompt 头与补齐尾。这就是 loss 侧"空 rank 仍参加集合通信"的来源（15 页）。`, 'tx');
-  text(52, yy + 96, `allgather 下 cp1 只有 ${ag[1].realTokens} 个真实 token、${ag[1].maskedValid} 个有效位置；logprob 先按连续片算，再经 _allgather_cp_redistribute 一次可微 all-reduce 切回 zigzag。`, 'tx');
+  const zig = m.batches.map((b) => b.maskedValid);
+  text(40, yy + 14, `mask 左补 prompt_len−1=${c.promptLen - 1}、右补 1，再与 tokens 同规则切片：位置 p 的 mask 属于预测 token p+1 的 logit；zigzag 有效 ${zig.join(' + ')} = ${zig.reduce((a, b) => a + b, 0)} = 两条样本 mask 和`, 'cap');
+  text(40, yy + 32, `${s1.name} 在 cp0 没有 response 位置（空 CP rank 仍要参加集合通信）；allgather 有效 ${ag.map((b) => b.maskedValid).join(' + ')} = ${ag.reduce((a, b) => a + b.maskedValid, 0)}，真实 token 却是 ${ag.map((b) => b.realTokens).join(' 对 ')}`, 'cap');
 
-  // ---- 泳道 C：一轮 actor 的 tag 切换 ----
-  const yC = yB + hB + 12; const hC = 250;
-  rect(24, yC, 1132, hC, 'panel', 10);
-  text(40, yC + 24, `C  train_actor 一轮：同一份 GPU 模型按 CPU tag 换入换出，只有 actor 走反向；本例 kl_coef=0、use_kl_loss 让 ref 存在`, 'pt');
-  const px = 40; const py = yC + 44; const pw = 200;
-  m.round.phases.forEach((p, i) => {
-    const x = px + i * (pw + 8);
-    const cls = p.kind === 'train' ? 'acc1' : p.kind === 'switch_only' ? 'acc2' : p.kind === 'forward_only' ? 'neutral' : 'ghost';
-    rect(x, py, pw, 62, cls, 6);
-    text(x + pw / 2, py + 18, `${i + 1}. tag ${p.tag}`, 'mono', 'middle');
-    text(x + pw / 2, py + 35, p.kind === 'forward_only' ? 'forward_only' : p.kind === 'switch_only' ? '_switch_model 无前向' : p.kind, 'sm', 'middle');
-    text(x + pw / 2, py + 52, p.store, 'mono2', 'middle');
+  cv.setBound(16, W - 16);
+  text(24, H - 12, `源码基线：${BASELINE} · 复现 build_dp_schedule / expand_bins_by_splitting / slice_with_cp / get_batch`, 'su');
+  return cv.done();
+}
+
+// 下图：C GRPO 一轮、D PPO 一轮、E train_one_step
+function renderRound(m, p) {
+  const W = 1180; const H = 740;
+  const cv = canvas(W, H, 'slime Megatron 训练后端（下）：一轮角色切换、PPO critic 数据面与训练步',
+    '泳道 C 复现 train_actor 一轮内 ref 与 actor 两个 CPU tag 的切换、logprob 复用条件、全批前向次数与 forward_backward_func 调用次数；泳道 D 用同一 schedule 复现 --advantage-estimator ppo 时 critic 与 actor 在同一 GPU 上分时的一轮：critic 取 V_old、按自身参数算 returns、训练 value head 并把 values 经 Ray ref 交给同 rank 的 actor；泳道 E 复现 train_one_step 的清梯度、全部 micro-batch 前反向、一次 optimizer step 与按逻辑 rollout 数推进 LR scheduler。');
+  const { text, box, arrow, panel } = cv;
+  const c = m.cfg;
+  if (!p.sameSchedule) throw new Error('PPO 回放的 schedule 必须与主例逐项相同');
+
+  text(24, 34, '一份训练字典怎样变成 optimizer step（下）：一轮角色切换、PPO critic 数据面、训练步', 'ti');
+  text(24, 56, `同一实例：dp_size=${c.dpSize} · global_batch_size=${c.globalBatchSize} · 每 rank K=${m.dynamic.numMicrobatches[0]} 个 micro-batch · num_steps_per_rollout=${m.dynamic.numMicrobatches.length} · use_kl_loss 开、kl_coef=${c.klCoef}（ref tag 因此存在）`, 'su');
+
+  // ---- 泳道 C：GRPO 一轮 ----
+  const yC = 74; const hC = 164;
+  panel(yC, hC, 'C  默认 grpo 一轮：同一份 GPU 模型按 CPU tag 换入换出，只有训练前向走反向');
+  const pw = 200; const py = yC + 44;
+  m.round.phases.forEach((ph, i) => {
+    const x = 40 + i * (pw + 8);
+    const cls = ph.kind === 'train' ? 'acc1' : ph.kind === 'switch_only' ? 'acc2' : ph.kind === 'forward_only' ? 'neutral' : 'ghost';
+    box(x, py, pw, 62, cls, [[`${i + 1}. tag ${ph.tag}`, 'mono'], [ph.kind === 'forward_only' ? 'forward_only' : ph.kind === 'switch_only' ? '_switch_model 无前向' : ph.kind, 'sm'], [ph.store, 'mono2']], { top: 18, step: 17 });
     if (i < m.round.phases.length - 1) arrow(x + pw, py + 31, x + pw + 8, py + 31, 'aux');
   });
-  text(px, py + 88, `can_reuse_log_probs_in_loss = 单步(${m.dynamic.numMicrobatches.length}) ∧ policy_loss ∧ kl_coef=0 ∧ ¬rollout_logprobs ∧ ¬mismatch ∧ ¬critic ∧ ¬old_actor ∧ ¬OPD ∧ (¬routing_replay ∨ R3) ∧ ≠gspo → ${m.round.canReuse}`, 'tx');
-  text(px, py + 106, `全批前向 = ref ${m.round.forwardPasses} + 训练 1 = ${m.round.fullBatchForwards}（forward_backward_func 调用 ${m.round.pipelineCalls} 次）；num_steps_per_rollout=2（G 变为 2）时不可复用，多一次 old-policy 全批前向 = ${m.roundTwoSteps.fullBatchForwards}，调用 ${m.roundTwoSteps.pipelineCalls} 次`, 'tx');
-  text(px, py + 124, '每次 _switch_model 是 CPU pinned 张量 → GPU 参数的同名整份拷贝，之后 cuda.synchronize；未知 tag 抛 ValueError。', 'tx');
-  text(px, py + 142, '训练结束 backup("actor")；(rollout_id+1) % ref_update_interval == 0 且有 ref tag 时 backup("ref")。critic 是独立 RayTrainGroup，不走 tag。', 'tx');
-  text(px, py + 160, 'compute_advantages_and_returns 只在 PP last stage 有 log_probs/values 时计算；normalize_advantages 在 DP×CP 组上 all-reduce 带 mask 统计。', 'cap');
-  text(px, py + 178, 'forward_only 用同一个 get_forward_backward_func(forward_only=True) 按步调用；按 micro_batch_indices 还原顺序，冻结基线下是恒等映射（源码 TODO）。', 'cap');
+  text(40, py + 88, `复用条件：单步(${m.dynamic.numMicrobatches.length}) ∧ policy_loss ∧ kl_coef=0 ∧ 无 rollout logprob / mismatch / critic / old_actor / OPD / gspo ∧ (¬routing_replay ∨ R3) → ${m.round.canReuse}`, 'tx');
+  text(40, py + 106, `全批前向 = ref ${m.round.forwardPasses} + 训练 1 = ${m.round.fullBatchForwards}（forward_backward_func 调用 ${m.round.pipelineCalls} 次）；num_steps_per_rollout=2 时不可复用：${m.roundTwoSteps.fullBatchForwards} 次全批前向、${m.roundTwoSteps.pipelineCalls} 次调用`, 'tx');
 
-  // ---- 泳道 D：train_one_step ----
-  const yD = yC + hC + 12; const hD = H - yD - 34;
-  rect(24, yD, 1132, hD, 'panel', 10);
-  text(40, yD + 24, `D  train_one_step（每个训练步一次）：K=${m.dynamic.numMicrobatches[0]} 个 micro-batch 的前反向累积，一次 optimizer.step，scheduler.step(increment=${c.globalBatchSize})`, 'pt');
-  const dx = 40; const dy = yD + 44; const dw = 176;
+  // ---- 泳道 D：PPO 一轮 ----
+  const yD = yC + hC + 12; const hD = 262;
+  panel(yD, hD, 'D  --advantage-estimator ppo：critic 与 actor 同卡分时，V_old 经 Ray ref 交给同 rank 的 actor');
+  text(40, yD + 44, `回放取 cp_size=${p.cfgPpo.cpSize}、max_tokens_per_gpu=${p.cfgPpo.maxTokensPerGpu}：cap 仍为 ${p.cfgPpo.maxTokensPerGpu * p.cfgPpo.cpSize}，partition 与上图逐项相同；参数校验强制 offload_train`, 'sm');
+  const bw = 196; const gx = 112; const gap = 12;
+  const rowC = yD + 58; const rowA = yD + 150;
+  text(40, rowC + 33, 'critic', 'mono');
+  text(40, rowA + 33, 'actor', 'mono');
+  const criticBoxes = [
+    [['wake_up', 'mono'], ['reload process groups', 'sm'], [p.critic.phases[0].store, 'mono2'], 'ghost'],
+    [['forward_only(get_values)', 'mono'], ['value head 不除 rollout 温度', 'sm'], [p.critic.phases[1].store, 'mono2'], 'neutral'],
+    [['advantages（critic 参数）', 'mono'], ['GAE，reward 不含 KL 整形', 'sm'], [p.critic.phases[2].store, 'mono2'], 'ghost'],
+    [['train(value_loss)', 'mono'], [`optimizer.step · scheduler +${p.totals.schedulerIncrement}`, 'sm'], [p.critic.phases[3].store, 'mono2'], 'acc1'],
+    [['PP last stage 返回', 'mono'], ['{"values": CPU 张量}', 'sm'], [p.critic.phases[4].store, 'mono2'], 'acc2'],
+  ];
+  const actorPh = p.actor.phases;
+  const actorBoxes = [
+    [['wake_up', 'mono'], ['_switch_model("actor")', 'sm'], ['offload_train 强制开', 'mono2'], 'ghost'],
+    [[`tag ${actorPh[0].tag} · ${actorPh[0].kind}`, 'mono'], ['use_kl_loss 让 ref 存在', 'sm'], [actorPh[0].store, 'mono2'], 'neutral'],
+    [[`tag ${actorPh[1].tag} · ${actorPh[1].kind}`, 'mono'], ['use_critic 关掉复用', 'sm'], [actorPh[1].store, 'mono2'], 'acc2'],
+    [['values ← external_data', 'mono'], ['GAE 用 actor 的 kl_coef', 'sm'], ['advantages, returns', 'mono2'], 'neutral'],
+    [['train(policy_loss)', 'mono'], [`optimizer.step · scheduler +${p.totals.schedulerIncrement}`, 'sm'], ['backup actor，sleep', 'mono2'], 'acc1'],
+  ];
+  const drawRow = (y, boxes) => boxes.forEach((b, i) => {
+    const x = gx + i * (bw + gap);
+    box(x, y, bw, 62, b[3], [b[0], b[1], b[2]], { top: 18, step: 17 });
+    if (i < boxes.length - 1) arrow(x + bw, y + 31, x + bw + gap, y + 31, 'aux');
+  });
+  drawRow(rowC, criticBoxes);
+  drawRow(rowA, actorBoxes);
+  // critic worker i 的 values ref → actor worker i（Ray 先解析 ref，actor 的 train 才开始）
+  arrow(gx + 4 * (bw + gap) + bw / 2, rowC + 62, gx + 3 * (bw + gap) + bw / 2 + 30, rowA, 'main');
+  text(gx, rowC + 80, 'Ray 先解析 value ref：actor worker i 的 train 在 critic worker i 训完之后开始', 'sm', 'start', [gx, gx + 3 * (bw + gap) + 20]);
+  text(40, rowA + 84, `训练阶段每 GPU：全批前向 critic ${p.critic.fullBatchForwards} + actor ${p.actor.fullBatchForwards} = ${p.totals.fullBatchForwards}（默认 grpo 为 ${p.grpoFullBatchForwards}）；optimizer.step ${p.totals.optimizerSteps} 次；wake_up/sleep ${p.totals.wakeSleep} 次，update_weights 再重建 ${p.totals.updateWeightsRebuild} 次`, 'tx');
+  text(40, rowA + 102, `若保持 cp_size=${c.cpSize}：${p.emptyAtCp0.join('、')} 在 cp0 没有 response 位置，ppo 分支的 token_level_rewards[-1] += reward 会抛 IndexError（源码推导，未运行）`, 'cap');
+
+  // ---- 泳道 E：train_one_step ----
+  const yE = yD + hD + 12; const hE = H - yE - 34;
+  panel(yE, hE, `E  train_one_step（每个训练步一次）：K=${m.dynamic.numMicrobatches[0]} 个 micro-batch 前反向累积，一次 optimizer.step，scheduler.step(increment=${c.globalBatchSize})`);
+  const dw = 176; const dy = yE + 44;
   const boxes = [
-    ['zero_grad_buffer / zero_grad', 'before-train-step hook', '（可选自定义钩子）', 'neutral'],
-    [`forward_backward_func(K=${m.dynamic.numMicrobatches[0]})`, 'closure: get_batch → model', '→ loss_function 回调', 'acc1'],
-    ['loss × M / G × world', `M=${m.dynamic.numMicrobatches[0]} G=${c.globalBatchSize} world=dp·cp=${c.dpSize * c.cpSize}`, 'Megatron 再 ÷ M', 'neutral'],
-    ['valid_step → optimizer.step()', 'assert update_successful', '仅 NaN 检查关时预检跳过', 'acc1'],
-    [`scheduler.step(+${c.globalBatchSize})`, '以逻辑 rollout 数', '计 samples-seen', 'acc1'],
-    ['reduce_train_step_metrics', 'PP last stage: Σ_mb，', 'all-reduce dp·cp，再 / G', 'ghost'],
+    [['zero_grad_buffer / zero_grad', 'mono2'], ['before-train-step hook', 'sm'], ['（可选自定义钩子）', 'sm'], 'neutral'],
+    [[`forward_backward_func(K=${m.dynamic.numMicrobatches[0]})`, 'mono2'], ['closure：get_batch → model', 'sm'], ['→ loss_function 回调', 'sm'], 'acc1'],
+    [['loss × M / G × world', 'mono2'], [`M=${m.dynamic.numMicrobatches[0]} G=${c.globalBatchSize} world=dp·cp=${c.dpSize * c.cpSize}`, 'sm'], ['Megatron 再 ÷ M', 'sm'], 'neutral'],
+    [['valid_step → optimizer.step', 'mono2'], ['assert update_successful', 'sm'], ['NaN 检查关时 slime 预检', 'sm'], 'acc1'],
+    [[`scheduler.step(+${c.globalBatchSize})`, 'mono2'], ['以逻辑 rollout 数', 'sm'], ['计 samples-seen', 'sm'], 'acc1'],
+    [['reduce_train_step_metrics', 'mono2'], ['PP last stage：Σ_mb', 'sm'], ['all-reduce dp·cp，再 ÷ G', 'sm'], 'ghost'],
   ];
   boxes.forEach((b, i) => {
-    const x = dx + i * (dw + 8);
-    rect(x, dy, dw, 66, b[3], 6);
-    text(x + dw / 2, dy + 20, b[0], 'mono2', 'middle');
-    text(x + dw / 2, dy + 38, b[1], 'sm', 'middle');
-    text(x + dw / 2, dy + 54, b[2], 'sm', 'middle');
+    const x = 40 + i * (dw + 8);
+    box(x, dy, dw, 66, b[3], [b[0], b[1], b[2]], { top: 20, step: 17 });
     if (i < boxes.length - 1) arrow(x + dw, dy + 33, x + dw + 8, dy + 33, i === 1 ? 'main' : 'aux');
   });
-  text(dx, dy + 92, `三种边界不能混：rollout round 是数据版本边界；global_batch_sizes 的一个元素（${c.globalBatchSize} 个 rollout）是 optimizer 边界；micro-batch 只是流水线/梯度累积单元。`, 'tx');
-  text(dx, dy + 110, `LR scheduler 的总量估算 train_iters = num_rollout × rollout_batch_size × n // G = ${c.numRollout}×${c.rolloutBatchSize}×${c.nSamplesPerPrompt} // ${c.globalBatchSize} = ${m.scheduler.trainIters}，lr_decay_steps = train_iters × G = ${m.scheduler.lrDecaySteps}；实际进度靠每步 increment 累加。`, 'tx');
-  text(dx, dy + 128, 'loss_function 内的缩放只是链条第一环：Megatron 再除 M，DDP 在 dp·cp 组平均，最终留下 Σ_g L_g / G；数值账本见 15 页。', 'cap');
+  text(40, dy + 92, `三种边界：rollout round 是数据版本；global_batch_sizes 的一个元素（${c.globalBatchSize} 个 rollout）是一次 optimizer step；micro-batch 只是流水线与梯度累积单元`, 'tx');
+  text(40, dy + 110, `train_iters = ${c.numRollout}×${c.rolloutBatchSize}×${c.nSamplesPerPrompt} // ${c.globalBatchSize} = ${m.scheduler.trainIters}，lr_decay_steps = ${m.scheduler.lrDecaySteps}：只定 LR 衰减长度，实际进度靠每步 increment 累加`, 'tx');
 
-  text(24, H - 12, '源码基线：THUDM/slime@681b3adca541 · 复现 build_dp_schedule / expand_bins_by_splitting / slice_with_cp / get_batch / train_actor / train_one_step', 'su');
-  o.push('</svg>');
-  return o.join('\n');
+  cv.setBound(16, W - 16);
+  text(24, H - 12, `源码基线：${BASELINE} · 复现 train_actor / train_critic / train.py::train / train_one_step`, 'su');
+  return cv.done();
+}
+
+export function renderFigures(m = model(), p = ppoModel()) {
+  return { 'slime_megatron_train_step.svg': renderStep(m), 'slime_megatron_train_round.svg': renderRound(m, p) };
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -519,5 +632,8 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 if (isMain) {
   const outputDir = process.argv[2] ? process.argv[2] : defaultOutput;
   mkdirSync(outputDir, { recursive: true });
-  writeFileSync(join(outputDir, 'slime_megatron_train_step.svg'), `${render(model())}\n`, 'utf8');
+  const figures = renderFigures();
+  const issues = Object.entries(figures).flatMap(([name, f]) => f.issues.map((s) => `${name}: ${s}`));
+  if (issues.length) throw new Error(`版面检查失败：\n${issues.join('\n')}`);
+  for (const [name, f] of Object.entries(figures)) writeFileSync(join(outputDir, name), `${f.svg}\n`, 'utf8');
 }

@@ -169,7 +169,7 @@ postprocess 还负责：
 （`verl/experimental/agent_loop/agent_loop.py:254-270`）。
 
 这些 mask 和位置是算法正确性的输入；advantage 与 loss 如何使用它们由 [[15_verl_rl_algorithms_analysis]]
-负责。
+负责。slime 在协议适配层记录真实采样轨迹，并在消息改写与 token 漂移两层上合并或分叉训练片段，可与本节的连续 token 契约对照阅读：[[24_slime_agent_workflow_examples_analysis|slime Agent 工作流]]。
 
 ## 5. RewardLoop 的三条打分路线
 

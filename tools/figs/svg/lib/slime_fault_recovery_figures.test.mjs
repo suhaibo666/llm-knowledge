@@ -1,4 +1,4 @@
-// 锁住 slime 容错原理图的可执行契约：图上每个数字都由同一份 CFG 经源码规则的复现推导，
+// 锁住 slime 容错原理图与指标 x 轴图的可执行契约：图上每个数字都由同一份 CFG / AXES 经源码规则的复现推导，
 // 并且必须与 18_slime_fault_tolerance_observability_analysis.md 正文引用的数值一致。
 //
 // 运行：node --test tools/figs/svg/lib/slime_fault_recovery_figures.test.mjs
@@ -11,13 +11,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { CFG, model, restart, shouldRunPeriodic } from '../slime_fault_recovery_figures.mjs';
+import { AXES, CFG, axesModel, driverRun, model, restart, shouldRunPeriodic } from '../slime_fault_recovery_figures.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const generator = join(here, '..', 'slime_fault_recovery_figures.mjs');
 const slimeDir = join(here, '..', '..', '..', '..', 'wiki', '02_engineering', '04_posttrain_frameworks', 'slime');
 const pagePath = join(slimeDir, '18_slime_fault_tolerance_observability_analysis.md');
 const trackedSvg = join(slimeDir, 'assets', 'slime_fault_recovery_timeline.svg');
+const trackedAxesSvg = join(slimeDir, 'assets', 'slime_metric_step_axes.svg');
 
 function viewBox(svg) {
   const match = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
@@ -110,4 +111,75 @@ test('正文引用的数值与模型一致', async () => {
   assert.ok(page.includes('assets/slime_fault_recovery_timeline.svg'), '正文必须引用原理图');
   assert.ok(page.includes('#### 2.2.2 推理引擎的局部恢复：检测、整组标死、在更新边界重建'), '13、19、31 页入链标签引用的 §2.2.2 必须存在');
   assert.doesNotMatch(page, /github\.com\/THUDM\/slime\/blob\/[0-9a-f]+\/[^)]*#L\d+/, '正文不再保留 path:line 链接');
+});
+
+test('x 轴折算复现 compute_rollout_step 与 build_dp_schedule 的步数', () => {
+  const m = axesModel();
+  assert.equal(AXES.rolloutBatchSize * AXES.nSamplesPerPrompt, 32);
+  assert.deepEqual([m.stepsEven, m.stepsUneven, m.droppedUneven], [2, 1, 8]);
+  assert.deepEqual(m.trainEven, [[0, 1], [2, 3], [4, 5], [6, 7]]);
+  assert.deepEqual(m.rolloutDefault, [0, 1, 2, 3]);
+  assert.deepEqual(m.rolloutEven, [0, 2, 4, 6], '整除时折算值等于该批第一个 train/step');
+  assert.deepEqual(m.rolloutEven, m.trainEven.map((s) => s[0]));
+  assert.deepEqual(m.trainUneven.map((s) => s[0]), [0, 1, 2, 3]);
+  assert.deepEqual(m.rolloutUneven, [0, 1, 2, 4], '不整除时 rollout 3 错位');
+});
+
+test('sync 与 async 入口复现生成权重的已训批次与计时归属', () => {
+  const m = axesModel();
+  assert.deepEqual(m.sync.trainedAtGenerate, [0, 1, 2, 3]);
+  assert.deepEqual(m.async1.trainedAtGenerate, [0, 0, 1, 2]);
+  assert.deepEqual(m.async1.parallelTrain, [null, 0, 1, 2]);
+  assert.deepEqual(m.sync.parallelTrain, [null, null, null, null]);
+  assert.deepEqual(m.sync.perfUpdateFrom, [['init'], [0], [1], [2]]);
+  assert.deepEqual(m.async1.perfUpdateFrom, m.sync.perfUpdateFrom);
+  // interval 2：两次训练才推送一次，async 生成用的权重更旧
+  assert.deepEqual(driverRun('async', 4, 2).trainedAtGenerate, [0, 0, 0, 2]);
+});
+
+test('生成器产出 x 轴图，且与已跟踪的 SVG 一致', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'slime-axes-'));
+  try {
+    const run = spawnSync(process.execPath, [generator, outputDir], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const svg = await readFile(join(outputDir, 'slime_metric_step_axes.svg'), 'utf8');
+    assertInsideCanvas(svg);
+    for (const needle of ['0、1', '6、7', '无（初始权重）', '批 0–1', 'train 2 之后', '初始推送', '尾部 8 条丢弃', 'rollout 3 折算成 4']) {
+      assert.ok(svg.includes(needle), `SVG 必须出现 ${needle}`);
+    }
+    assert.doesNotMatch(svg, /\[\[/, 'SVG 不得泄漏 wikilink 标记');
+    const tracked = await readFile(trackedAxesSvg, 'utf8');
+    assert.equal(tracked, svg, '已跟踪的 x 轴 SVG 必须由当前生成器重新生成');
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('指标落点小节引用的数值、开关与模型一致', async () => {
+  const page = await readFile(pagePath, 'utf8');
+  const m = axesModel();
+  assert.ok(page.includes('### 4.2 指标落点与 x 轴'), '配置指南页入链的指标落点小节必须存在');
+  assert.ok(page.includes('assets/slime_metric_step_axes.svg'), '正文必须引用 x 轴图');
+  for (const needle of [
+    `每批 ${AXES.rolloutBatchSize * AXES.nSamplesPerPrompt} 条 rollout`,
+    m.trainEven.map((s) => s.join('、')).join(' / '),
+    `折算成 ${m.rolloutEven.join('、')}`,
+    `尾部 ${m.droppedUneven} 条 rollout 被丢弃`,
+    `\`train/step\` 是 ${m.trainUneven.map((s) => s[0]).join('、')}`,
+    `折算出的 \`rollout/step\` 却是 ${m.rolloutUneven.join('、')}`,
+    'rollout 1 与 rollout 0 一样用初始权重',
+    'rollout 3 用训过批 0–1 的权重',
+    'train k−1 之后那次推送',
+  ]) {
+    assert.ok(page.includes(needle), `正文必须出现 ${needle}`);
+  }
+  for (const flag of [
+    '--use-wandb', '--wandb-mode', '--wandb-dir', '--wandb-key', '--wandb-host', '--wandb-team', '--wandb-group',
+    '--wandb-run-id', '--disable-wandb-random-suffix', '--wandb-always-use-train-step', '--use-tensorboard',
+    '--tb-project-name', '--tb-experiment-name', '--log-multi-turn', '--custom-rollout-log-function-path',
+    '--custom-eval-rollout-log-function-path', '--memory-snapshot-dir',
+  ]) {
+    assert.ok(page.includes(`| \`${flag}\` |`), `落点开关表必须有 ${flag} 一行`);
+  }
+  assert.doesNotMatch(page, /--profile-target/, '4c193f1f 已删除 --profile-target');
 });

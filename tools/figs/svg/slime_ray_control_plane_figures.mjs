@@ -1,7 +1,8 @@
 // 图：同一份输入（actor 1 节点 × 4 卡，rollout 4 卡，每 engine 2 卡）在 colocate 与
 // disaggregate 两种布局下，怎样从 `_get_placement_group_layout` 的 (GPU 总数, rollout offset)
-// 走到排序后的 bundle、trainer rank / engine 的绑定、needs_offload 判定和端口分配。
-// 源码基线：THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9。
+// 走到排序后的 bundle、trainer rank / engine 的绑定、needs_offload 判定和端口分配；
+// 右下角用同一输入给出 external 布局（及 external + debug_rollout_only）的总量与偏移。
+// 源码基线：THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e。
 //
 // ---- spec（先写 spec 再画，见 skills/drawing-wiki-figures/SKILL.md §4）----
 // 要讲清楚：placement group 只产出"总量 + 偏移"，逻辑序号由 (node ip, gpu id) 排序得到，
@@ -12,7 +13,7 @@
 //
 // 布局：上下两条泳道（colocate / disaggregate），每条自左向右：输入 → 布局函数结果 →
 // 排序后的 bundle 条（逻辑序号 / 节点·GPU / 原 bundle 序号）→ 绑定行（trainer 0.4、engine 0.2）；
-// 右侧一列共用：needs_offload 判定与端口表。acc1 标 engine 的 base 槽位与决定性映射，
+// 右侧一列共用：端口表；其下是 external 布局小面板（rollout 切片为空，engine 不进 PG）。acc1 标 engine 的 base 槽位与决定性映射，
 // acc2 标 colocate 的重叠区间（needs_offload=True 的代价来源）。
 //
 // 用法：node tools/figs/svg/slime_ray_control_plane_figures.mjs [output-directory]
@@ -44,9 +45,11 @@ const RAW_BUNDLES = Object.freeze({
 });
 
 // ---------------- 对源码算法的最小复现 ----------------
-// slime/ray/placement_group.py::_get_placement_group_layout（只复现本图用到的两个分支）
+// slime/ray/placement_group.py::_get_placement_group_layout（复现本图用到的四个分支）
 export function layout(mode, cfg = CFG) {
   const actorGpus = cfg.actorNumNodes * cfg.actorNumGpusPerNode;
+  if (mode === 'externalDebugRollout') return { pgGpus: actorGpus, rolloutOffset: 0 };
+  if (mode === 'external') return { pgGpus: actorGpus, rolloutOffset: actorGpus };
   if (mode === 'colocate') return { pgGpus: Math.max(actorGpus, cfg.rolloutNumGpus), rolloutOffset: 0 };
   if (mode === 'disaggregate') return { pgGpus: actorGpus + cfg.rolloutNumGpus, rolloutOffset: actorGpus };
   throw new Error(`unknown mode ${mode}`);
@@ -70,7 +73,7 @@ export function trainerBindings(sorted, cfg = CFG) {
   return Array.from({ length: worldSize }, (_, rank) => ({ rank, logical: rank, bundle: sorted[rank].index }));
 }
 
-// slime/ray/rollout.py::ServerGroup.start_engines：gpu_index = gpu_offset + i × per-engine-on-node
+// slime/backends/sglang_utils/engine_group.py::ServerGroup.start_engines：gpu_index = gpu_offset + i × per-engine-on-node
 export function engineBindings(sorted, rolloutOffset, cfg = CFG) {
   const perEngineOnNode = Math.min(cfg.rolloutNumGpusPerEngine, cfg.numGpusPerNode);
   const numEngines = Math.floor(cfg.rolloutNumGpus / perEngineOnNode);
@@ -87,7 +90,8 @@ export function engineBindings(sorted, rolloutOffset, cfg = CFG) {
   });
 }
 
-// slime/ray/rollout.py::start_rollout_servers 里的 needs_offload 判定
+// slime/backends/sglang_utils/engine_group.py::ServerGroupPlacement.create 里的 needs_offload 判定
+// （rollout_pg_offset 与 megatron_num_gpus 来自 slime/backends/sglang_utils/deployment.py 的 _compute_* 两个函数）
 export function needsOffload(mode, offloadRollout, cfg = CFG) {
   const megatronGpus = cfg.actorNumNodes * cfg.actorNumGpusPerNode;
   const rolloutPgOffset = mode === 'colocate' ? 0 : megatronGpus;
@@ -95,7 +99,7 @@ export function needsOffload(mode, offloadRollout, cfg = CFG) {
   return offloadRollout && groupAbsStart < megatronGpus;
 }
 
-// slime/ray/rollout.py::_allocate_rollout_engine_addr_and_ports_normal，假设 basePort 起全部空闲
+// slime/backends/sglang_utils/engine_group.py::_allocate_rollout_engine_addr_and_ports_normal，假设 basePort 起全部空闲
 export function ports(cfg = CFG) {
   const perEngine = cfg.rolloutNumGpusPerEngine;
   const enginesPerNode = Math.max(1, Math.floor(cfg.numGpusPerNode / perEngine));
@@ -127,6 +131,11 @@ export function model() {
     };
   }
   out.ports = ports();
+  // external：engine actor 以 num_gpus=0 创建、不绑 PG 槽位；rollout 切片 = PG 总量 − offset
+  for (const mode of ['external', 'externalDebugRollout']) {
+    const lay = layout(mode);
+    out[mode] = { ...lay, rolloutSlots: lay.pgGpus - lay.rolloutOffset, trainers: CFG.actorNumNodes * CFG.actorNumGpusPerNode };
+  }
   return out;
 }
 
@@ -231,13 +240,14 @@ function render(m, cfg = CFG) {
   }
 
   // 右列：端口
-  const px = 900; const py = 80;
-  rect(px, py, 256, 560, 'panel', 10);
+  const px = 900; const py = 80; const pw = 256;
+  rect(px, py, pw, 440, 'panel', 10);
   text(px + 14, py + 24, '端口分配（两条泳道相同）', 'pt');
   text(px + 14, py + 44, `同一节点 ${m.ports.allocatedRows} 个 engine 槽位，从 ${cfg.basePort} 起全部空闲`, 'sm');
   text(px + 14, py + 60, '先给所有 engine 分 server、nccl，', 'sm');
-  text(px + 14, py + 75, `再逐 engine 分 dist_init_addr，各预留 30 + dp = ${m.ports.reserve} 个`, 'sm');
-  let ry = py + 96;
+  text(px + 14, py + 75, '再逐 engine 分 dist_init_addr，', 'sm');
+  text(px + 14, py + 90, `各预留 30 + dp = ${m.ports.reserve} 个`, 'sm');
+  let ry = py + 104;
   for (const r of m.ports.rows) {
     rect(px + 14, ry, 228, 88, 'neutral');
     text(px + 26, ry + 20, `engine ${r.engine}`, 'pt');
@@ -249,17 +259,29 @@ function render(m, cfg = CFG) {
   rect(px + 14, ry, 228, 48, 'acc2');
   text(px + 26, ry + 20, `节点 cursor 终值 ${m.ports.cursor}`, 'tx');
   text(px + 26, ry + 38, '被占用的端口让 get_free_port 向后搜索', 'sm');
-  ry += 64;
+  ry += 66;
   text(px + 14, ry, 'router 单独取 3000–4000 间空闲端口，', 'sm');
   text(px + 14, ry + 16, '不在此区间；每个模型一个 router。', 'sm');
-  text(px + 14, ry + 40, 'trainer rendezvous：rank 0 在', 'sm');
-  text(px + 14, ry + 56, '20000–21000 间取空闲端口作 MASTER_PORT。', 'sm');
-  text(px + 14, ry + 84, '橙：共卡重叠区间，代价是显存让渡；', 'sm');
-  text(px + 14, ry + 100, '蓝：决定性映射与 engine 的 base 槽位。', 'sm');
+  text(px + 14, ry + 38, 'trainer rendezvous：rank 0 在', 'sm');
+  text(px + 14, ry + 54, '20000–21000 间取空闲端口作 MASTER_PORT。', 'sm');
+
+  // 右列下：external 布局
+  const ey = py + 452; const eh = 760 - ey;
+  rect(px, ey, pw, eh, 'panel', 10);
+  text(px + 14, ey + 24, 'external 布局（同一输入）', 'pt');
+  text(px + 14, ey + 42, '--rollout-external-engine-addrs 非空', 'sm');
+  rect(px + 14, ey + 52, 228, 56, 'acc1');
+  text(px + 26, ey + 72, `PG GPU 数 = ${m.external.pgGpus}，offset = ${m.external.rolloutOffset}`, 'tx');
+  text(px + 26, ey + 92, `rollout 切片 = ${m.external.pgGpus} − ${m.external.rolloutOffset} = ${m.external.rolloutSlots} 个槽位`, 'tx');
+  text(px + 14, ey + 126, 'engine actor 声明 0 GPU、不进 PG，', 'sm');
+  text(px + 14, ey + 142, 'base_gpu_id=0；GPU 数与偏移按', 'sm');
+  text(px + 14, ey + 158, '/server_info 逐地址累加。', 'sm');
+  text(px + 14, ey + 182, `再加 debug_rollout_only：offset = ${m.externalDebugRollout.rolloutOffset}，`, 'sm');
+  text(px + 14, ey + 198, `${m.externalDebugRollout.trainers} 个 trainer 照建，init 立即返回。`, 'sm');
 
   text(24, 786, `阅读顺序：输入 → 布局函数（总量 + 偏移）→ 排序后的逻辑序号 → 绑定（rank 按序号，engine 按偏移 + 步长）→ 让渡判定与端口。`, 'cap');
-  text(24, 804, `两条泳道的绑定规则一字不差，差别只在 PG 总量、rollout 偏移和是否重叠；这正是 slime 把"布局"与"对象"分开的收益。`, 'cap');
-  text(24, 828, '源码基线：THUDM/slime@681b3adca541 · 复现 _get_placement_group_layout / sort_key / start_engines / _allocate_rollout_engine_addr_and_ports_normal', 'su');
+  text(24, 804, '两条泳道绑定规则相同，差别只在 PG 总量、rollout 偏移和是否重叠。橙：共卡重叠区间（代价是显存让渡）；蓝：决定性映射与 engine 的 base 槽位。', 'cap');
+  text(24, 828, '源码基线：THUDM/slime@4c193f1f3750 · 复现 _get_placement_group_layout / sort_key / start_engines / ServerGroupPlacement.create / 端口分配', 'su');
   o.push('</svg>');
   return o.join('\n');
 }

@@ -134,7 +134,7 @@ K3 把这条线再推进到 harness distribution：tools、system prompt、conte
 | 框架 | S00 固定 commit | 在研究中的角色 | 当前官方定位所显示的重点 | 深挖前必须保留的疑问 |
 |---|---|---|---|---|
 | verl | [`983cb0f`](https://github.com/verl-project/verl/commit/983cb0f24443f87b3d161fad318445130a620b07) | 主基线 | 通用 RL 训练生态；训练与 rollout 后端组合较广；fully async、one-step off-policy 等仍有 experimental 路径 | experimental 与稳定主路径的边界；权重同步/reshard 的真实调用链；vexact 的覆盖范围 |
-| slime | [`aaf5c20`](https://github.com/THUDM/slime/commit/aaf5c2092b01219fa0d5c2d323741d409086ca32) | 性能与前沿对照 | Megatron + SGLang；`DataSource`/buffer；NCCL、tensor、disk、delta 多种权重传输；可选 warm async producer | 官方性能结论需在固定配置下复核；producer queue 的版本准入和故障语义；核心仓库能力与 Relax 等生态组件的边界 |
+| slime | [`aaf5c20`](https://github.com/THUDM/slime/commit/aaf5c2092b01219fa0d5c2d323741d409086ca32)（`main`，2026-07-23；当前分析域基线见 §3.2） | 性能与前沿对照 | Megatron + SGLang；`DataSource`/buffer；NCCL、tensor、disk、delta 多种权重传输；可选 warm async producer | 官方性能结论需在固定配置下复核；producer queue 的版本准入和故障语义；核心仓库能力与 Relax 等生态组件的边界 |
 | AReaL | [`b23fa6c`](https://github.com/areal-project/AReaL/commit/b23fa6cf9c8edfebcf055079ab78913128bc4579) | Fully async 与 Agentic 对照 | AReaL 2.0 将 training、inference、agent、weight update 服务化；Hermes 在线 RL loop；含 SWE/Agentic 路径 | 论文版本与 2.0 源码代际如何对应；staleness 控制实际落在哪些组件；Ascend 分支与主线差异 |
 | ROLL | [`370cb24`](https://github.com/alibaba/ROLL/commit/370cb24c1036ea9145365478fcc40612b2186fc8) | 多后端、异构与 Ascend 专项 | 多 role 的 Ray 架构；Strategy 抽象；Megatron/FSDP2；vLLM/SGLang；AutoDeviceMapping；提供 Ascend 使用路径 | 普通 RLVR 与 Agentic RL 的 async 状态并不相同；Strategy 抽象是否真正屏蔽后端差异；NPU 功能/性能缺口 |
 
@@ -162,6 +162,15 @@ Verl 分析域已统一重核到 `254a23edc62f25ebfae626e3932ae285d6f86009`，�
 - 权重同步、device mesh 和 reshard；
 - fully async、one-step off-policy、VLA、vexact 等新路径；
 - fault tolerance 与 metrics。
+
+slime 分析域同样已整体升级：S00 快照是 `THUDM/slime@aaf5c2092b01219fa0d5c2d323741d409086ca32`（`main`，2026-07-23），当前统一基线是 `THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）。上表 slime 一行的定位在新基线仍成立：
+
+- **Megatron + SGLang 与 DataSource/buffer**：README 仍写明 Megatron 训练、SGLang rollout、自定义数据生成与 reward 都走同一条 training / rollout / Data Buffer 路径；
+- **多种权重传输**：`slime/backends/megatron_utils/update_weight/__init__.py::create_weight_updater` 按 `--update-weight-mode`、`--update-weight-transport` 与 `--colocate` 在 NCCL 分布式、共卡张量、磁盘全量与磁盘 delta 四种 updater 之间选择；
+- **可选 warm async producer**：`slime/rollout/fully_async_rollout.py::AsyncRolloutWorker` 在后台持续生成，完成组多于本轮所需时留在队列供下一轮消费；
+- **生态边界**：README 仍把 Relax、vime 等列为基于 slime 构建的独立项目。
+
+引用 slime 结论时先进入 [[02_engineering/04_posttrain_frameworks/slime/index|slime 分析域]]；表中 README 链接只证明 S00 快照时的项目定位。
 
 本研究已把四个框架都固定到 S00 commit；后续升级时仍不能用旧 checkout 中“没看到”推断当前官方仓库不支持某项能力。
 
@@ -249,7 +258,7 @@ Verl 分析域已统一重核到 `254a23edc62f25ebfae626e3932ae285d6f86009`，�
 | [[02_engineering/04_posttrain_frameworks/11_rl_sandbox_design_analysis|RL Sandbox 设计]] | sandbox、verifier、agent environment 的问题清单 | 安全边界、生产实现、最新 coding-agent runtime |
 | [[02_engineering/04_posttrain_frameworks/verl/index|verl 系列分析]] | `254a23ed...` 下的共享能力、V1/V0 生命周期与源码 locator | 上游基线推进后的入口、TQ、Agent/Reward、Engine、rollout、权重发布与恢复变化 |
 
-迁移后的深挖页面统一放在 `wiki/03_posttraining/`，原页面作为历史背景和专题材料保留。这样既避免重复抄写，也不再让“算法”和“工程”分居两个目录。
+迁移后的深挖页面按功能树分放在 `01_theory/04_posttraining/`（算法）与 `02_engineering/04_posttrain_frameworks/`（框架源码），阅读顺序由 [[courses/posttraining_frontier|阅读课程]] 维护；原 `wiki/03_posttraining/` 目录已解散，原页面作为历史背景和专题材料保留。这样既避免重复抄写，也不再让“算法”和“工程”分居两个目录。
 
 ---
 

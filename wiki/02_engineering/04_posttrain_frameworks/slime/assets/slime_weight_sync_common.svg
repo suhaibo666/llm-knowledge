@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="416" viewBox="0 0 1180 416" role="img" aria-labelledby="title desc">
+<title id="title">slime 权重同步：共同前半段把训练 TP 分片还原成 HF 张量并分桶</title>
+<desc id="desc">GLU linear_fc1 的两个训练 TP 分片经 all-gather 与 GLU 重排拼成完整张量，再由 convert_qwen2_to_hf 拆成 gate_proj 与 up_proj；SGLang 加载器按推理 tp_rank 截取（上游契约）；下方是三种分桶规则。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .cellu{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1.1}
+  .win{fill:#EAF1FD;stroke:none}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="416" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">共同前半段：训练 TP 分片先还原成与拓扑无关的 HF 张量，再按阈值分桶</text>
+<text x="24" y="56" class="su" text-anchor="start">Qwen2 第 0 层 linear_fc1.weight：H=2、F=4、完整 [8,2]，行记 g0–g3 / u0–u3 · 训练 4 卡 TP=2、DP=2 · 阈值 512 MiB</text>
+<rect x="24" y="70" width="1132" height="292" rx="10" class="panel"/>
+<text x="40" y="94" class="pt" text-anchor="start">① 重组与转换（四条数据面都先走这一步）</text>
+<text x="40" y="116" class="sm" text-anchor="start">训练分片 = [gate_t ; up_t]</text>
+<text x="40" y="138" class="sm" text-anchor="start">TP 0</text>
+<rect x="72" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="87" y="138" class="mono" text-anchor="middle">g0</text>
+<rect x="105" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="120" y="138" class="mono" text-anchor="middle">g1</text>
+<rect x="138" y="124" width="30" height="20" rx="3" class="cellu"/>
+<text x="153" y="138" class="mono" text-anchor="middle">u0</text>
+<rect x="171" y="124" width="30" height="20" rx="3" class="cellu"/>
+<text x="186" y="138" class="mono" text-anchor="middle">u1</text>
+<text x="40" y="168" class="sm" text-anchor="start">TP 1</text>
+<rect x="72" y="154" width="30" height="20" rx="3" class="cell"/>
+<text x="87" y="168" class="mono" text-anchor="middle">g2</text>
+<rect x="105" y="154" width="30" height="20" rx="3" class="cell"/>
+<text x="120" y="168" class="mono" text-anchor="middle">g3</text>
+<rect x="138" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="153" y="168" class="mono" text-anchor="middle">u2</text>
+<rect x="171" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="186" y="168" class="mono" text-anchor="middle">u3</text>
+<path d="M210 150 L246 150" class="main"/>
+<text x="252" y="128" class="sm" text-anchor="start">all_gather_param：chunk(2)，gate 半片在前</text>
+<rect x="252" y="140" width="30" height="20" rx="3" class="cell"/>
+<text x="267" y="154" class="mono" text-anchor="middle">g0</text>
+<rect x="285" y="140" width="30" height="20" rx="3" class="cell"/>
+<text x="300" y="154" class="mono" text-anchor="middle">g1</text>
+<rect x="318" y="140" width="30" height="20" rx="3" class="cell"/>
+<text x="333" y="154" class="mono" text-anchor="middle">g2</text>
+<rect x="351" y="140" width="30" height="20" rx="3" class="cell"/>
+<text x="366" y="154" class="mono" text-anchor="middle">g3</text>
+<rect x="384" y="140" width="30" height="20" rx="3" class="cellu"/>
+<text x="399" y="154" class="mono" text-anchor="middle">u0</text>
+<rect x="417" y="140" width="30" height="20" rx="3" class="cellu"/>
+<text x="432" y="154" class="mono" text-anchor="middle">u1</text>
+<rect x="450" y="140" width="30" height="20" rx="3" class="cellu"/>
+<text x="465" y="154" class="mono" text-anchor="middle">u2</text>
+<rect x="483" y="140" width="30" height="20" rx="3" class="cellu"/>
+<text x="498" y="154" class="mono" text-anchor="middle">u3</text>
+<rect x="252" y="176" width="262" height="38" rx="5" class="acc2"/>
+<text x="262" y="192" class="sm" text-anchor="start">直接 cat：g0 g1 u0 u1 g2 g3 u2 u3</text>
+<text x="262" y="207" class="sm" text-anchor="start">→ gate_proj 得 g0 g1 u0 u1 ✗</text>
+<path d="M520 150 L556 150" class="main"/>
+<text x="562" y="118" class="sm" text-anchor="start">gate_proj [4,2]</text>
+<rect x="562" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="577" y="138" class="mono" text-anchor="middle">g0</text>
+<rect x="595" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="610" y="138" class="mono" text-anchor="middle">g1</text>
+<rect x="628" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="643" y="138" class="mono" text-anchor="middle">g2</text>
+<rect x="661" y="124" width="30" height="20" rx="3" class="cell"/>
+<text x="676" y="138" class="mono" text-anchor="middle">g3</text>
+<rect x="562" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="577" y="168" class="mono" text-anchor="middle">u0</text>
+<rect x="595" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="610" y="168" class="mono" text-anchor="middle">u1</text>
+<rect x="628" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="643" y="168" class="mono" text-anchor="middle">u2</text>
+<rect x="661" y="154" width="30" height="20" rx="3" class="cellu"/>
+<text x="676" y="168" class="mono" text-anchor="middle">u3</text>
+<text x="562" y="190" class="sm" text-anchor="start">up_proj [4,2]</text>
+<text x="562" y="210" class="sm" text-anchor="start">convert_qwen2_to_hf：chunk(2)</text>
+<path d="M700 150 L740 150" class="aux"/>
+<rect x="746" y="90" width="396" height="124" rx="8" class="dep"/>
+<text x="758" y="108" class="sm" text-anchor="start">SGLang 列并行 loader（上游契约）</text>
+<text x="758" y="128" class="tx" text-anchor="start">推理 TP=4：rank r 取 [g_r ; u_r]</text>
+<rect x="758" y="136" width="26" height="20" rx="3" class="cell"/>
+<text x="771" y="150" class="mono" text-anchor="middle">g0</text>
+<rect x="787" y="136" width="26" height="20" rx="3" class="cellu"/>
+<text x="800" y="150" class="mono" text-anchor="middle">u0</text>
+<rect x="854" y="136" width="26" height="20" rx="3" class="cell"/>
+<text x="867" y="150" class="mono" text-anchor="middle">g1</text>
+<rect x="883" y="136" width="26" height="20" rx="3" class="cellu"/>
+<text x="896" y="150" class="mono" text-anchor="middle">u1</text>
+<rect x="950" y="136" width="26" height="20" rx="3" class="cell"/>
+<text x="963" y="150" class="mono" text-anchor="middle">g2</text>
+<rect x="979" y="136" width="26" height="20" rx="3" class="cellu"/>
+<text x="992" y="150" class="mono" text-anchor="middle">u2</text>
+<rect x="1046" y="136" width="26" height="20" rx="3" class="cell"/>
+<text x="1059" y="150" class="mono" text-anchor="middle">g3</text>
+<rect x="1075" y="136" width="26" height="20" rx="3" class="cellu"/>
+<text x="1088" y="150" class="mono" text-anchor="middle">u3</text>
+<text x="758" y="176" class="tx" text-anchor="start">推理 TP=2 rank 0 取 [g0 g1 ; u0 u1]；TP=1 取全部</text>
+<text x="758" y="198" class="sm" text-anchor="start">slime 只交付完整张量的名字、形状与 dtype</text>
+<rect x="746" y="222" width="396" height="38" rx="5" class="acc2"/>
+<text x="758" y="238" class="sm" text-anchor="start">训练 TP 0 的 [g0 g1 u0 u1] 直拷给推理 TP=4 rank 0 ✗</text>
+<text x="758" y="253" class="sm" text-anchor="start">它要 [g0 u0]；推理 TP=2 时相等只是巧合</text>
+<text x="40" y="288" class="sm" text-anchor="start">非专家桶（NCCL / 增量）：按转换后 chunk 字节</text>
+<rect x="40" y="296" width="108" height="22" rx="3" class="neutral"/>
+<text x="94" y="311" class="sm" text-anchor="middle">300</text>
+<rect x="154" y="296" width="129.6" height="22" rx="3" class="neutral"/>
+<text x="218.8" y="311" class="sm" text-anchor="middle">260+100</text>
+<rect x="297.6" y="296" width="216" height="22" rx="3" class="ghost"/>
+<text x="405.6" y="311" class="sm" text-anchor="middle">600 独占一桶</text>
+<text x="40" y="338" class="sm" text-anchor="start">已有内容且会超限才换桶，阈值不是显存上限</text>
+<text x="620" y="288" class="sm" text-anchor="start">专家桶（NCCL / 增量）：(已攒 + 新参数) × EP=4 &gt; 512 先 EP 聚合</text>
+<rect x="620" y="296" width="72" height="22" rx="3" class="neutral"/>
+<text x="656" y="311" class="sm" text-anchor="middle">100→400</text>
+<rect x="697" y="296" width="72" height="22" rx="3" class="neutral"/>
+<text x="733" y="311" class="sm" text-anchor="middle">100→400</text>
+<rect x="774" y="296" width="72" height="22" rx="3" class="neutral"/>
+<text x="810" y="311" class="sm" text-anchor="middle">100→400</text>
+<rect x="851" y="296" width="72" height="22" rx="3" class="neutral"/>
+<text x="887" y="311" class="sm" text-anchor="middle">100→400</text>
+<text x="620" y="338" class="sm" text-anchor="start">每批 1 个本地参数，EP 聚合后 400 MiB</text>
+<text x="620" y="353" class="sm" text-anchor="start">张量 IPC 与整份磁盘：按 分片 × TP 预估装 ParamInfo 桶</text>
+<text x="24" y="386" class="cap" text-anchor="start">复现 all_gather_param / convert_qwen2_to_hf / pack_param_info_buckets / _iter_*_chunks。</text>
+<text x="24" y="406" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f3750 · 上游 sgl-project/sglang@0b3bb0cbe318（v0.5.15.post1）+ slime 的 docker/patch/latest/*.patch</text>
+</svg>

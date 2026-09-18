@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="936" viewBox="0 0 1180 936" role="img" aria-labelledby="title desc">
+<title id="title">slime FP8 分块量化：一个 256×256 权重的块、scale 与零块边界</title>
+<desc id="desc">两个面板。①取 tests/test_block_fp8_zero_block.py 的输入，逐块求 absmax 与 scale，说明全零块为什么需要下限、去掉下限会写出多少 NaN，以及只有一个非零元素时 blockwise 与 per-tensor 得到同一组量化值；②在第四块再放一个 2 的负 20 次方，比较 blockwise、per-tensor 与 SGLang UE8M0 三种 scale 规则对这个小值的量化结果与字节数。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .tb{font-size:12px;font-weight:700;fill:#1F2430}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .dot1{fill:#2563EB}
+  .dot2{fill:#C3651F}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="936" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一个 256×256 权重：scale 的粒度决定一个元素能被量化到多细</text>
+<text x="24" y="56" class="su" text-anchor="start">输入取自 tests/test_block_fp8_zero_block.py（W[0,0]=1.0，其余为 0，block 128×128）· E4M3 最大值 448 · 面板 ② 另放 W[128,128]=2⁻²⁰（作图补充，不在测试里）</text>
+<rect x="24" y="72" width="1132" height="340" rx="10" class="panel"/>
+<text x="40" y="98" class="pt" text-anchor="start">① 测试输入：每块一个 absmax 与 scale；全零块靠下限避开 0/0</text>
+<text x="56" y="124" class="tx" text-anchor="start">输入 W：BF16 256×256，131072 字节</text>
+<text x="56" y="148" class="sm" text-anchor="middle">列 0</text>
+<text x="160" y="148" class="sm" text-anchor="middle">128</text>
+<text x="264" y="148" class="sm" text-anchor="middle">256</text>
+<rect x="56" y="156" width="104" height="104" rx="0" class="cell"/>
+<text x="108" y="204.5" class="tb" text-anchor="middle">T00</text>
+<text x="108" y="219.5" class="sm" text-anchor="middle">amax 1.0</text>
+<rect x="160" y="156" width="104" height="104" rx="0" class="ghost"/>
+<text x="212" y="204.5" class="tb" text-anchor="middle">T01</text>
+<text x="212" y="219.5" class="sm" text-anchor="middle">amax 0</text>
+<rect x="56" y="260" width="104" height="104" rx="0" class="ghost"/>
+<text x="108" y="308.5" class="tb" text-anchor="middle">T10</text>
+<text x="108" y="323.5" class="sm" text-anchor="middle">amax 0</text>
+<rect x="160" y="260" width="104" height="104" rx="0" class="ghost"/>
+<text x="212" y="308.5" class="tb" text-anchor="middle">T11</text>
+<text x="212" y="323.5" class="sm" text-anchor="middle">amax 0</text>
+<circle cx="64" cy="164" r="4" class="dot1"/>
+<text x="72" y="186" class="sm" text-anchor="start">W[0,0]=1.0</text>
+<text x="50" y="264" class="sm" text-anchor="end">128</text>
+<text x="50" y="368" class="sm" text-anchor="end">256</text>
+<path d="M274 260 L314 260" class="main"/>
+<text x="324" y="124" class="tx" text-anchor="start">逐块 scale（tools/convert_hf_to_fp8.py::block_fp8）</text>
+<rect x="324" y="156" width="176" height="104" rx="0" class="acc1"/>
+<text x="412" y="189.5" class="tb" text-anchor="middle">T00：amax 1.0</text>
+<text x="412" y="204.5" class="sm" text-anchor="middle">s = 1/448</text>
+<text x="412" y="219.5" class="sm" text-anchor="middle">= 2.2321e-3</text>
+<text x="412" y="234.5" class="sm" text-anchor="middle">Q[0,0] = 448</text>
+<rect x="500" y="156" width="176" height="104" rx="0" class="cell"/>
+<text x="588" y="189.5" class="tb" text-anchor="middle">T01：amax 0 → 下限</text>
+<text x="588" y="204.5" class="sm" text-anchor="middle">BF16(1e-12) = 1.0019e-12</text>
+<text x="588" y="219.5" class="sm" text-anchor="middle">s = 2.2363e-15</text>
+<text x="588" y="234.5" class="sm" text-anchor="middle">Q = 0</text>
+<rect x="324" y="260" width="176" height="104" rx="0" class="cell"/>
+<text x="412" y="293.5" class="tb" text-anchor="middle">T10：amax 0 → 下限</text>
+<text x="412" y="308.5" class="sm" text-anchor="middle">BF16(1e-12) = 1.0019e-12</text>
+<text x="412" y="323.5" class="sm" text-anchor="middle">s = 2.2363e-15</text>
+<text x="412" y="338.5" class="sm" text-anchor="middle">Q = 0</text>
+<rect x="500" y="260" width="176" height="104" rx="0" class="cell"/>
+<text x="588" y="293.5" class="tb" text-anchor="middle">T11：amax 0 → 下限</text>
+<text x="588" y="308.5" class="sm" text-anchor="middle">BF16(1e-12) = 1.0019e-12</text>
+<text x="588" y="323.5" class="sm" text-anchor="middle">s = 2.2363e-15</text>
+<text x="588" y="338.5" class="sm" text-anchor="middle">Q = 0</text>
+<text x="324" y="380" class="sm" text-anchor="start">scale 形状 ceil(256/128)×ceil(256/128) = 2×2</text>
+<rect x="716" y="116" width="424" height="96" rx="8" class="acc1"/>
+<text x="728" y="136" class="tb" text-anchor="start">输出（与单测断言一致）</text>
+<text x="728" y="156" class="tx" text-anchor="start">weight：FP8 256×256，65536 字节；Q[0,0]=448，其余 0</text>
+<text x="728" y="174" class="tx" text-anchor="start">weight_scale_inv：FP32 2×2，16 字节</text>
+<text x="728" y="192" class="tx" text-anchor="start">无 NaN/Inf、全部 s &gt; 0：成立；零块反量化 Q·s = 0</text>
+<rect x="716" y="222" width="424" height="74" rx="8" class="acc2"/>
+<text x="728" y="242" class="tb" text-anchor="start">去掉下限（单测 docstring 描述的修复前行为）</text>
+<text x="728" y="262" class="tx" text-anchor="start">零块 s = 0/448 = 0 → Q = 0/0 = NaN</text>
+<text x="728" y="280" class="tx" text-anchor="start">3 块 × 128×128 = 49152 个 NaN 写进 checkpoint</text>
+<rect x="716" y="306" width="424" height="74" rx="8" class="neutral"/>
+<text x="728" y="326" class="tb" text-anchor="start">同一输入的另两种实现</text>
+<text x="728" y="346" class="tx" text-anchor="start">per-tensor：s = 2.2321e-3（1 个，4 字节）；Q 与分块逐元素相同</text>
+<text x="728" y="364" class="tx" text-anchor="start">在线 Triton：零块 s = 1e-10/448 = 2.2321e-13（单测不覆盖）</text>
+<text x="40" y="402" class="cap" text-anchor="start">只有一个非零元素时，这个输入只能说明分块布局与零块下限，分不开 blockwise 与 per-tensor——所以面板 ② 再加一个小值。</text>
+<rect x="24" y="426" width="1132" height="452" rx="10" class="panel"/>
+<text x="40" y="452" class="pt" text-anchor="start">② 在 T11 放 W[128,128] = 2⁻²⁰ ≈ 9.5367e-7：三种 scale 规则分开</text>
+<text x="48" y="480" class="tx" text-anchor="start">输入 W（两个非零元素）</text>
+<rect x="48" y="502" width="72" height="72" rx="0" class="cell"/>
+<text x="84" y="542" class="tb" text-anchor="middle">T00</text>
+<rect x="120" y="502" width="72" height="72" rx="0" class="ghost"/>
+<text x="156" y="542" class="tb" text-anchor="middle">T01</text>
+<rect x="48" y="574" width="72" height="72" rx="0" class="ghost"/>
+<text x="84" y="614" class="tb" text-anchor="middle">T10</text>
+<rect x="120" y="574" width="72" height="72" rx="0" class="cell"/>
+<text x="156" y="614" class="tb" text-anchor="middle">T11</text>
+<circle cx="56" cy="510" r="4" class="dot1"/>
+<circle cx="128" cy="582" r="4" class="dot2"/>
+<text x="48" y="666" class="sm" text-anchor="start">W[0,0] = 1.0</text>
+<text x="48" y="682" class="sm" text-anchor="start">W[128,128] = 2⁻²⁰</text>
+<text x="48" y="698" class="sm" text-anchor="start">比值 1 : 1048576</text>
+<rect x="216" y="470" width="300" height="44" rx="8" class="acc1"/>
+<text x="228" y="488" class="tb" text-anchor="start">blockwise（slime 默认）</text>
+<text x="228" y="505" class="sm" text-anchor="start">block_fp8 / blockwise_cast_to_fp8_triton</text>
+<rect x="526" y="470" width="300" height="44" rx="8" class="acc2"/>
+<text x="538" y="488" class="tb" text-anchor="start">per-tensor（slime）</text>
+<text x="538" y="505" class="sm" text-anchor="start">tensor_fp8 / _quantize_param 无 block</text>
+<rect x="836" y="470" width="300" height="44" rx="8" class="dep"/>
+<text x="848" y="488" class="tb" text-anchor="start">UE8M0（SGLang 上游 helper）</text>
+<text x="848" y="505" class="sm" text-anchor="start">per_block_cast_to_fp8：force / runtime 分支</text>
+<path d="M204 574 L208 574" class="main"/>
+<rect x="216" y="530" width="150" height="62" rx="0" class="cell"/>
+<text x="291" y="557.5" class="tb" text-anchor="middle">T00</text>
+<text x="291" y="572.5" class="sm" text-anchor="middle">s = 2.2321e-3</text>
+<rect x="366" y="530" width="150" height="62" rx="0" class="cell"/>
+<text x="441" y="557.5" class="tb" text-anchor="middle">T01</text>
+<text x="441" y="572.5" class="sm" text-anchor="middle">s = 2.2363e-15</text>
+<rect x="216" y="592" width="150" height="62" rx="0" class="cell"/>
+<text x="291" y="619.5" class="tb" text-anchor="middle">T10</text>
+<text x="291" y="634.5" class="sm" text-anchor="middle">s = 2.2363e-15</text>
+<rect x="366" y="592" width="150" height="62" rx="0" class="acc1"/>
+<text x="441" y="612" class="tb" text-anchor="middle">T11</text>
+<text x="441" y="627" class="sm" text-anchor="middle">s = 2⁻²⁰/448</text>
+<text x="441" y="642" class="sm" text-anchor="middle">= 2.129e-9</text>
+<rect x="526" y="530" width="300" height="124" rx="0" class="cell"/>
+<text x="676" y="586" class="tb" text-anchor="middle">全张量 s = 2.2321e-3</text>
+<text x="676" y="604" class="sm" text-anchor="middle">由 W[0,0]=1.0 决定，4 块共用</text>
+<rect x="836" y="530" width="150" height="62" rx="0" class="cell"/>
+<text x="911" y="557.5" class="tb" text-anchor="middle">T00</text>
+<text x="911" y="572.5" class="sm" text-anchor="middle">sf = ceil₂(1/448) = 2⁻⁸</text>
+<rect x="986" y="530" width="150" height="62" rx="0" class="cell"/>
+<text x="1061" y="557.5" class="tb" text-anchor="middle">T01</text>
+<text x="1061" y="572.5" class="sm" text-anchor="middle">sf = 2⁻²²</text>
+<rect x="836" y="592" width="150" height="62" rx="0" class="cell"/>
+<text x="911" y="619.5" class="tb" text-anchor="middle">T10</text>
+<text x="911" y="634.5" class="sm" text-anchor="middle">sf = 2⁻²²</text>
+<rect x="986" y="592" width="150" height="62" rx="0" class="dep"/>
+<text x="1061" y="612" class="tb" text-anchor="middle">T11</text>
+<text x="1061" y="627" class="sm" text-anchor="middle">amax 升到 1e-4</text>
+<text x="1061" y="642" class="sm" text-anchor="middle">sf = 2⁻²²</text>
+<rect x="216" y="668" width="300" height="74" rx="8" class="acc1"/>
+<text x="228" y="688" class="tb" text-anchor="start">T11 的量化结果</text>
+<text x="228" y="708" class="tx" text-anchor="start">Q = 448（Triton 同为 448）</text>
+<text x="228" y="728" class="tx" text-anchor="start">Q·s = 9.5367e-7，误差 0</text>
+<rect x="526" y="668" width="300" height="74" rx="8" class="acc2"/>
+<text x="538" y="688" class="tb" text-anchor="start">T11 的量化结果</text>
+<text x="538" y="708" class="tx" text-anchor="start">W/s = 4.2725e-4 ≤ 2⁻¹⁰（最小次正规数 2⁻⁹ 之半）</text>
+<text x="538" y="728" class="tx" text-anchor="start">Q = 0 → Q·s = 0，误差 −100%</text>
+<rect x="836" y="668" width="300" height="74" rx="8" class="dep"/>
+<text x="848" y="688" class="tb" text-anchor="start">两块的量化结果</text>
+<text x="848" y="708" class="tx" text-anchor="start">T00：Q[0,0] = 256（不是 448）</text>
+<text x="848" y="728" class="tx" text-anchor="start">T11：Q = 4 → Q·sf = 9.5367e-7</text>
+<rect x="216" y="758" width="920" height="110" rx="8" class="neutral"/>
+<text x="228" y="778" class="tb" text-anchor="start">载荷与代价（只计张量字节，不含名字、dtype、shape 元数据）</text>
+<text x="228" y="800" class="tx" text-anchor="start">BF16 原权重 131072 字节 → FP8 weight 65536 字节 + scale：blockwise 16（FP32 2×2）/ per-tensor 4 / UE8M0 打包前 16</text>
+<text x="228" y="820" class="tx" text-anchor="start">per-tensor：|W| ≤ 2⁻¹⁰·s 的元素舍成 0，s 由全张量最大值决定；blockwise 把这个阈值降到本块 amax/448·2⁻¹⁰，代价是 scale 张量随块数增长</text>
+<text x="228" y="840" class="tx" text-anchor="start">UE8M0：scale 向上取 2 的幂，amax/sf 落在 (224, 448]，并有 1e-4 的 amax 下限；Blackwell 打包后的 scale 布局由 DeepGEMM 决定，本图不计算</text>
+<text x="228" y="858" class="sm" text-anchor="start">blockwise 与 per-tensor 两列复现 slime 源码；UE8M0 列复现上游 SGLang v0.5.15.post1 源码（依赖侧，slime 补丁未改）</text>
+<text x="24" y="902" class="cap" text-anchor="start">阅读顺序：① 先看一个块怎样得到 scale、零块为什么要下限 → ② 再用同一张量上的小值看 scale 粒度怎样决定舍入。</text>
+<text x="24" y="922" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f37 · 复现 tools/convert_hf_to_fp8.py::block_fp8 / tensor_fp8、kernels/fp8_kernel.py::_blockwise_cast_to_fp8_triton；UE8M0 列为 sgl-project/sglang@0b3bb0cbe318</text>
+</svg>

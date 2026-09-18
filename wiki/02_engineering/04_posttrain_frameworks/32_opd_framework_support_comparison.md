@@ -5,7 +5,7 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 # OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / Tinker / KDFlow
 
 > **定位**：本页是"选哪个框架做 on-policy distillation（OPD）"的对照表与决策依据。系统机制（训练回路、带宽账、八项 Infra 工作 W1–W8）见 [[13_opd_infra_mechanism_analysis]]；通用 RL 框架横评见 [[30_rl_framework_comparison]]；算法总览见 [[14_on_policy_distillation_analysis]]。
-> **最后更新: 2026-08-11**
+> **最后更新: 2026-09-17**（slime 条目按 `THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e` 源码更正）
 > **保真度约定**：正文默认为一手核实内容（框架官方文档 URL、技术报告原文指定章节，均在调研中逐条打开）；**⚠️** = 仅有二手来源或本轮未能独立核实；**【推断】** = 本页作者的分析推断，非来源声称；**【本文推算】** = 本页作者的算术。§10 单列本页相对上游综述稿的独立核验更正。
 
 ---
@@ -29,7 +29,7 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 
 | 路径 | 机制 | 适用条件 | 框架实例 |
 |---|---|---|---|
-| **(a) 教师推理服务化** | 教师作为独立推理服务（vLLM/SGLang）返回 top-k 或全量 logprob | 教师过大或架构异构（slime 官方文档原话） | veRL（独立资源池 + ZMQ）、slime（`--opd-type sglang`）、Tinker（`compute_logprobs` API） |
+| **(a) 教师推理服务化** | 教师作为独立推理服务（vLLM/SGLang）返回 top-k 或全量 logprob | 教师过大或架构异构（slime 官方文档原话） | veRL（独立资源池 + ZMQ）、slime（`--opd-type sglang`；仓内另有需自行适配的独立 Megatron teacher server）、Tinker（`compute_logprobs` API） |
 | **(b) 教师共置训练框架** | 教师在训练框架内做前向 | 师生同构、规模可控 | TRL、slime（`--opd-type megatron`）、NeMo-RL（DTensor） |
 | **(c) 传隐藏状态代替 logits** | 只传最后一层 hidden states，学生端经 prediction head 重算 logits | 带宽敏感、走路线 A | KDFlow；DeepSeek-V4 自研（⚠️ 细节部分来自二手分析） |
 
@@ -42,7 +42,7 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 | 框架 | 归属 / 生态 | OPD 路线 | 教师取数方式 | 异步 | 多教师 | 跨词表 | 一手出处 |
 |---|---|---|---|---|---|---|---|
 | **veRL** | 字节生态开源（verl-project） | **A + B 双路线**（`forward_kl_topk` / `k1`,`k3` + 策略梯度） | 独立教师资源池（`distillation.nnodes`）+ ZMQ top-k logprob 服务 | ✅ 官方 one/two-step-off recipe | ✅ 按样本 metadata（如 `data_source`）路由 | ✗ | https://verl.readthedocs.io/en/latest/algo/opd.html ；异步 recipe https://verl.readthedocs.io/en/latest/advance/async-on-policy-distill.html |
-| **slime** | 智谱 / THUDM（GLM-5 生产栈） | B（advantage 上叠加加权 reverse-KL，与任意 estimator 正交） | SGLang 外部服务 **或** Megatron 直载，二选一 | 框架本身支持异步 RL | 文档未见 | ✗ | https://thudm.github.io/slime/zh/advanced/on-policy-distillation.html ＋ GLM-5 arXiv:2602.15763 §3.6.1 |
+| **slime** | 智谱 / THUDM（GLM-5 生产栈） | B（advantage 上叠加加权 reverse-KL，与任意 estimator 正交） | 两条现成接入二选一：SGLang 外部服务（`--opd-type sglang`）或 Megatron 训练内直载（`--opd-type megatron`）；仓内另有独立 Megatron teacher server（`slime/backends/megatron_utils/server/megatron_server.py`），响应格式不兼容现成 helper，需自定义 reward 适配 | ⚠️ 未验证：两个入口脚本都不读 OPD 参数，OPD 在 `slime/backends/megatron_utils/loss.py::compute_advantages_and_returns` 内注入、同步与 `train_async.py` 共用；源码无禁止组合的 guard，但仓内 OPD 测试与示例都走同步 `train.py` | ✗ 现成 helper 只向单个 `--rm-url` 取分 | ✗ | https://thudm.github.io/slime/zh/advanced/on-policy-distillation.html ＋ GLM-5 arXiv:2602.15763 §3.6.1；源码 `THUDM/slime@4c193f1f`，实现细节见 [[20_slime_on_policy_distillation_analysis|slime OPD]] |
 | **TRL** | HuggingFace | A（GKDTrainer：`lmbda` / `beta` / `seq_kd`） | 共置 HF 前向；GOLD 另加 vLLM 做学生生成 | ✗ | ✗ | ✅ **GOLDTrainer**（ULD + hybrid loss，唯一开源跨词表 OPD） | https://huggingface.co/docs/trl/gkd_trainer ；https://huggingface.co/docs/trl/main/en/gold_trainer |
 | **NeMo-RL** | NVIDIA | A（学生生成 → 教师 logits → KL） | 共置（**仅 DTensor + vLLM，Megatron 路径未支持**——文档原话） | ✗ | ✗ | ✗ | https://docs.nvidia.com/nemo/rl/latest/about/algorithms/on-policy-distillation.html |
 | **Tinker** | Thinking Machines（托管服务） | B（advantage $=-\mathrm{RKL}$ + importance sampling 损失） | `compute_logprobs` API（服务端执行） | 托管，用户不可见 | ✅ `on_policy_multi_teacher.py` | ✗ | https://github.com/thinking-machines-lab/tinker-cookbook/tree/main/tinker_cookbook/recipes/distillation |
@@ -74,13 +74,18 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 
 ### 3.2 slime —— GLM-5 的生产栈，设计最简
 
-**机制**：OPD 是 advantage 上的一个**正交惩罚项**——advantage 减去加权 reverse-KL，与任意 estimator（GRPO/PPO…）正交叠加。参数极少：`--use-opd`、`--opd-type sglang|megatron`、`--opd-kl-coef`（默认 $1.0$）、`--opd-teacher-load`。教师取数两模式正好覆盖两种现实：**SGLang 外部服务**（教师过大或架构异构）与 **Megatron 直载**（师生同构、追求效率）。
+**机制**：OPD 是基础 advantage 算完后减去的加权逐 token reverse-KL 惩罚，开关为 `--use-opd`、`--opd-type sglang|megatron`、`--opd-kl-coef`（默认 $1.0$）与 `--opd-teacher-load`；信号推导、两种现成 teacher 放置和独立 Megatron teacher server 的协议以 [[20_slime_on_policy_distillation_analysis|slime OPD]] 为准。
 
-**权威背书**：GLM-5 报告 §3.6.1 确认 slime 在统一栈内支持 OPD——"reasoning RL, general RL, agentic RL, and on-policy distillation, all within a unified training stack"（arXiv:2602.15763）。⚠️ 注意：**slime 的 README 本身并未把蒸馏列为核心特性**，引用"slime 支持 OPD"时应引 GLM-5 §3.6.1 或官方文档页，而不是 README。
+**权威背书**：GLM-5 报告 §3.6.1 确认 slime 在统一栈内支持 OPD——"reasoning RL, general RL, agentic RL, and on-policy distillation, all within a unified training stack"（arXiv:2602.15763）。⚠️ 注意：**slime 的 README 并未把蒸馏列为核心能力**（`THUDM/slime@4c193f1f` 的 README 只在 CI 覆盖范围里列出 OPD 端到端测试，并在生态项目 OpenClaw-RL 的介绍里提到 on-policy distillation），引用"slime 支持 OPD"时应引 GLM-5 §3.6.1、官方文档页或源码，而不是 README。
 
 **社区讨论中暴露的真实问题**（可作为落地时的踩坑预告）：issue #1068（open，2025-12-09）质疑为何用 reward-based loss 而非直接 KL、为何不经 rollout 传教师 logits；issue #1449（closed，2026-01-18）讨论 advantage 是否应 detach，讨论中直接引 MiMo-V2-Flash 技报。
 
-**适合**：已在用 slime/Megatron 栈、路线 B 明确的团队。**要自己查的**：异步窗口与截断 IS 钩子（[[13_opd_infra_mechanism_analysis]] W3）；多教师文档未见。架构细节见 [[slime/index]]。
+**适合**：已在用 slime/Megatron 栈、路线 B 明确的团队。**要自己查的**：
+- SGLang 模式只设 `--use-opd --opd-type sglang` 不够：官方示例与 E2E 测试同时配置 `--custom-rm-path slime.rollout.on_policy_distillation.reward_func`、`--custom-reward-post-process-path slime.rollout.on_policy_distillation.post_process_rewards` 与 `--rm-url http://<teacher>/generate`；参数校验不检查这三项，缺了要到 `apply_opd_kl_to_advantages` 才因缺 `teacher_log_probs` 报错。
+- 异步：OPD 在 actor 侧计算 advantage 时注入，`train_async.py` 与同步入口共用这段代码，源码中没有禁止二者组合的 guard（分析判断）；但没有 OPD × `train_async.py` 或 fully-async 的测试与示例，异步窗口与截断 IS 钩子需自行验证（[[13_opd_infra_mechanism_analysis]] W3）。
+- 多教师：现成 helper 只向单个 `--rm-url` 取分，路由需自写 reward 函数。
+
+架构细节见 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]]。
 
 ### 3.3 TRL —— 单机事实标准 + 唯一开源跨词表实现
 
@@ -227,9 +232,9 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 
 - [[13_opd_infra_mechanism_analysis]] —— OPD 基础设施机制与八项工作清单 W1–W8（本页的机制前置）
 - [[30_rl_framework_comparison]] —— 通用 RL 框架横评（本页只覆盖 OPD 维度）
-- [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架索引
+- [[02_engineering/04_posttrain_frameworks/index|后训练框架目录]] —— 后训练框架索引
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] —— veRL 框架索引（§3.1 的展开）
-- [[slime/index]] —— slime 软件架构与实现分析（§3.2 的展开）
+- [[20_slime_on_policy_distillation_analysis|slime OPD]] · [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]] —— slime OPD 实现与整体架构（§3.2 的展开）
 - [[14_on_policy_distillation_analysis]] —— OPD 算法总览
 - [[15_opd_divergence_and_objective_evolution_analysis]] —— 散度与目标函数演化（§1.1 路线之争的算法侧）
 - [[32_opd_industrial_landscape_analysis]] —— 厂商采用格局与教师来源（§6 自研层的产业背景）

@@ -1,5 +1,5 @@
-// 锁住 slime 权重同步原理图的可执行契约：图上每个数字都由同一份 CFG 经源码算法的复现推导，
-// 并且必须与 16_slime_weight_sync_analysis.md 正文引用的数值一致。
+// 锁住 slime 权重同步原理图的可执行契约：三张图上的每个数字都由同一份 CFG 经源码算法的复现推导，
+// 必须与 16_slime_weight_sync_analysis.md 正文引用的数值一致；图上标注的依赖侧补丁名也必须在正文出现。
 //
 // 运行：node --test tools/figs/svg/lib/slime_weight_sync_figures.test.mjs
 
@@ -11,30 +11,90 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { CFG, PLANES, bucketSequential, expertRouting, model, pullReplay } from '../slime_weight_sync_figures.mjs';
+import {
+  CFG,
+  FIGURES,
+  FONT,
+  PATCH_LABELS,
+  PLANES,
+  bucketSequential,
+  expertRouting,
+  model,
+  pullReplay,
+  textWidth,
+} from '../slime_weight_sync_figures.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const generator = join(here, '..', 'slime_weight_sync_figures.mjs');
 const slimeDir = join(here, '..', '..', '..', '..', 'wiki', '02_engineering', '04_posttrain_frameworks', 'slime');
 const pagePath = join(slimeDir, '16_slime_weight_sync_analysis.md');
-const trackedSvg = join(slimeDir, 'assets', 'slime_weight_sync_planes.svg');
+const NAMES = Object.keys(FIGURES);
 
-function viewBox(svg) {
+// 每张图必须出现的数值与依赖侧标签
+const NEEDLES = {
+  'slime_weight_sync_common.svg': ['g0 g1 u0 u1', '600 独占一桶', 'EP 聚合后 400 MiB', '上游契约'],
+  'slime_weight_sync_online.svg': [
+    '2 + 4 + 1 = 7',
+    'world 3',
+    'P2P 发送 12 份',
+    'EP 广播 24 份',
+    'batch0 = e0–e3',
+    PATCH_LABELS.ipcSync,
+    '服务暂停窗口',
+  ],
+  'slime_weight_sync_disk.svg': [
+    '4 + 2×4 + 2 = 14',
+    '25%',
+    'weight_v000001/',
+    PATCH_LABELS.pull,
+    `由 ${PATCH_LABELS.versionReadback} 改写`,
+    '服务暂停窗口',
+  ],
+};
+
+function viewBox(svg, name) {
   const match = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
-  assert.ok(match, 'SVG 必须声明 viewBox');
+  assert.ok(match, `${name}: SVG 必须声明 viewBox`);
   return { w: Number(match[1]), h: Number(match[2]) };
 }
 
-function assertInsideCanvas(svg) {
-  const { w, h } = viewBox(svg);
+function assertInsideCanvas(svg, name) {
+  const { w, h } = viewBox(svg, name);
   for (const [, x, y, rw, rh] of svg.matchAll(
     /<rect[^>]*?x="(-?\d+(?:\.\d+)?)"[^>]*?y="(-?\d+(?:\.\d+)?)"[^>]*?width="(\d+(?:\.\d+)?)"[^>]*?height="(\d+(?:\.\d+)?)"/g,
   )) {
-    assert.ok(Number(x) >= 0 && Number(y) >= 0, `rect 左上越界 ${x},${y}`);
-    assert.ok(Number(x) + Number(rw) <= w && Number(y) + Number(rh) <= h, `rect 右下越界 ${x}+${rw},${y}+${rh}`);
+    assert.ok(Number(x) >= 0 && Number(y) >= 0, `${name}: rect 左上越界 ${x},${y}`);
+    assert.ok(Number(x) + Number(rw) <= w && Number(y) + Number(rh) <= h, `${name}: rect 右下越界 ${x}+${rw},${y}+${rh}`);
   }
-  for (const [, x, y] of svg.matchAll(/<text[^>]*?x="(-?\d+(?:\.\d+)?)" y="(-?\d+(?:\.\d+)?)"/g)) {
-    assert.ok(Number(x) >= 0 && Number(x) <= w && Number(y) >= 0 && Number(y) <= h, `text 越界 ${x},${y}`);
+}
+
+// 文字盒不出画布、文字盒之间不重叠（越界检查不等于不重叠，两条都要）
+function assertTextBoxes(svg, name) {
+  const { w, h } = viewBox(svg, name);
+  const boxes = [];
+  for (const [, xs, ys, cls, anchor, raw] of svg.matchAll(
+    /<text x="(-?[\d.]+)" y="(-?[\d.]+)" class="([a-z]+)" text-anchor="(\w+)">([^<]*)<\/text>/g,
+  )) {
+    const size = FONT[cls];
+    assert.ok(size, `${name}: 未知文字类 ${cls}`);
+    if (raw.trim() === '') continue;
+    const s = raw.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const tw = textWidth(s, size);
+    const x = anchor === 'middle' ? Number(xs) - tw / 2 : anchor === 'end' ? Number(xs) - tw : Number(xs);
+    boxes.push({ x, y: Number(ys) - size * 0.8, w: tw, h: size * 1.05, s });
+  }
+  assert.ok(boxes.length > 20, `${name}: 文字元素过少，正则可能失配`);
+  for (const b of boxes) {
+    assert.ok(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h, `${name}: 文字盒出画布 "${b.s}"`);
+  }
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const dx = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const dy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      assert.ok(!(dx > 1 && dy > 1), `${name}: 文字重叠 "${a.s}" × "${b.s}"`);
+    }
   }
 }
 
@@ -66,7 +126,7 @@ test('NCCL、共卡划分与 MoE 定向路由复现源码', () => {
   assert.equal(m.moe.genericDeliveries, 24);
   assert.deepEqual(m.moe.routedPerRank, [4, 4, 4, 4]);
   assert.deepEqual(m.moe.batches, [[0, 1, 2, 3], [4, 5, 6, 7]]);
-  // 与 tests/test_expert_routing.py 的单包超阈值规则一致
+  // 与 tests/test_expert_routing.py::test_transfer_plan_rejects_one_expert_larger_than_buffer 的规则一致
   assert.throws(() => expertRouting({ ...CFG.moe, bufferBundles: 0.5 }), /exceeds/);
 });
 
@@ -99,19 +159,20 @@ test('在线路径的搬运落在暂停窗口里，磁盘路径的搬运在暂�
   assert.ok(idx(PLANES.disk, 'reload') > firstPause(PLANES.disk));
 });
 
-test('生成器产出原理图，且与已跟踪的 SVG 一致', async () => {
+test('生成器产出三张原理图，几何无越界无重叠，且与已跟踪的 SVG 一致', async () => {
   const outputDir = await mkdtemp(join(tmpdir(), 'slime-weight-sync-'));
   try {
     const run = spawnSync(process.execPath, [generator, outputDir], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr || run.stdout);
-    const svg = await readFile(join(outputDir, 'slime_weight_sync_planes.svg'), 'utf8');
-    assertInsideCanvas(svg);
-    for (const needle of ['2 + 4 + 1 = 7', 'world 3', 'P2P 发送 12 份', 'EP 广播 24 份', 'batch0 = e0–e3', '4 + 2×4 + 2 = 14', '25%', 'weight_v000001/', '服务暂停窗口']) {
-      assert.ok(svg.includes(needle), `SVG 必须出现 ${needle}`);
+    for (const name of NAMES) {
+      const svg = await readFile(join(outputDir, name), 'utf8');
+      assertInsideCanvas(svg, name);
+      assertTextBoxes(svg, name);
+      for (const needle of NEEDLES[name]) assert.ok(svg.includes(needle), `${name} 必须出现 ${needle}`);
+      assert.doesNotMatch(svg, /\[\[/, `${name} 不得泄漏 wikilink 标记`);
+      const tracked = await readFile(join(slimeDir, 'assets', name), 'utf8');
+      assert.equal(tracked, svg, `已跟踪的 ${name} 必须由当前生成器重新生成`);
     }
-    assert.doesNotMatch(svg, /\[\[/, 'SVG 不得泄漏 wikilink 标记');
-    const tracked = await readFile(trackedSvg, 'utf8');
-    assert.equal(tracked, svg, '已跟踪的 SVG 必须由当前生成器重新生成');
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
@@ -148,6 +209,16 @@ test('正文引用的数值与模型一致', async () => {
   ]) {
     assert.ok(page.includes(needle), `正文必须出现 ${needle}`);
   }
-  assert.ok(page.includes('assets/slime_weight_sync_planes.svg'), '正文必须引用原理图');
-  assert.doesNotMatch(page, /github\.com\/THUDM\/slime\/blob\/[0-9a-f]+\/[^)]*#L\d+/, '正文不再保留 path:line 链接');
+  for (const name of NAMES) assert.ok(page.includes(`assets/${name}`), `正文必须引用 ${name}`);
+  assert.ok(!page.includes('slime_weight_sync_planes.svg'), '拆图后正文不得再引用旧的合并图');
+  assert.doesNotMatch(page, /github\.com\/THUDM\/slime\/blob\/[0-9a-f]+\/[^)]*#L\d+/, '正文不再保留 slime path:line 链接');
+  assert.doesNotMatch(page, /github\.com\/sgl-project\/sglang\/blob\//, 'SGLang 依赖以符号锚点引用，不保留行号永久链接');
+});
+
+test('图上的依赖侧来源与正文的补丁边界一致', async () => {
+  const page = await readFile(pagePath, 'utf8');
+  for (const patch of Object.values(PATCH_LABELS)) assert.ok(page.includes(patch), `正文必须点名补丁 ${patch}`);
+  for (const gate of ['ARG PATCH_VERSION=latest', 'ENABLE_SGLANG_PATCH', '/post_process_weights', '/get_weight_version', '/pull_weights']) {
+    assert.ok(page.includes(gate), `正文依赖边界必须出现 ${gate}`);
+  }
 });

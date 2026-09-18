@@ -1,0 +1,266 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="930" viewBox="0 0 1180 930" role="img" aria-labelledby="title desc">
+<title id="title">slime 在线 MTP 训练：一条样本的标签与 mask 对齐，以及 MTP loss 的梯度切断</title>
+<desc id="desc">面板①以 P=3、R=4 的样本逐位置展示 full_loss_masks、主 loss 目标、MTP-1 的输入、补丁两次 roll 后的 mtp_labels 与 loss_mask，以及实际计入的目标 t2 到 t5 与对照的 t3 到 t6。面板②对比上游 Megatron-LM 1dcf0daf 与 slime megatron.patch 下位置 i=2 的 MTP loss 反向传播落点。面板③是 CI 门禁的前提与断言。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#C3651F"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#8C95A3"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mo{font-family:"JetBrains Mono","Cascadia Mono",Consolas,monospace;font-size:10.5px;fill:#2A313B}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .b{font-weight:700}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .fwd{fill:none;stroke:#8C95A3;stroke-width:1.3;marker-end:url(#arrowAux)}
+  .cut{fill:none;stroke:#C3651F;stroke-width:2.2}
+</style><rect width="1180" height="930" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">MTP 是辅助目标：补丁把梯度关在 MTP 层里；两次 roll 让标签对齐 t[i+2]，mask 却因此早一位</text>
+<text x="24" y="56" class="su" text-anchor="start">示例：一条样本 P = 3 个 prompt token、R = 4 个 response token（T = 7），loss_mask 全 1，--mtp-num-layers 1，CP = 1；token 用下标 t0…t6 表示</text>
+<rect x="24" y="72" width="1132" height="382" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① 同一条样本在 get_batch 与 megatron.patch 的 _postprocess 里怎样对齐（位置 i 的 MTP-1 看到 h_i 与 t[i+1]，预测 t[i+2]）</text>
+<text x="40" y="132" class="tx" text-anchor="start">位置 i</text>
+<text x="432" y="132" class="tx" text-anchor="middle">0</text>
+<text x="512" y="132" class="tx" text-anchor="middle">1</text>
+<text x="592" y="132" class="tx" text-anchor="middle">2</text>
+<text x="672" y="132" class="tx" text-anchor="middle">3</text>
+<text x="752" y="132" class="tx" text-anchor="middle">4</text>
+<text x="832" y="132" class="tx" text-anchor="middle">5</text>
+<text x="912" y="132" class="tx" text-anchor="middle">6</text>
+<text x="40" y="155" class="tx" text-anchor="start">tokens（mtp_labels 的来源）</text>
+<text x="40" y="169" class="sm" text-anchor="start">data.py::get_batch</text>
+<rect x="395" y="144" width="74" height="28" rx="4" class="ghost"/>
+<text x="432" y="162" class="mo" text-anchor="middle">t0</text>
+<rect x="475" y="144" width="74" height="28" rx="4" class="ghost"/>
+<text x="512" y="162" class="mo" text-anchor="middle">t1</text>
+<rect x="555" y="144" width="74" height="28" rx="4" class="ghost"/>
+<text x="592" y="162" class="mo" text-anchor="middle">t2</text>
+<rect x="635" y="144" width="74" height="28" rx="4" class="neutral"/>
+<text x="672" y="162" class="mo" text-anchor="middle">t3</text>
+<rect x="715" y="144" width="74" height="28" rx="4" class="neutral"/>
+<text x="752" y="162" class="mo" text-anchor="middle">t4</text>
+<rect x="795" y="144" width="74" height="28" rx="4" class="neutral"/>
+<text x="832" y="162" class="mo" text-anchor="middle">t5</text>
+<rect x="875" y="144" width="74" height="28" rx="4" class="neutral"/>
+<text x="912" y="162" class="mo" text-anchor="middle">t6</text>
+<text x="962" y="162" class="sm" text-anchor="start">prompt t0–t2 · response t3–t6</text>
+<text x="40" y="191" class="tx" text-anchor="start">full_loss_masks = F.pad(mask, (P−1, 1))</text>
+<text x="40" y="205" class="sm" text-anchor="start">已按"位置 i → t[i+1]"对齐</text>
+<rect x="395" y="180" width="74" height="28" rx="4" class="ghost"/>
+<text x="432" y="198" class="mo" text-anchor="middle">0</text>
+<rect x="475" y="180" width="74" height="28" rx="4" class="ghost"/>
+<text x="512" y="198" class="mo" text-anchor="middle">0</text>
+<rect x="555" y="180" width="74" height="28" rx="4" class="neutral"/>
+<text x="592" y="198" class="mo" text-anchor="middle">1</text>
+<rect x="635" y="180" width="74" height="28" rx="4" class="neutral"/>
+<text x="672" y="198" class="mo" text-anchor="middle">1</text>
+<rect x="715" y="180" width="74" height="28" rx="4" class="neutral"/>
+<text x="752" y="198" class="mo" text-anchor="middle">1</text>
+<rect x="795" y="180" width="74" height="28" rx="4" class="neutral"/>
+<text x="832" y="198" class="mo" text-anchor="middle">1</text>
+<rect x="875" y="180" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="198" class="mo" text-anchor="middle">0</text>
+<text x="962" y="198" class="sm" text-anchor="start">与主 loss 目标同一坐标</text>
+<text x="40" y="227" class="tx" text-anchor="start">主 loss 目标 t[i+1]</text>
+<text x="40" y="241" class="sm" text-anchor="start">loss.py::_build_shifted_tokens</text>
+<rect x="395" y="216" width="74" height="28" rx="4" class="ghost"/>
+<text x="432" y="234" class="mo" text-anchor="middle">t1</text>
+<rect x="475" y="216" width="74" height="28" rx="4" class="ghost"/>
+<text x="512" y="234" class="mo" text-anchor="middle">t2</text>
+<rect x="555" y="216" width="74" height="28" rx="4" class="neutral"/>
+<text x="592" y="234" class="mo" text-anchor="middle">t3</text>
+<rect x="635" y="216" width="74" height="28" rx="4" class="neutral"/>
+<text x="672" y="234" class="mo" text-anchor="middle">t4</text>
+<rect x="715" y="216" width="74" height="28" rx="4" class="neutral"/>
+<text x="752" y="234" class="mo" text-anchor="middle">t5</text>
+<rect x="795" y="216" width="74" height="28" rx="4" class="neutral"/>
+<text x="832" y="234" class="mo" text-anchor="middle">t6</text>
+<rect x="875" y="216" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="234" class="mo" text-anchor="middle">—</text>
+<text x="962" y="234" class="sm" text-anchor="start">mask=1 处恰好是 t3–t6</text>
+<text x="40" y="263" class="tx" text-anchor="start">MTP-1 输入 Emb(t[i+1])</text>
+<text x="40" y="277" class="sm" text-anchor="start">_get_embeddings：input_ids roll 1 次</text>
+<rect x="395" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="432" y="270" class="mo" text-anchor="middle">t1</text>
+<rect x="475" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="512" y="270" class="mo" text-anchor="middle">t2</text>
+<rect x="555" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="592" y="270" class="mo" text-anchor="middle">t3</text>
+<rect x="635" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="672" y="270" class="mo" text-anchor="middle">t4</text>
+<rect x="715" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="752" y="270" class="mo" text-anchor="middle">t5</text>
+<rect x="795" y="252" width="74" height="28" rx="4" class="neutral"/>
+<text x="832" y="270" class="mo" text-anchor="middle">t6</text>
+<rect x="875" y="252" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="270" class="mo" text-anchor="middle">0</text>
+<text x="962" y="270" class="sm" text-anchor="start">末位清零</text>
+<text x="40" y="299" class="tx" text-anchor="start">mtp_labels：补丁预 roll + 循环 roll</text>
+<text x="40" y="313" class="sm" text-anchor="start">= t[i+2]</text>
+<rect x="395" y="288" width="74" height="28" rx="4" class="neutral"/>
+<text x="432" y="306" class="mo" text-anchor="middle">t2</text>
+<rect x="475" y="288" width="74" height="28" rx="4" class="neutral"/>
+<text x="512" y="306" class="mo" text-anchor="middle">t3</text>
+<rect x="555" y="288" width="74" height="28" rx="4" class="neutral"/>
+<text x="592" y="306" class="mo" text-anchor="middle">t4</text>
+<rect x="635" y="288" width="74" height="28" rx="4" class="neutral"/>
+<text x="672" y="306" class="mo" text-anchor="middle">t5</text>
+<rect x="715" y="288" width="74" height="28" rx="4" class="neutral"/>
+<text x="752" y="306" class="mo" text-anchor="middle">t6</text>
+<rect x="795" y="288" width="74" height="28" rx="4" class="ghost"/>
+<text x="832" y="306" class="mo" text-anchor="middle">0</text>
+<rect x="875" y="288" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="306" class="mo" text-anchor="middle">0</text>
+<text x="962" y="306" class="sm" text-anchor="start">= MTP-1 的预测对象</text>
+<text x="40" y="335" class="tx" text-anchor="start">loss_mask：补丁预 roll + 循环 roll</text>
+<text x="40" y="349" class="sm" text-anchor="start">= full[i+2]</text>
+<rect x="395" y="324" width="74" height="28" rx="4" class="acc2"/>
+<text x="432" y="342" class="mo" text-anchor="middle">1</text>
+<rect x="475" y="324" width="74" height="28" rx="4" class="acc2"/>
+<text x="512" y="342" class="mo" text-anchor="middle">1</text>
+<rect x="555" y="324" width="74" height="28" rx="4" class="acc2"/>
+<text x="592" y="342" class="mo" text-anchor="middle">1</text>
+<rect x="635" y="324" width="74" height="28" rx="4" class="acc2"/>
+<text x="672" y="342" class="mo" text-anchor="middle">1</text>
+<rect x="715" y="324" width="74" height="28" rx="4" class="ghost"/>
+<text x="752" y="342" class="mo" text-anchor="middle">0</text>
+<rect x="795" y="324" width="74" height="28" rx="4" class="ghost"/>
+<text x="832" y="342" class="mo" text-anchor="middle">0</text>
+<rect x="875" y="324" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="342" class="mo" text-anchor="middle">0</text>
+<text x="962" y="342" class="sm" text-anchor="start">num_tokens = 4</text>
+<text x="40" y="371" class="tx" text-anchor="start">计入 MTP loss 的目标（补丁后实际）</text>
+<text x="40" y="385" class="sm" text-anchor="start">label × mask</text>
+<rect x="395" y="360" width="74" height="28" rx="4" class="acc2"/>
+<text x="432" y="378" class="mo" text-anchor="middle">t2</text>
+<rect x="475" y="360" width="74" height="28" rx="4" class="acc1"/>
+<text x="512" y="378" class="mo" text-anchor="middle">t3</text>
+<rect x="555" y="360" width="74" height="28" rx="4" class="acc1"/>
+<text x="592" y="378" class="mo" text-anchor="middle">t4</text>
+<rect x="635" y="360" width="74" height="28" rx="4" class="acc1"/>
+<text x="672" y="378" class="mo" text-anchor="middle">t5</text>
+<rect x="715" y="360" width="74" height="28" rx="4" class="acc2"/>
+<text x="752" y="378" class="mo" text-anchor="middle">t6 未计</text>
+<rect x="795" y="360" width="74" height="28" rx="4" class="ghost"/>
+<text x="832" y="378" class="mo" text-anchor="middle"></text>
+<rect x="875" y="360" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="378" class="mo" text-anchor="middle"></text>
+<text x="962" y="378" class="sm" text-anchor="start">t2–t5：多 t2、漏 t6</text>
+<text x="40" y="407" class="tx" text-anchor="start">对照：mask 只随循环 roll 1 次</text>
+<text x="40" y="421" class="sm" text-anchor="start">= full[i+1]</text>
+<rect x="395" y="396" width="74" height="28" rx="4" class="ghost"/>
+<text x="432" y="414" class="mo" text-anchor="middle"></text>
+<rect x="475" y="396" width="74" height="28" rx="4" class="dep"/>
+<text x="512" y="414" class="mo" text-anchor="middle">t3</text>
+<rect x="555" y="396" width="74" height="28" rx="4" class="dep"/>
+<text x="592" y="414" class="mo" text-anchor="middle">t4</text>
+<rect x="635" y="396" width="74" height="28" rx="4" class="dep"/>
+<text x="672" y="414" class="mo" text-anchor="middle">t5</text>
+<rect x="715" y="396" width="74" height="28" rx="4" class="dep"/>
+<text x="752" y="414" class="mo" text-anchor="middle">t6</text>
+<rect x="795" y="396" width="74" height="28" rx="4" class="ghost"/>
+<text x="832" y="414" class="mo" text-anchor="middle"></text>
+<rect x="875" y="396" width="74" height="28" rx="4" class="ghost"/>
+<text x="912" y="414" class="mo" text-anchor="middle"></text>
+<text x="962" y="414" class="sm" text-anchor="start">t3–t6 = response</text>
+<text x="40" y="440" class="sm" text-anchor="start">静态复算（分析判断，未运行）：mask 在 get_batch 已经左移过一位，补丁的预 roll 又移一位，计入集合整体早一位；P ≥ 3 时每条样本计数仍为 R，P = 2 时只剩 R − 1。</text>
+<rect x="24" y="464" width="1132" height="300" rx="10" class="panel"/>
+<text x="40" y="488" class="pt" text-anchor="start">② 位置 i = 2 的 MTP loss（标签 t4）反向传到哪里</text>
+<text x="40" y="514" class="tx" text-anchor="start">上游 Megatron-LM@1dcf0daf（multi_token_prediction.py / gpt_model.py）</text>
+<rect x="40" y="528" width="160" height="44" rx="5" class="neutral"/>
+<text x="120" y="546.5" class="sm" text-anchor="middle">共享 embedding：Emb(t3)</text>
+<text x="120" y="561.5" class="sm" text-anchor="middle">decoder_input</text>
+<rect x="40" y="588" width="160" height="44" rx="5" class="neutral"/>
+<text x="120" y="606.5" class="sm" text-anchor="middle">主干 h2</text>
+<text x="120" y="621.5" class="sm" text-anchor="middle">torch.chunk 出来的 view</text>
+<rect x="40" y="648" width="160" height="44" rx="5" class="neutral"/>
+<text x="120" y="666.5" class="sm" text-anchor="middle">输出头权重 W</text>
+<text x="120" y="681.5" class="sm" text-anchor="middle">共享或 output_layer</text>
+<rect x="265" y="558" width="150" height="60" rx="5" class="neutral"/>
+<text x="340" y="577" class="sm" text-anchor="middle">MTP 层参数</text>
+<text x="340" y="592" class="sm" text-anchor="middle">enorm/hnorm/eh_proj</text>
+<text x="340" y="607" class="sm" text-anchor="middle">transformer_layer/norm</text>
+<rect x="265" y="658" width="150" height="44" rx="5" class="neutral"/>
+<text x="340" y="676.5" class="sm" text-anchor="middle">CE(t4) × mask</text>
+<text x="340" y="691.5" class="sm" text-anchor="middle">MTPLossAutoScaler</text>
+<path d="M200 550 L265 574" class="fwd"/>
+<path d="M200 610 L265 602" class="fwd"/>
+<path d="M340 618 L340 658" class="fwd"/>
+<path d="M200 670 L265 680" class="fwd"/>
+<text x="430" y="540" class="mo" text-anchor="start">不 detach</text>
+<text x="430" y="586" class="mo" text-anchor="start">keep_graph=True</text>
+<text x="430" y="600" class="sm" text-anchor="start">（MakeViewlessTensor</text>
+<text x="430" y="614" class="sm" text-anchor="start">  反向原样透传）</text>
+<text x="430" y="660" class="mo" text-anchor="start">weight=output_weight</text>
+<rect x="40" y="708" width="540" height="42" rx="5" class="acc2"/>
+<text x="310" y="733" class="tx" text-anchor="middle">MTP loss 梯度同时落到 MTP 层、主干、embedding 与输出头</text>
+<path d="M265 574 L202 552" class="cost"/>
+<path d="M265 602 L202 614" class="cost"/>
+<path d="M265 686 L202 674" class="cost"/>
+<path d="M320 658 L320 620" class="cost"/>
+<text x="610" y="514" class="tx" text-anchor="start">slime 镜像：1dcf0daf + docker/patch/latest/megatron.patch</text>
+<rect x="610" y="528" width="160" height="44" rx="5" class="neutral"/>
+<text x="690" y="546.5" class="sm" text-anchor="middle">共享 embedding：Emb(t3)</text>
+<text x="690" y="561.5" class="sm" text-anchor="middle">decoder_input</text>
+<rect x="610" y="588" width="160" height="44" rx="5" class="neutral"/>
+<text x="690" y="606.5" class="sm" text-anchor="middle">主干 h2</text>
+<text x="690" y="621.5" class="sm" text-anchor="middle">torch.chunk 出来的 view</text>
+<rect x="610" y="648" width="160" height="44" rx="5" class="neutral"/>
+<text x="690" y="666.5" class="sm" text-anchor="middle">输出头权重 W</text>
+<text x="690" y="681.5" class="sm" text-anchor="middle">共享或 output_layer</text>
+<rect x="835" y="558" width="150" height="60" rx="5" class="acc1"/>
+<text x="910" y="577" class="sm" text-anchor="middle">MTP 层参数</text>
+<text x="910" y="592" class="sm" text-anchor="middle">enorm/hnorm/eh_proj</text>
+<text x="910" y="607" class="sm" text-anchor="middle">transformer_layer/norm</text>
+<rect x="835" y="658" width="150" height="44" rx="5" class="neutral"/>
+<text x="910" y="676.5" class="sm" text-anchor="middle">CE(t4) × mask</text>
+<text x="910" y="691.5" class="sm" text-anchor="middle">MTPLossAutoScaler</text>
+<path d="M770 550 L835 574" class="fwd"/>
+<path d="M770 610 L835 602" class="fwd"/>
+<path d="M910 618 L910 658" class="fwd"/>
+<path d="M770 670 L835 680" class="fwd"/>
+<path d="M795.5 555 L809.5 569 M809.5 555 L795.5 569" class="cut"/>
+<path d="M795.5 599 L809.5 613 M809.5 599 L795.5 613" class="cut"/>
+<path d="M795.5 663 L809.5 677 M809.5 663 L795.5 677" class="cut"/>
+<text x="1000" y="540" class="mo" text-anchor="start">✕ decoder_input</text>
+<text x="1000" y="554" class="mo" text-anchor="start">   .detach()</text>
+<text x="1000" y="586" class="mo" text-anchor="start">✕ make_viewless_tensor(</text>
+<text x="1000" y="600" class="mo" text-anchor="start">   keep_graph=False)</text>
+<text x="1000" y="614" class="sm" text-anchor="start">→ 新叶子，不连回主干</text>
+<text x="1000" y="660" class="mo" text-anchor="start">✕ mtp_output_weight</text>
+<text x="1000" y="674" class="mo" text-anchor="start">   .detach()</text>
+<rect x="610" y="708" width="540" height="42" rx="5" class="acc1"/>
+<text x="880" y="733" class="tx" text-anchor="middle">MTP loss 梯度只落在 MTP 层参数；主干、embedding、输出头只收 policy loss 的梯度</text>
+<path d="M855 658 L855 620" class="main"/>
+<rect x="24" y="774" width="1132" height="118" rx="10" class="panel"/>
+<text x="40" y="798" class="pt" text-anchor="start">③ CI 门禁 tests/test_mimo_7B_mtp_only_grad.py：先把 policy 梯度压成 0，再看剩下的梯度落在哪</text>
+<rect x="40" y="812" width="214" height="46" rx="5" class="neutral"/>
+<text x="147" y="831.5" class="mo" text-anchor="middle">--rollout-max-response-len 128</text>
+<text x="147" y="846.5" class="sm" text-anchor="middle">全部 response 截断</text>
+<path d="M256 835 L268 835" class="main"/>
+<rect x="272" y="812" width="196" height="46" rx="5" class="neutral"/>
+<text x="370" y="831.5" class="mo" text-anchor="middle">--rm-type deepscaler</text>
+<text x="370" y="846.5" class="sm" text-anchor="middle">无 &lt;/think&gt; → reward 0</text>
+<path d="M470 835 L482 835" class="main"/>
+<rect x="486" y="812" width="196" height="46" rx="5" class="neutral"/>
+<text x="584" y="831.5" class="mo" text-anchor="middle">GRPO 组归一化</text>
+<text x="584" y="846.5" class="sm" text-anchor="middle">组内全 0 → 0（分析判断）</text>
+<path d="M684 835 L696 835" class="main"/>
+<rect x="700" y="812" width="196" height="46" rx="5" class="neutral"/>
+<text x="798" y="831.5" class="mo" text-anchor="middle">policy loss 梯度 = 0</text>
+<text x="798" y="846.5" class="sm" text-anchor="middle">kl / entropy 系数也为 0</text>
+<path d="M898 835 L910 835" class="main"/>
+<rect x="914" y="812" width="236" height="46" rx="5" class="acc1"/>
+<text x="1032" y="831.5" class="mo" text-anchor="middle">check_mtp_only_grad</text>
+<text x="1032" y="846.5" class="sm" text-anchor="middle">非 MTP 非零梯度数 = 0 且 MTP 的 &gt; 0</text>
+<text x="40" y="878" class="sm" text-anchor="start">断言放在 optimizer.step() 之前、读 main_grad（没有则读 grad）；只要同时开 --ci-test 与 --enable-mtp-training 就会执行。上游无补丁时第一条断言应失败（分析判断，未运行）。</text>
+<text x="24" y="918" class="cap" text-anchor="start">阅读顺序：① 标签与 mask 的坐标 → ② 补丁的三处切断 → ③ CI 用"policy 梯度为 0"把两类梯度分开验证。</text>
+</svg>

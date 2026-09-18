@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1030" viewBox="0 0 1180 1030" role="img" aria-labelledby="title desc">
+<title id="title">slime OPD：一条 Sample 的 teacher 与学生 logprob 怎样对齐、注入 advantage 并被缩放</title>
+<desc id="desc">三个面板：SGLang teacher 的输入 logprob 丢首项并尾部裁剪、Megatron 前向按 logits 位移取 response 位置，两边落到同一组 token；逐 token 的 d̂ 写进 advantage；白化消去纯蒸馏里的 λ 尺度，clip 让越界 token 的梯度为 0。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:none;stroke:#8A93A0;stroke-width:1.2;stroke-dasharray:5 4}
+  .depbox{fill:#F5F7FA;stroke:#8A93A0;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:1.6;marker-end:url(#arrowMain)}
+</style><rect width="1180" height="1030" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">一条 Sample 的 OPD 信号：先对齐到同一 response 位置，再逐 token 写进 advantage，最后被白化与 clip 重新定尺度</text>
+<text x="24" y="56" class="su" text-anchor="start">tokens [11, 12, 21, 22, 23]：prompt P=2、response R=3、T=5 · λ=--opd-kl-coef=1 · ε=--eps-clip=0.2 · 数值是解释用输入，不是测量</text>
+<rect x="24" y="72" width="1132" height="372" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① 对齐：两条路径的 logprob 都要落到 response 的同一组 token 上</text>
+<text x="40" y="146" class="tx" text-anchor="start">sample.tokens（位置 k）</text>
+<text x="306" y="122" class="sm" text-anchor="middle">k=0</text>
+<rect x="262" y="128" width="88" height="28" rx="4" class="ghost"/>
+<text x="306" y="146" class="mono" text-anchor="middle">11</text>
+<text x="406" y="122" class="sm" text-anchor="middle">k=1</text>
+<rect x="362" y="128" width="88" height="28" rx="4" class="ghost"/>
+<text x="406" y="146" class="mono" text-anchor="middle">12</text>
+<text x="506" y="122" class="sm" text-anchor="middle">k=2</text>
+<rect x="462" y="128" width="88" height="28" rx="4" class="neutral"/>
+<text x="506" y="146" class="mono" text-anchor="middle">21</text>
+<text x="606" y="122" class="sm" text-anchor="middle">k=3</text>
+<rect x="562" y="128" width="88" height="28" rx="4" class="neutral"/>
+<text x="606" y="146" class="mono" text-anchor="middle">22</text>
+<text x="706" y="122" class="sm" text-anchor="middle">k=4</text>
+<rect x="662" y="128" width="88" height="28" rx="4" class="neutral"/>
+<text x="706" y="146" class="mono" text-anchor="middle">23</text>
+<text x="350" y="174" class="sm" text-anchor="middle">prompt</text>
+<text x="606" y="174" class="sm" text-anchor="middle">response</text>
+<rect x="34" y="182" width="766" height="132" rx="8" class="dep"/>
+<text x="44" y="198" class="sm" text-anchor="start">依赖侧 SGLang /generate（上游 v0.5.15.post1 契约）</text>
+<text x="44" y="224" class="mono" text-anchor="start">input_token_logprobs</text>
+<rect x="262" y="206" width="88" height="28" rx="4" class="ghost"/>
+<text x="306" y="224" class="mono" text-anchor="middle">None</text>
+<rect x="362" y="206" width="88" height="28" rx="4" class="neutral"/>
+<text x="406" y="224" class="mono" text-anchor="middle">−1.20</text>
+<rect x="462" y="206" width="88" height="28" rx="4" class="neutral"/>
+<text x="506" y="224" class="mono" text-anchor="middle">−0.40</text>
+<rect x="562" y="206" width="88" height="28" rx="4" class="neutral"/>
+<text x="606" y="224" class="mono" text-anchor="middle">−2.10</text>
+<rect x="662" y="206" width="88" height="28" rx="4" class="neutral"/>
+<text x="706" y="224" class="mono" text-anchor="middle">−0.30</text>
+<text x="44" y="260" class="sm" text-anchor="start">post_process_rewards：[1:]</text>
+<rect x="362" y="242" width="88" height="28" rx="4" class="neutral"/>
+<text x="406" y="260" class="mono" text-anchor="middle">−1.20</text>
+<rect x="462" y="242" width="88" height="28" rx="4" class="neutral"/>
+<text x="506" y="260" class="mono" text-anchor="middle">−0.40</text>
+<rect x="562" y="242" width="88" height="28" rx="4" class="neutral"/>
+<text x="606" y="260" class="mono" text-anchor="middle">−2.10</text>
+<rect x="662" y="242" width="88" height="28" rx="4" class="neutral"/>
+<text x="706" y="260" class="mono" text-anchor="middle">−0.30</text>
+<text x="44" y="296" class="sm" text-anchor="start">[-R:] → teacher_log_probs</text>
+<rect x="462" y="278" width="88" height="28" rx="4" class="acc1"/>
+<text x="506" y="296" class="mono" text-anchor="middle">−0.40</text>
+<rect x="562" y="278" width="88" height="28" rx="4" class="acc1"/>
+<text x="606" y="296" class="mono" text-anchor="middle">−2.10</text>
+<rect x="662" y="278" width="88" height="28" rx="4" class="acc1"/>
+<text x="706" y="296" class="mono" text-anchor="middle">−0.30</text>
+<text x="40" y="362" class="tx" text-anchor="start">Megatron 前向：logits 位置</text>
+<rect x="362" y="344" width="88" height="28" rx="4" class="neutral"/>
+<text x="406" y="362" class="sm" text-anchor="middle">预测 k=2</text>
+<path d="M444 372 L472 396" class="main"/>
+<rect x="462" y="344" width="88" height="28" rx="4" class="neutral"/>
+<text x="506" y="362" class="sm" text-anchor="middle">预测 k=3</text>
+<path d="M544 372 L572 396" class="main"/>
+<rect x="562" y="344" width="88" height="28" rx="4" class="neutral"/>
+<text x="606" y="362" class="sm" text-anchor="middle">预测 k=4</text>
+<path d="M644 372 L672 396" class="main"/>
+<text x="40" y="416" class="tx" text-anchor="start">log_probs（学生或 teacher tag）</text>
+<rect x="462" y="398" width="88" height="28" rx="4" class="acc1"/>
+<text x="506" y="416" class="mono" text-anchor="middle">−0.90</text>
+<rect x="562" y="398" width="88" height="28" rx="4" class="acc1"/>
+<text x="606" y="416" class="mono" text-anchor="middle">−1.30</text>
+<rect x="662" y="398" width="88" height="28" rx="4" class="acc1"/>
+<text x="706" y="416" class="mono" text-anchor="middle">−0.20</text>
+<rect x="818" y="116" width="324" height="124" rx="8" class="neutral"/>
+<text x="830" y="136" class="tx" text-anchor="start">对齐由尾部裁剪决定</text>
+<text x="830" y="156" class="sm" text-anchor="start">不丢首项只做 [-R:] 也得到 [−0.40, −2.10, −0.30]</text>
+<text x="830" y="174" class="sm" text-anchor="start">[1:] 去掉的是无前驱占位 None，否则无法张量化</text>
+<text x="830" y="196" class="sm" text-anchor="start">actor 侧 slice_log_prob_with_cp 只断言</text>
+<text x="830" y="214" class="sm" text-anchor="start">长度 = R=3，不比对 token id</text>
+<text x="830" y="232" class="sm" text-anchor="start">prompt 为空时尾部只剩 T−1 项，断言失败</text>
+<rect x="818" y="256" width="324" height="172" rx="8" class="depbox"/>
+<text x="830" y="276" class="tx" text-anchor="start">温度边界（依赖侧源码阅读，未运行）</text>
+<text x="830" y="296" class="sm" text-anchor="start">学生项与 Megatron teacher：logits ÷ τ</text>
+<text x="830" y="314" class="sm" text-anchor="start">SGLang teacher：请求带 τ，但上游</text>
+<text x="830" y="332" class="sm" text-anchor="start">process_input_logprobs 不读 τ</text>
+<text x="830" y="356" class="sm" text-anchor="start">同一 logits [2, 1, 0]、y=0、τ=0.8：</text>
+<text x="830" y="374" class="sm" text-anchor="start">学生 −0.314，SGLang teacher −0.408</text>
+<rect x="830" y="384" width="300" height="32" rx="5" class="acc2"/>
+<text x="840" y="404" class="tx" text-anchor="start">权重相同也有 d<tspan dx="-5.64" dy="-5.04" font-size="10.2">^</tspan><tspan dx="0.84" dy="5.04"> = +0.094</tspan></text>
+<rect x="24" y="458" width="1132" height="262" rx="10" class="panel"/>
+<text x="40" y="482" class="pt" text-anchor="start">② 注入：d<tspan dx="-6.58" dy="-5.88" font-size="11.9">^</tspan><tspan dx="0.98" dy="5.88"> = 学生项 − teacher 项，逐 token 从基础 advantage 里减去 λ·</tspan>d<tspan dx="-6.58" dy="-5.88" font-size="11.9">^</tspan><tspan dx="0.98" dy="5.88"></tspan></text>
+<text x="40" y="517" class="tx" text-anchor="start">response token</text>
+<rect x="330" y="500" width="94" height="26" rx="4" class="ghost"/>
+<text x="377" y="517" class="mono" text-anchor="middle">21</text>
+<rect x="434" y="500" width="94" height="26" rx="4" class="ghost"/>
+<text x="481" y="517" class="mono" text-anchor="middle">22</text>
+<rect x="538" y="500" width="94" height="26" rx="4" class="ghost"/>
+<text x="585" y="517" class="mono" text-anchor="middle">23</text>
+<text x="40" y="547" class="tx" text-anchor="start">学生项 s（old_log_probs）</text>
+<rect x="330" y="530" width="94" height="26" rx="4" class="neutral"/>
+<text x="377" y="547" class="mono" text-anchor="middle">−0.90</text>
+<rect x="434" y="530" width="94" height="26" rx="4" class="neutral"/>
+<text x="481" y="547" class="mono" text-anchor="middle">−1.30</text>
+<rect x="538" y="530" width="94" height="26" rx="4" class="neutral"/>
+<text x="585" y="547" class="mono" text-anchor="middle">−0.20</text>
+<text x="40" y="577" class="tx" text-anchor="start">teacher 项 t</text>
+<rect x="330" y="560" width="94" height="26" rx="4" class="neutral"/>
+<text x="377" y="577" class="mono" text-anchor="middle">−0.40</text>
+<rect x="434" y="560" width="94" height="26" rx="4" class="neutral"/>
+<text x="481" y="577" class="mono" text-anchor="middle">−2.10</text>
+<rect x="538" y="560" width="94" height="26" rx="4" class="neutral"/>
+<text x="585" y="577" class="mono" text-anchor="middle">−0.30</text>
+<text x="40" y="607" class="tx" text-anchor="start">d<tspan dx="-5.64" dy="-5.04" font-size="10.2">^</tspan><tspan dx="0.84" dy="5.04"> = s − t（opd_reverse_kl）</tspan></text>
+<rect x="330" y="590" width="94" height="26" rx="4" class="acc1"/>
+<text x="377" y="607" class="mono" text-anchor="middle">−0.50</text>
+<rect x="434" y="590" width="94" height="26" rx="4" class="acc2"/>
+<text x="481" y="607" class="mono" text-anchor="middle">+0.80</text>
+<rect x="538" y="590" width="94" height="26" rx="4" class="acc2"/>
+<text x="585" y="607" class="mono" text-anchor="middle">+0.10</text>
+<text x="40" y="637" class="tx" text-anchor="start">纯蒸馏：A=0、λ=1 → Â</text>
+<rect x="330" y="620" width="94" height="26" rx="4" class="neutral"/>
+<text x="377" y="637" class="mono" text-anchor="middle">+0.50</text>
+<rect x="434" y="620" width="94" height="26" rx="4" class="neutral"/>
+<text x="481" y="637" class="mono" text-anchor="middle">−0.80</text>
+<rect x="538" y="620" width="94" height="26" rx="4" class="neutral"/>
+<text x="585" y="637" class="mono" text-anchor="middle">−0.10</text>
+<text x="40" y="667" class="tx" text-anchor="start">RL+OPD：A=0.5、λ=1 → Â</text>
+<rect x="330" y="650" width="94" height="26" rx="4" class="neutral"/>
+<text x="377" y="667" class="mono" text-anchor="middle">+1.00</text>
+<rect x="434" y="650" width="94" height="26" rx="4" class="neutral"/>
+<text x="481" y="667" class="mono" text-anchor="middle">−0.30</text>
+<rect x="538" y="650" width="94" height="26" rx="4" class="neutral"/>
+<text x="585" y="667" class="mono" text-anchor="middle">+0.40</text>
+<text x="40" y="696" class="sm" text-anchor="start">d<tspan dx="-4.93" dy="-4.41" font-size="8.92">^</tspan><tspan dx="0.74" dy="4.41">&gt;0：学生比 teacher 更偏爱该 token → Â 变小、被压低；</tspan>d<tspan dx="-4.93" dy="-4.41" font-size="8.92">^</tspan><tspan dx="0.74" dy="4.41">&lt;0 → 被抬高。单个 </tspan>d<tspan dx="-4.93" dy="-4.41" font-size="8.92">^</tspan><tspan dx="0.74" dy="4.41"> 可负，期望才是非负的 KL</tspan></text>
+<rect x="660" y="500" width="482" height="176" rx="8" class="neutral"/>
+<text x="672" y="520" class="tx" text-anchor="start">学生项就是 PPO ratio 的分母 old_log_probs，来源有三条</text>
+<text x="672" y="542" class="sm" text-anchor="start">默认：切回 actor tag 重算（OPD 关掉 logprob 复用，多一次前向）</text>
+<text x="672" y="562" class="sm" text-anchor="start">--keep-old-actor：切到 old_actor tag 重算</text>
+<text x="672" y="582" class="sm" text-anchor="start">--use-rollout-logprobs：直接用 rollout 引擎的 logprob，不重算</text>
+<rect x="672" y="594" width="458" height="70" rx="5" class="acc1"/>
+<text x="682" y="614" class="sm" text-anchor="start">Â 在 forward_only 与 advantage 计算里没有梯度，是常量</text>
+<text x="682" y="632" class="sm" text-anchor="start">训练前向只经 ρ = exp(log π_θ − old_log_probs) 求导：</text>
+<text x="682" y="650" class="sm" text-anchor="start">ρ=1 处 ∇ℓ = λ·d<tspan dx="-4.93" dy="-4.41" font-size="8.92">^</tspan><tspan dx="0.74" dy="4.41">·∇log π_θ，即 reverse-KL 的 score-function 梯度</tspan></text>
+<rect x="24" y="734" width="1132" height="244" rx="10" class="panel"/>
+<text x="40" y="758" class="pt" text-anchor="start">③ 尺度：白化与 clip 之后，λ 不再是绝对系数</text>
+<rect x="40" y="774" width="560" height="190" rx="8" class="neutral"/>
+<text x="52" y="794" class="tx" text-anchor="start">--normalize-advantages：distributed_masked_whiten（DP×CP 组）</text>
+<text x="52" y="818" class="mono" text-anchor="start">λ=1：Â = [+0.50, −0.80, −0.10]</text>
+<text x="52" y="836" class="mono" text-anchor="start">白化后 [+0.973, −1.025, +0.051]</text>
+<text x="52" y="862" class="mono" text-anchor="start">λ=2：Â = [+1.00, −1.60, −0.20]</text>
+<text x="52" y="880" class="mono" text-anchor="start">白化后 [+0.973, −1.025, +0.051]</text>
+<rect x="52" y="894" width="536" height="58" rx="5" class="acc1"/>
+<text x="62" y="914" class="sm" text-anchor="start">纯蒸馏 A=0：均值与标准差都按 |λ| 缩放，白化把它整体消去，只剩符号</text>
+<text x="62" y="934" class="sm" text-anchor="start">RL+OPD：λ 只决定任务 advantage 与 teacher 信号的相对比例</text>
+<rect x="616" y="774" width="526" height="190" rx="8" class="neutral"/>
+<text x="628" y="794" class="tx" text-anchor="start">compute_policy_loss 的 clip：token 22，d<tspan dx="-5.64" dy="-5.04" font-size="10.2">^</tspan><tspan dx="0.84" dy="5.04"> = +0.80，Â = −λ·</tspan>d<tspan dx="-5.64" dy="-5.04" font-size="10.2">^</tspan><tspan dx="0.84" dy="5.04"></tspan></text>
+<text x="628" y="814" class="sm" text-anchor="start">g = ∂ℓ/∂log π_θ（梯度下降沿 −g 更新）</text>
+<text x="880" y="838" class="mono" text-anchor="middle">ρ = 1.00</text>
+<text x="1030" y="838" class="mono" text-anchor="middle">ρ = 0.75</text>
+<text x="628" y="867" class="mono" text-anchor="start">λ=1（Â = −0.80）</text>
+<rect x="816" y="848" width="128" height="28" rx="4" class="neutral"/>
+<text x="880" y="867" class="mono" text-anchor="middle">g = 0.80</text>
+<rect x="966" y="848" width="128" height="28" rx="4" class="acc2"/>
+<text x="1030" y="867" class="mono" text-anchor="middle">g = 0.00</text>
+<text x="628" y="901" class="mono" text-anchor="start">λ=2（Â = −1.60）</text>
+<rect x="816" y="882" width="128" height="28" rx="4" class="neutral"/>
+<text x="880" y="901" class="mono" text-anchor="middle">g = 1.60</text>
+<rect x="966" y="882" width="128" height="28" rx="4" class="acc2"/>
+<text x="1030" y="901" class="mono" text-anchor="middle">g = 0.00</text>
+<text x="628" y="934" class="sm" text-anchor="start">Â&lt;0 时 ρ &lt; 1−ε = 0.80 走截断分支，梯度为 0；</text>
+<text x="628" y="952" class="sm" text-anchor="start">λ 只放大信任域内的梯度，不能把一次 rollout 的更新线性放大</text>
+<text x="24" y="1002" class="cap" text-anchor="start">阅读顺序：① 对齐 → ② 注入 → ③ 缩放。Megatron teacher 与学生走同一个 get_log_probs_and_entropy，位置规则相同。</text>
+<text x="24" y="1022" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f3750 · 复现 post_process_rewards / _build_shifted_tokens / apply_opd_kl_to_advantages / masked whiten / clip</text>
+</svg>

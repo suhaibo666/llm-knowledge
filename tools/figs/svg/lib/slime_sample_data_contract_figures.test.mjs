@@ -11,7 +11,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { CFG, appendResponseTokens, convert, model, newSample, recycledEntry, reducerDenominator } from '../slime_sample_data_contract_figures.mjs';
+import {
+  CFG, appendResponseTokens, collectAbortedGroup, convert, fmtArr3, model, newSample, normalizeByGroupIndex, postProcessRewards, recycledEntry, reducerDenominator,
+} from '../slime_sample_data_contract_figures.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const generator = join(here, '..', 'slime_sample_data_contract_figures.mjs');
@@ -38,6 +40,25 @@ function assertInsideCanvas(svg) {
   }
 }
 
+// 按字体大小粗估文字宽度（CJK 与全角符号 1em，其余 0.55em），检查文字整行不越出画布左右边缘。
+const FONT_PX = { ti: 19, su: 12, pt: 14, tx: 12, sm: 10.5, cap: 11.5, mono: 11 };
+function estimateWidth(content, cls) {
+  const size = FONT_PX[cls] ?? 12;
+  const decoded = content.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  let width = 0;
+  for (const ch of decoded) width += /[\u2E80-\uFFEF]/.test(ch) ? size : size * 0.55;
+  return width;
+}
+
+function assertTextExtentInsideCanvas(svg) {
+  const { w } = viewBox(svg);
+  for (const [, x, cls, anchor, content] of svg.matchAll(/<text x="(-?\d+(?:\.\d+)?)" y="[^"]+" class="([^"]+)" text-anchor="([^"]+)">([^<]*)<\/text>/g)) {
+    const width = estimateWidth(content, cls);
+    const x0 = anchor === 'end' ? Number(x) - width : anchor === 'middle' ? Number(x) - width / 2 : Number(x);
+    assert.ok(x0 >= 0 && x0 + width <= w, `文字估计越出画布：${content}（${x0.toFixed(0)}–${(x0 + width).toFixed(0)}）`);
+  }
+}
+
 test('append_response_tokens 的守卫与对齐规则', () => {
   const s = newSample({ groupIndex: 0, index: 0 });
   assert.throws(() => appendResponseTokens(s, { tokens: [1], logProbs: null, trainable: true }), /require rollout log probabilities/);
@@ -58,6 +79,31 @@ test('append_response_tokens 的守卫与对齐规则', () => {
   const e = recycledEntry(done, { partialRollout: true, maskOffpolicy: true });
   assert.deepEqual([e.skip, e.sample.lossMask], [true, [0, 0]]);
   assert.equal(reducerDenominator(0), 1);
+  // abort 的 partial 回收：组内至少一个成员 ABORTED 且已生成 token 才回收
+  const pending = [newSample({ groupIndex: 1, index: 2 }), newSample({ groupIndex: 1, index: 3 })];
+  assert.equal(collectAbortedGroup(pending, 7), false, '全员未吐出 token 的组不回收');
+  const zeroAborted = pending.map((x) => ({ ...x, status: 'ABORTED' }));
+  assert.equal(collectAbortedGroup(zeroAborted, 7), false, 'ABORTED 但 response_length=0 的组不回收');
+  const partial = [newSample({ groupIndex: 2, index: 4 }), newSample({ groupIndex: 2, index: 5 })];
+  appendResponseTokens(partial[0], { tokens: [5], logProbs: [-0.1], finishReason: 'abort', text: 'x' });
+  assert.equal(collectAbortedGroup(partial, 7), true);
+  assert.deepEqual(partial.map((x) => x.metadata.start_rollout_id), [7, undefined], '只给有 response 的成员写 start_rollout_id');
+});
+
+test('reward 归一化开启分支复现 _post_process_rewards 与 group_index helper', () => {
+  // 条数整齐：按位置每 n 条一组
+  const even = postProcessRewards([1, 0, 1, 0]);
+  assert.deepEqual([even.groupSize, even.numGroups], [2, 2]);
+  assert.equal(fmtArr3(even.rewards), '[0.707,-0.707,0.707,-0.707]');
+  // 条数不齐：整批一组
+  const uneven = postProcessRewards([1, 0, 0.5, 0.5, 1]);
+  assert.deepEqual([uneven.groupSize, uneven.numGroups], [5, 1]);
+  assert.equal(fmtArr3(uneven.rewards), '[0.956,-1.434,-0.239,-0.239,0.956]');
+  // 关闭 std 只居中
+  assert.equal(fmtArr3(postProcessRewards([1, 0, 1, 0], { ...CFG, grpoStdNormalization: false }).rewards), '[0.500,-0.500,0.500,-0.500]');
+  // helper 按 group_index 分组
+  const samples = [[0, 1], [0, 0], [1, 0.5], [1, 0.5], [1, 1]].map(([groupIndex, reward], index) => ({ ...newSample({ groupIndex, index }), reward }));
+  assert.equal(fmtArr3(normalizeByGroupIndex(samples)), '[0.707,-0.707,-0.577,-0.577,1.155]');
 });
 
 test('运行 ①（partial）复现源码算法', () => {
@@ -83,6 +129,9 @@ test('运行 ①（partial）复现源码算法', () => {
   assert.deepEqual(P.maskedMode.converted.rolloutMaskSums, [0, 2, 3, 3]);
   assert.deepEqual(P.zeroDenominatorSamples, [0]);
   assert.equal(P.clampedDenominator, 1);
+  assert.deepEqual(P.rawRewards, [1, 0, 1, 0]);
+  assert.equal(P.normalized.numGroups, 2);
+  assert.equal(fmtArr3(P.normalized.rewards), '[0.707,-0.707,0.707,-0.707]');
 });
 
 test('运行 ②（compact 扇出）复现源码算法', () => {
@@ -99,6 +148,11 @@ test('运行 ②（compact 扇出）复现源码算法', () => {
   assert.equal(F.denominator, 4);
   assert.equal(F.sharedDenominatorTotal, 4);
   assert.equal(F.localDenominatorTotal, 12);
+  assert.deepEqual(F.rawRewards, [1, 0, 0.5, 0.5, 1]);
+  assert.equal(F.expectedRewardCount, 4);
+  assert.equal(F.normalized.numGroups, 1);
+  assert.equal(fmtArr3(F.normalized.rewards), '[0.956,-1.434,-0.239,-0.239,0.956]');
+  assert.equal(fmtArr3(F.byGroupIndex), '[0.707,-0.707,-0.577,-0.577,1.155]');
   // 兜底 id 跳过已存在的值
   const c = convert([{ ...newSample({ groupIndex: 0, index: 0 }), rolloutId: 0, responseLength: 1, lossMask: [1] }, { ...newSample({ groupIndex: 0, index: 1 }), responseLength: 1, lossMask: [1] }]);
   assert.deepEqual(c.rolloutIds, [0, 1]);
@@ -111,7 +165,12 @@ test('生成器产出原理图，且与已跟踪的 SVG 一致', async () => {
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const svg = await readFile(join(outputDir, 'slime_sample_data_contract.svg'), 'utf8');
     assertInsideCanvas(svg);
+    assertTextExtentInsideCanvas(svg);
     assert.match(svg, /start_rollout_id=3/);
+    assert.match(svg, /P0 有 ABORTED 且已生成 token 的成员/);
+    assert.match(svg, /24 为 EOS → stop → COMPLETED/);
+    assert.match(svg, /rewards 归一化开（5 ≠ 4 → 一组）/);
+    assert.match(svg, />1\.155</);
     assert.match(svg, /max_new_tokens = 4 − 2 = 2/);
     assert.match(svg, /rollout_id 兜底：已存在 \{2\}/);
     assert.match(svg, /10\/4 \+ 6\/4 = 4/);
@@ -147,6 +206,13 @@ test('正文引用的数值与模型一致', async () => {
     `micro-batch ${F.fragmentMbs[0]} 与 ${F.fragmentMbs[1]}`,
     `${F.schedule.steps[0].rollouts.length} // ${F.globalBatchSize} = ${F.schedule.numSteps}`,
     `clamp_min(denom, ${P.clampedDenominator})`,
+    '实例设 24 为 EOS，finish_reason=stop → COMPLETED',
+    `reward \`${fmt(P.rawRewards)}\``,
+    `\`${fmtArr3(P.normalized.rewards)}\``,
+    `reward \`${fmt(F.rawRewards)}\``,
+    `不等于 \`${CFG.nSamplesPerPrompt}×${CFG.rolloutBatchSize}=${F.expectedRewardCount}\``,
+    `\`${fmtArr3(F.normalized.rewards)}\``,
+    `\`${fmtArr3(F.byGroupIndex)}\``,
   ]) {
     assert.ok(page.includes(needle), `正文必须出现 ${needle}`);
   }

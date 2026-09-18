@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="650" viewBox="0 0 1180 650" role="img" aria-labelledby="title desc">
+<title id="title">slime spec_accept_rate：锁定镜像的键不兼容，以及键兼容时按样本等权平均的归约</title>
+<desc id="desc">面板①列出 SGLang v0.5.15.post1 在请求结束时写入 meta_info 的投机指标键与 Sample.SpecInfo.add 读取的键，读不到的两个键让 rollout/spec_accept_rate 为 0。面板②用两条样本（B 由 partial rollout 的两段组成）复现 SpecInfo 累加原始计数、按样本求比值、再等权平均的过程，并与按 token 汇总的比值对照。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#C3651F"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#8C95A3"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mo{font-family:"JetBrains Mono","Cascadia Mono",Consolas,monospace;font-size:10.5px;fill:#2A313B}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .b{font-weight:700}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .fwd{fill:none;stroke:#8C95A3;stroke-width:1.3;marker-end:url(#arrowAux)}
+  .cut{fill:none;stroke:#C3651F;stroke-width:2.2}
+</style><rect width="1180" height="650" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">spec_accept_rate 是"样本比值的等权平均"，而锁定镜像里它读到的分子分母都是 0</text>
+<text x="24" y="56" class="su" text-anchor="start">示例：--sglang-speculative-num-draft-tokens 4，SGLang 按 verify 次数 × (4 − 1) = 每次 3 个记提议 draft；两条样本，B 被 partial rollout 切成两段</text>
+<rect x="24" y="72" width="1132" height="232" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① 锁定镜像：请求结束时 SGLang 写出的键 vs slime 读取的键</text>
+<text x="40" y="120" class="sm" text-anchor="start">TokenizerManager._calculate_spec_decoding_metrics（上游；slime 补丁未改这段）</text>
+<rect x="40" y="128" width="470" height="26" rx="5" class="dep"/>
+<text x="50" y="145" class="mo" text-anchor="start">spec_accept_rate / spec_accept_length   单请求比值（slime 不读）</text>
+<rect x="40" y="160" width="470" height="26" rx="5" class="dep"/>
+<text x="50" y="177" class="mo" text-anchor="start">spec_num_correct_drafts / spec_num_proposed_drafts   原始计数</text>
+<rect x="40" y="192" width="470" height="26" rx="5" class="dep"/>
+<text x="50" y="209" class="mo" text-anchor="start">spec_accepted_drafts / spec_proposed_drafts   向后兼容别名</text>
+<rect x="40" y="224" width="470" height="26" rx="5" class="dep"/>
+<text x="50" y="241" class="mo" text-anchor="start">spec_verify_ct   原始计数</text>
+<rect x="40" y="256" width="470" height="26" rx="5" class="dep"/>
+<text x="50" y="273" class="mo" text-anchor="start">completion_tokens   原始计数</text>
+<text x="620" y="120" class="sm" text-anchor="start">slime/utils/types.py::Sample.SpecInfo.add：meta_info.get(key, 0)</text>
+<rect x="620" y="128" width="300" height="26" rx="5" class="acc2"/>
+<text x="630" y="145" class="mo" text-anchor="start">spec_accept_token_num   无此键 → 0</text>
+<rect x="620" y="160" width="300" height="26" rx="5" class="acc2"/>
+<text x="630" y="177" class="mo" text-anchor="start">spec_draft_token_num   无此键 → 0</text>
+<rect x="620" y="192" width="300" height="26" rx="5" class="neutral"/>
+<text x="630" y="209" class="mo" text-anchor="start">spec_verify_ct   匹配</text>
+<rect x="620" y="224" width="300" height="26" rx="5" class="neutral"/>
+<text x="630" y="241" class="mo" text-anchor="start">completion_tokens   匹配</text>
+<path d="M512 237 L618 205" class="main"/>
+<path d="M512 269 L618 237" class="main"/>
+<rect x="940" y="128" width="200" height="122" rx="5" class="acc2"/>
+<text x="1040" y="163" class="tx" text-anchor="middle">每条样本</text>
+<text x="1040" y="178" class="mo" text-anchor="middle">rate = 0 / 0 → 0.0</text>
+<text x="1040" y="193" class="mo" text-anchor="middle">A length = 4.00</text>
+<text x="1040" y="208" class="mo" text-anchor="middle">B length = 1.70</text>
+<text x="1040" y="223" class="mo" text-anchor="middle">日志 rate = 0.0</text>
+<text x="40" y="294" class="sm" text-anchor="start">这两个键只出现在旧的 docker/patch/v0.5.5.post1/sglang.patch；v0.5.6 起的补丁集与 latest 都不再提供。tests/test_sample.py 只用合成 meta_info 验证开关。</text>
+<rect x="24" y="316" width="1132" height="300" rx="10" class="panel"/>
+<text x="40" y="340" class="pt" text-anchor="start">② 若键兼容：SpecInfo 先累加原始计数，再按样本求比值，_compute_spec_metrics 最后对样本等权平均</text>
+<rect x="40" y="358" width="146" height="26" rx="3" class="ghost"/>
+<text x="113" y="375" class="sm" text-anchor="middle">请求段</text>
+<rect x="190" y="358" width="146" height="26" rx="3" class="ghost"/>
+<text x="263" y="375" class="sm" text-anchor="middle">spec_verify_ct  V</text>
+<rect x="340" y="358" width="146" height="26" rx="3" class="ghost"/>
+<text x="413" y="375" class="sm" text-anchor="middle">被接受 draft  A</text>
+<rect x="490" y="358" width="166" height="26" rx="3" class="ghost"/>
+<text x="573" y="375" class="sm" text-anchor="middle">提议 draft  D = V×3</text>
+<rect x="660" y="358" width="166" height="26" rx="3" class="ghost"/>
+<text x="743" y="375" class="sm" text-anchor="middle">completion_tokens  C</text>
+<rect x="830" y="358" width="156" height="26" rx="3" class="ghost"/>
+<text x="908" y="375" class="sm" text-anchor="middle">样本 rate = ΣA / ΣD</text>
+<rect x="990" y="358" width="146" height="26" rx="3" class="ghost"/>
+<text x="1063" y="375" class="sm" text-anchor="middle">样本 length = ΣC / ΣV</text>
+<rect x="40" y="390" width="146" height="26" rx="3" class="neutral"/>
+<text x="113" y="407" class="mo" text-anchor="middle">A</text>
+<rect x="190" y="390" width="146" height="26" rx="3" class="neutral"/>
+<text x="263" y="407" class="mo" text-anchor="middle">2</text>
+<rect x="340" y="390" width="146" height="26" rx="3" class="neutral"/>
+<text x="413" y="407" class="mo" text-anchor="middle">5</text>
+<rect x="490" y="390" width="166" height="26" rx="3" class="neutral"/>
+<text x="573" y="407" class="mo" text-anchor="middle">6</text>
+<rect x="660" y="390" width="166" height="26" rx="3" class="neutral"/>
+<text x="743" y="407" class="mo" text-anchor="middle">8</text>
+<rect x="830" y="390" width="156" height="26" rx="3" class="acc1"/>
+<text x="908" y="407" class="mo" text-anchor="middle">5/6 = 0.833</text>
+<rect x="990" y="390" width="146" height="26" rx="3" class="acc1"/>
+<text x="1063" y="407" class="mo" text-anchor="middle">8/2 = 4.00</text>
+<rect x="40" y="422" width="146" height="26" rx="3" class="neutral"/>
+<text x="113" y="439" class="mo" text-anchor="middle">B 段 1</text>
+<rect x="190" y="422" width="146" height="26" rx="3" class="neutral"/>
+<text x="263" y="439" class="mo" text-anchor="middle">8</text>
+<rect x="340" y="422" width="146" height="26" rx="3" class="neutral"/>
+<text x="413" y="439" class="mo" text-anchor="middle">4</text>
+<rect x="490" y="422" width="166" height="26" rx="3" class="neutral"/>
+<text x="573" y="439" class="mo" text-anchor="middle">24</text>
+<rect x="660" y="422" width="166" height="26" rx="3" class="neutral"/>
+<text x="743" y="439" class="mo" text-anchor="middle">13</text>
+<rect x="830" y="422" width="156" height="26" rx="3" class="neutral"/>
+<text x="908" y="439" class="mo" text-anchor="middle"></text>
+<rect x="990" y="422" width="146" height="26" rx="3" class="neutral"/>
+<text x="1063" y="439" class="mo" text-anchor="middle"></text>
+<rect x="40" y="454" width="146" height="26" rx="3" class="neutral"/>
+<text x="113" y="471" class="mo" text-anchor="middle">B 段 2</text>
+<rect x="190" y="454" width="146" height="26" rx="3" class="neutral"/>
+<text x="263" y="471" class="mo" text-anchor="middle">12</text>
+<rect x="340" y="454" width="146" height="26" rx="3" class="neutral"/>
+<text x="413" y="471" class="mo" text-anchor="middle">8</text>
+<rect x="490" y="454" width="166" height="26" rx="3" class="neutral"/>
+<text x="573" y="471" class="mo" text-anchor="middle">36</text>
+<rect x="660" y="454" width="166" height="26" rx="3" class="neutral"/>
+<text x="743" y="471" class="mo" text-anchor="middle">21</text>
+<rect x="830" y="454" width="156" height="26" rx="3" class="neutral"/>
+<text x="908" y="471" class="mo" text-anchor="middle"></text>
+<rect x="990" y="454" width="146" height="26" rx="3" class="neutral"/>
+<text x="1063" y="471" class="mo" text-anchor="middle"></text>
+<rect x="40" y="486" width="146" height="26" rx="3" class="neutral"/>
+<text x="113" y="503" class="mo" text-anchor="middle">B 累加</text>
+<rect x="190" y="486" width="146" height="26" rx="3" class="neutral"/>
+<text x="263" y="503" class="mo" text-anchor="middle">20</text>
+<rect x="340" y="486" width="146" height="26" rx="3" class="neutral"/>
+<text x="413" y="503" class="mo" text-anchor="middle">12</text>
+<rect x="490" y="486" width="166" height="26" rx="3" class="neutral"/>
+<text x="573" y="503" class="mo" text-anchor="middle">60</text>
+<rect x="660" y="486" width="166" height="26" rx="3" class="neutral"/>
+<text x="743" y="503" class="mo" text-anchor="middle">34</text>
+<rect x="830" y="486" width="156" height="26" rx="3" class="acc1"/>
+<text x="908" y="503" class="mo" text-anchor="middle">12/60 = 0.200</text>
+<rect x="990" y="486" width="146" height="26" rx="3" class="acc1"/>
+<text x="1063" y="503" class="mo" text-anchor="middle">34/20 = 1.70</text>
+<rect x="40" y="528" width="540" height="58" rx="5" class="acc1"/>
+<text x="310" y="546" class="tx" text-anchor="middle">slime 日志 rollout/spec_accept_rate（等权）</text>
+<text x="310" y="561" class="mo" text-anchor="middle">(0.833 + 0.200) / 2 = 0.517</text>
+<text x="310" y="576" class="mo" text-anchor="middle">rollout/spec_accept_length = (4.00 + 1.70) / 2 = 2.850</text>
+<rect x="600" y="528" width="540" height="58" rx="5" class="ghost"/>
+<text x="870" y="546" class="tx" text-anchor="middle">对照：按 token 汇总（slime 不这样算）</text>
+<text x="870" y="561" class="mo" text-anchor="middle">(5 + 12) / (6 + 60) = 0.258</text>
+<text x="870" y="576" class="mo" text-anchor="middle">(8 + 34) / (2 + 20) = 1.909</text>
+<text x="40" y="608" class="sm" text-anchor="start">短样本 A 与长样本 B 权重相同，所以等权 rate 0.517 高于按 token 的 0.258；length 含每次 verify 的 bonus token，不能当作"每次 verify 接受的 draft 数"。</text>
+<text x="24" y="638" class="cap" text-anchor="start">阅读顺序：① 先确认键能读到 → ② 再按"样本等权"解读 rate 与 length；两者都不是端到端吞吐。</text>
+</svg>

@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { GSPO_DIFF, LOSS, RAW_REWARDS, ROLLOUT_MASK_SUMS, gspoReplay, ledger, localNumerator, model, ppoRewardSlot, rewardPostProcess, sumOfSampleMean, threeMeans } from '../slime_loss_reducer_figures.mjs';
+import { GSPO_DIFF, KL_DEMO, LOSS, RAW_REWARDS, ROLLOUT_MASK_SUMS, fmtAffVec, gspoReplay, klEntry, ledger, localNumerator, model, ppoRewardSlot, rewardPostProcess, sumOfSampleMean, threeMeans } from '../slime_loss_reducer_figures.mjs';
 import { SAMPLES } from '../slime_megatron_train_step_figures.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +100,28 @@ test('三种估计量、reward 分组回落与账本数值', () => {
   approx(sumOfSampleMean([SAMPLES[3]], [10], 0, 2), 0);
 });
 
+test('KL 的 reward 侧入口按估计器分派（loss.py::compute_advantages_and_returns）', () => {
+  const k = klEntry();
+  const z = klEntry({ ...KL_DEMO, klCoef: 0 });
+  // grpo / gspo / cispo：get_grpo_returns 只用 kl 的形状，kl_coef 取 0 与 0.1 得到同一 returns
+  assert.deepEqual(k.grpo, z.grpo);
+  assert.equal(fmtAffVec(k.grpo), '[r, r]');
+  // 三个整形分支
+  assert.equal(fmtAffVec(k.rppBaseline), '[r-0.02, r-0.04]');
+  assert.equal(fmtAffVec(k.ppoRewards), '[-0.02, r-0.04]');
+  assert.equal(fmtAffVec(k.rppReturns), '[r-0.06, r-0.04]');
+  // kl_coef=0 时三条整形分支都不再带 KL 项
+  assert.equal(fmtAffVec(z.rppBaseline), '[r, r]');
+  assert.equal(fmtAffVec(z.ppoRewards), '[0, r]');
+  assert.equal(fmtAffVec(z.rppReturns), '[r, r]');
+  // reinforce_plus_plus 先乘 loss mask，ppo 与 r++baseline 不乘：s0 的工具 token（下标 3）只在前者不带 KL 惩罚
+  const s0 = klEntry({ sample: 's0', kl: Array(8).fill(0.1), klCoef: 1, gamma: 1 });
+  approx(s0.rppReturns[3].c, s0.rppReturns[4].c);
+  approx(s0.ppoRewards[3].c, -0.1);
+  approx(s0.rppBaseline[3].c, -0.1);
+  assert.deepEqual([s0.rppReturns[7].r, s0.ppoRewards[7].r], [1, 1]);
+});
+
 test('序列统计量的 CP 重建与 PPO reward 落点', () => {
   const g = gspoReplay();
   assert.deepEqual(g.ranks.map((r) => r.own), [[6, 7], [0, 1, 2, 3, 4, 5]]);
@@ -115,8 +137,11 @@ test('序列统计量的 CP 重建与 PPO reward 落点', () => {
   assert.deepEqual([slots.s0.outcome, slots.s0.slot], ['ok', 7]);
   assert.deepEqual([slots.s2a.outcome, slots.s2a.slot], ['ok', 3]);
   for (const n of ['s1', 's2b', 's3']) assert.equal(slots[n].outcome, 'IndexError', n);
+  // 判据不总成立：s1 total 6、chunk 2、pad 2；total=2 时判据为假但落点正确
+  assert.deepEqual([slots.s1.totalLen, slots.s1.chunk, slots.s1.pad, slots.s1.tailCovers], [6, 2, 2, false]);
+  for (const cp of [2, 4]) assert.deepEqual([ppoRewardSlot(2, 1, cp).tailCovers, ppoRewardSlot(2, 1, cp).outcome], [false, 'ok']);
   assert.deepEqual([slots['T10/R8'].outcome, slots['T10/R8'].own, slots['T10/R8'].slot], ['misplaced', [0, 1], 1]);
-  // 推导的判据：cp0 尾段覆盖最后一个 response logit ⇔ chunk ≥ pad + 2；T ≥ 3 时与逐位复现一致（T=2 时末 logit 落在 cp0 头段）
+  // 推导的判据：cp0 尾段覆盖最后一个 response logit ⇔ chunk ≥ pad + 2；cp=2/4、T ≥ 3 时与逐位复现一致（判据本身不总成立，如 s1）；T=2 时末 logit 在头段、落点正确
   for (const cp of [2, 4]) {
     for (let T = 3; T <= 48; T += 1) {
       for (let R = 1; R < T; R += 1) {
@@ -142,7 +167,13 @@ test('生成器产出原理图，且与已跟踪的 SVG 一致', async () => {
     assert.match(svg, /6 \/ 1 = 6：拒得越多权重越大/);
     assert.match(svg, /masked 均值 1\.4 \/ 7 = 0\.2/);
     assert.match(svg, /错位 → 1（应为 7）/);
+    assert.match(svg, /cp=2、total ≥ 3 时：尾段覆盖末 logit ⇔ chunk ≥ pad \+ 2；total=2 落点正确/);
     assert.match(svg, /→ 2 × 50 \/ 42 = 2\.381/);
+    assert.match(svg, /returns \[r, r\]/);
+    assert.match(svg, /adv \[r-0\.02, r-0\.04\]/);
+    assert.match(svg, /reward \[-0\.02, r-0\.04\]/);
+    assert.match(svg, /returns \[r-0\.06, r-0\.04\]/);
+    assert.match(svg, /kl_coef=0\.1，s3 的 KL=\[0\.2, 0\.4\]/);
     assert.doesNotMatch(svg, /\[\[\d+_|\[\[[A-Za-z一-鿿]/, 'SVG 不得泄漏 wikilink 标记');
     const tracked = await readFile(trackedSvg, 'utf8');
     assert.equal(tracked, svg, '已跟踪的 SVG 必须由当前生成器重新生成');
@@ -154,7 +185,7 @@ test('生成器产出原理图，且与已跟踪的 SVG 一致', async () => {
 test('正文引用的数值与模型一致', async () => {
   const page = await readFile(pagePath, 'utf8');
   const m = model();
-  const T = m.means; const L = m.ledger; const rj = m.rejection; const g = m.gspo;
+  const T = m.means; const L = m.ledger; const rj = m.rejection; const g = m.gspo; const K = m.klEntry;
   const slots = Object.fromEntries(m.ppoSlots.map((p) => [p.name, p]));
   const okNames = m.ppoSlots.filter((p) => p.outcome === 'ok' && p.name !== 'T10/R8').map((p) => p.name);
   const errNames = m.ppoSlots.filter((p) => p.outcome === 'IndexError').map((p) => p.name);
@@ -187,8 +218,16 @@ test('正文引用的数值与模型一致', async () => {
     `\`${Number(g.num.toFixed(3))}/${g.den} = ${Number(g.seqKl.toFixed(3))}\``,
     `\`${g.ranks.map((r) => Number(r.localMean.toFixed(3))).join('` 与 `')}\``,
     '`chunk ≥ pad + 2`',
+    '该判据在 cp=2、total ≥ 3 时适用',
+    'total=2 时末 logit 在头段、落点正确',
     `本例 ${okNames.join(' 与 ')} 满足；${errNames.join('、')} 在 cp0 本地为空`,
     `reward 落在下标 ${slots['T10/R8'].slot} 而非 ${slots['T10/R8'].responseLen - 1}`,
+    `\`kl_coef=${K.klCoef}\``,
+    `\`[${K.kl.join(', ')}]\``,
+    `\`${fmtAffVec(K.grpo)}\``,
+    `\`${fmtAffVec(K.rppBaseline)}\``,
+    `\`${fmtAffVec(K.ppoRewards)}\``,
+    `\`${fmtAffVec(K.rppReturns)}\``,
   ]) {
     assert.ok(page.includes(needle), `正文必须出现 ${needle}`);
   }

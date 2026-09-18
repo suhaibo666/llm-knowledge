@@ -1,4 +1,4 @@
-// Conceptual responsibility map, pinned to THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9.
+// Conceptual responsibility map, pinned to THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e.
 // Four bands contain the same eight modules as slime 01. Band arrows show the
 // main dependency direction, not runtime order or a strict no-skip layer rule.
 // Optional extensions and cross-cutting controls connect at the right boundary.
@@ -23,14 +23,14 @@ for(const [title,y,items] of layers){
  items.forEach(([name,sub],i)=>{const x=42+i*(width+gap);rect(x,y+40,width,54,name==='样本与批次'||name==='权重发布'?'acc1':'neutral');text(x+width/2,y+62,name,'label','middle');text(x+width/2,y+83,sub,'sub','middle');});
  arrow(`M419 ${y+108} V${y+129}`);
 }
-rect(24,610,790,78,'neutral');text(42,636,'外部运行时边界','heading');text(42,662,'Ray：资源与远程对象    Megatron：训练执行    SGLang：生成服务    PyTorch：张量','sub');
+rect(24,610,790,78,'neutral');text(42,636,'外部运行时边界','heading');text(42,662,'Ray：资源与远程对象 · Megatron：训练执行 · SGLang：生成服务 · PyTorch：张量','sub');
 arrow('M419 688 V711');
 rect(24,714,790,62,'ghost');text(42,740,'设备与通信基础设施','heading');text(42,762,'GPU / 设备运行时 / 集合通信 / 网络 / 文件系统','sub');
-rect(858,214,238,112,'acc2');text(877,241,'横切能力','heading');text(877,268,'日志 · trace · 指标 · debug','sub');text(877,293,'检查 · 健康监测 · 恢复','sub');text(877,315,'挂接控制与执行边界','sub');
+rect(858,214,238,112,'acc2');text(877,241,'横切能力','heading');text(877,268,'日志 · 指标 · trace · dump','sub');text(877,293,'健康监测 · 恢复 · 加速器后端','sub');text(877,315,'挂接控制与执行边界','sub');
 arrow('M858 254 H818','aux');
 arrow('M868 326 H834 V532 H818','aux');
 rect(858,346,238,110,'neutral');text(877,373,'侧接扩展','heading');text(877,400,'custom generate / rollout','sub');text(877,425,'agent · reward · environment','sub');text(877,446,'在 Sample 等合同处接入','sub');
 arrow('M858 389 H818','aux');
 text(858,633,'外部库内部实现','label');text(858,657,'不是本页已核验的源码','sub');text(858,689,'主线：软件责任逐层落实','sub');text(858,713,'虚线：可选或横切接入','sub');text(858,737,'蓝框：两个关键交界','sub');
-text(24,800,'源码基线：THUDM/slime @ 681b3adca541 · 分层为依据实现重建的设计分析','sub');
+text(24,800,'源码基线：THUDM/slime @ 4c193f1f3750 · 分层为依据实现重建的设计分析','sub');
 out.push('</svg>');console.log(out.join('\n'));

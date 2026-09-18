@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="892" viewBox="0 0 1180 892" role="img" aria-labelledby="title desc">
+<title id="title">slime 在线 MTP 发布：PP 与 EP 下的全局改名，以及三条 transport 把同一批张量交给哪个 SGLang runner</title>
+<desc id="desc">面板①在 PP=2、EP=2、4 层 decoder、1 层 MTP、8 个 expert 的布局上展示每个 rank 的层号与 expert 偏移、三个参数的本地名到全局名到 HF 名、把 decoder 偏移错加到 MTP 的后果，以及 embedding 副本按较小 src_rank 去重。面板②展示 tensor、disk、distributed 三个入口在 SGLang v0.5.15.post1 加 slime 补丁下分别更新 target 与 draft 的情况。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#C3651F"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#8C95A3"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mo{font-family:"JetBrains Mono","Cascadia Mono",Consolas,monospace;font-size:10.5px;fill:#2A313B}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .b{font-weight:700}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .fwd{fill:none;stroke:#8C95A3;stroke-width:1.3;marker-end:url(#arrowAux)}
+  .cut{fill:none;stroke:#C3651F;stroke-width:2.2}
+</style><rect width="1180" height="892" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">MTP 参数进了发布列表，但层号规则与 transport 各自决定 draft 是否真的拿到新权重</text>
+<text x="24" y="56" class="su" text-anchor="start">示例：GLM4-MoE 结构，num_layers = 4，mtp_num_layers = 1，num_experts = 8；训练 PP = 2、EP = 2，共 4 个 rank；名字省略 module.module. 前缀</text>
+<rect x="24" y="72" width="1132" height="472" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① named_params_and_buffers：decoder 层号加 layer_offset、expert 下标加 expert_offset，MTP 层号保持从 0 开始</text>
+<text x="150" y="124" class="sm" text-anchor="middle">EP rank 0（offset 0）</text>
+<text x="410" y="124" class="sm" text-anchor="middle">EP rank 1（offset 4）</text>
+<rect x="40" y="132" width="250" height="118" rx="6" class="ghost"/>
+<text x="50" y="150" class="tx" text-anchor="start">rank 0：PP 0 · EP 0</text>
+<text x="50" y="168" class="sm" text-anchor="start">layer_offset = 0，expert_offset = 0</text>
+<text x="50" y="188" class="sm" text-anchor="start">decoder 本地 0–1 → 全局 0–1</text>
+<text x="50" y="206" class="sm" text-anchor="start">expert 本地 0–3 → 全局 0–3</text>
+<text x="50" y="224" class="sm" text-anchor="start">无 MTP（只在最后一个 PP stage 构建）</text>
+<text x="50" y="242" class="sm" text-anchor="start">embedding.word_embeddings.weight ✓</text>
+<rect x="300" y="132" width="250" height="118" rx="6" class="ghost"/>
+<text x="310" y="150" class="tx" text-anchor="start">rank 1：PP 0 · EP 1</text>
+<text x="310" y="168" class="sm" text-anchor="start">layer_offset = 0，expert_offset = 4</text>
+<text x="310" y="188" class="sm" text-anchor="start">decoder 本地 0–1 → 全局 0–1</text>
+<text x="310" y="206" class="sm" text-anchor="start">expert 本地 0–3 → 全局 4–7</text>
+<text x="310" y="224" class="sm" text-anchor="start">无 MTP（只在最后一个 PP stage 构建）</text>
+<text x="310" y="242" class="sm" text-anchor="start">embedding.word_embeddings.weight ✓</text>
+<rect x="40" y="260" width="250" height="118" rx="6" class="neutral"/>
+<text x="50" y="278" class="tx" text-anchor="start">rank 2：PP 1 · EP 0</text>
+<text x="50" y="296" class="sm" text-anchor="start">layer_offset = 2，expert_offset = 0</text>
+<text x="50" y="316" class="sm" text-anchor="start">decoder 本地 0–1 → 全局 2–3</text>
+<text x="50" y="334" class="sm" text-anchor="start">expert 本地 0–3 → 全局 0–3</text>
+<text x="50" y="352" class="sm" text-anchor="start">mtp.layers.0 → 仍为 0，expert 加偏移</text>
+<text x="50" y="370" class="sm" text-anchor="start">embedding.word_embeddings.weight ✓</text>
+<rect x="300" y="260" width="250" height="118" rx="6" class="neutral"/>
+<text x="310" y="278" class="tx" text-anchor="start">rank 3：PP 1 · EP 1</text>
+<text x="310" y="296" class="sm" text-anchor="start">layer_offset = 2，expert_offset = 4</text>
+<text x="310" y="316" class="sm" text-anchor="start">decoder 本地 0–1 → 全局 2–3</text>
+<text x="310" y="334" class="sm" text-anchor="start">expert 本地 0–3 → 全局 4–7</text>
+<text x="310" y="352" class="sm" text-anchor="start">mtp.layers.0 → 仍为 0，expert 加偏移</text>
+<text x="310" y="370" class="sm" text-anchor="start">embedding.word_embeddings.weight ✓</text>
+<text x="40" y="412" class="sm" text-anchor="start">get_mtp_num_layers_to_build：无自定义 layout 时 MTP 只在最后一个 PP stage；</text>
+<text x="40" y="428" class="sm" text-anchor="start">GPTModel.__init__：pre_process 或 mtp_process 的 stage 都建 embedding（Megatron 上游）</text>
+<text x="570" y="140" class="tx" text-anchor="start">rank 3 的 decoder expert</text>
+<rect x="570" y="146" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="161" class="mo" text-anchor="start">本地  decoder.layers.1.mlp.experts.linear_fc1.weight3</text>
+<rect x="570" y="172" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="187" class="mo" text-anchor="start">全局  decoder.layers.3.mlp.experts.linear_fc1.weight7</text>
+<rect x="570" y="198" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="213" class="mo" text-anchor="start">HF    model.layers.3.mlp.experts.7.gate_proj.weight …</text>
+<text x="570" y="242" class="tx" text-anchor="start">rank 3 的 MTP expert</text>
+<rect x="570" y="248" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="263" class="mo" text-anchor="start">本地  mtp.layers.0.transformer_layer.mlp.experts.linear_fc1.weight3</text>
+<rect x="570" y="274" width="572" height="22" rx="5" class="acc1"/>
+<text x="580" y="289" class="mo" text-anchor="start">全局  mtp.layers.0.transformer_layer.mlp.experts.linear_fc1.weight7</text>
+<rect x="570" y="300" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="315" class="mo" text-anchor="start">HF    model.layers.4.mlp.experts.7.gate_proj.weight …</text>
+<text x="570" y="344" class="tx" text-anchor="start">rank 3 的 MTP eh_proj</text>
+<rect x="570" y="350" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="365" class="mo" text-anchor="start">本地  mtp.layers.0.eh_proj.weight</text>
+<rect x="570" y="376" width="572" height="22" rx="5" class="acc1"/>
+<text x="580" y="391" class="mo" text-anchor="start">全局  mtp.layers.0.eh_proj.weight</text>
+<rect x="570" y="402" width="572" height="22" rx="5" class="neutral"/>
+<text x="580" y="417" class="mo" text-anchor="start">HF    model.layers.4.eh_proj.weight</text>
+<rect x="570" y="436" width="572" height="44" rx="5" class="acc2"/>
+<text x="580" y="454.5" class="mo" text-anchor="start">若把 layer_offset = 2 也加到 MTP：mtp.layers.2 → model.layers.6</text>
+<text x="580" y="469.5" class="sm" text-anchor="start">转换器还要再加 num_layers = 4；HF checkpoint 只有 model.layers.0–4</text>
+<rect x="570" y="488" width="572" height="44" rx="5" class="neutral"/>
+<text x="580" y="506.5" class="mo" text-anchor="start">PP group {1, 3}：embedding.word_embeddings.weight 在 rank 1 与 3 同名</text>
+<text x="580" y="521.5" class="sm" text-anchor="start">rank 3 那份是 MTP 段副本；交换 PP 元数据时保留较小 src_rank = 1</text>
+<rect x="24" y="556" width="1132" height="308" rx="10" class="panel"/>
+<text x="40" y="580" class="pt" text-anchor="start">② 同一批 HF 张量到达哪个 runner（EAGLEWorkerV2；SGLang v0.5.15.post1 上游 + slime 补丁，均为读源码结论，未运行）</text>
+<rect x="40" y="598" width="260" height="52" rx="5" class="neutral"/>
+<text x="170" y="620.5" class="mo" text-anchor="middle">UpdateWeightFromTensor</text>
+<text x="170" y="635.5" class="sm" text-anchor="middle">--colocate 且 engine 在 actor GPU 区间内</text>
+<path d="M302 624 L330 624" class="main"/>
+<rect x="334" y="608" width="214" height="32" rx="5" class="neutral"/>
+<text x="441" y="628" class="mo" text-anchor="middle">/update_weights_from_tensor</text>
+<path d="M550 624 L562 624" class="main"/>
+<rect x="566" y="598" width="366" height="52" rx="5" class="dep"/>
+<text x="749" y="620.5" class="mo" text-anchor="middle">SchedulerWeightUpdaterManager</text>
+<text x="749" y="635.5" class="sm" text-anchor="middle">.update_weights_from_tensor → EAGLEWorkerV2 同名方法</text>
+<path d="M934 624 L946 624" class="main"/>
+<rect x="950" y="606" width="192" height="36" rx="5" class="acc1"/>
+<text x="1046" y="628" class="tx" text-anchor="middle">draft_runner ✓ → target ✓</text>
+<rect x="40" y="668" width="260" height="52" rx="5" class="neutral"/>
+<text x="170" y="690.5" class="mo" text-anchor="middle">UpdateWeightFromDisk / …DiskDelta</text>
+<text x="170" y="705.5" class="sm" text-anchor="middle">full+disk；delta 先 /pull_weights（补丁）</text>
+<path d="M302 694 L330 694" class="main"/>
+<rect x="334" y="678" width="214" height="32" rx="5" class="neutral"/>
+<text x="441" y="698" class="mo" text-anchor="middle">/update_weights_from_disk</text>
+<path d="M550 694 L562 694" class="main"/>
+<rect x="566" y="668" width="366" height="52" rx="5" class="dep"/>
+<text x="749" y="690.5" class="mo" text-anchor="middle">SchedulerWeightUpdaterManager</text>
+<text x="749" y="705.5" class="sm" text-anchor="middle">.update_weights_from_disk → tp_worker，再 draft_worker</text>
+<path d="M934 694 L946 694" class="main"/>
+<rect x="950" y="676" width="192" height="36" rx="5" class="acc1"/>
+<text x="1046" y="698" class="tx" text-anchor="middle">target ✓ → draft ✓</text>
+<rect x="40" y="738" width="260" height="52" rx="5" class="neutral"/>
+<text x="170" y="760.5" class="mo" text-anchor="middle">UpdateWeightFromDistributed</text>
+<text x="170" y="775.5" class="sm" text-anchor="middle">或 colocate 下越出 actor 区间的 engine</text>
+<path d="M302 764 L330 764" class="main"/>
+<rect x="334" y="748" width="214" height="32" rx="5" class="neutral"/>
+<text x="441" y="768" class="mo" text-anchor="middle">/update_weights_from_distributed</text>
+<path d="M550 764 L562 764" class="main"/>
+<rect x="566" y="738" width="366" height="52" rx="5" class="dep"/>
+<text x="749" y="760.5" class="mo" text-anchor="middle">SchedulerWeightUpdaterManager</text>
+<text x="749" y="775.5" class="sm" text-anchor="middle">.update_weights_from_distributed → 只调 tp_worker</text>
+<path d="M934 764 L946 764" class="cost"/>
+<rect x="950" y="746" width="192" height="36" rx="5" class="acc2"/>
+<text x="1046" y="768" class="tx" text-anchor="middle">target ✓，draft 无调用 ✕</text>
+<rect x="40" y="808" width="1102" height="44" rx="5" class="ghost"/>
+<text x="50" y="826.5" class="sm" text-anchor="start">post_process_weights（sglang.patch 新增，只在 compressed-tensors 时调用）：先调 tp_worker；只有 draft_worker 有同名方法才转发，而 EAGLEWorkerV2 没有 → draft 侧跳过</text>
+<text x="50" y="841.5" class="sm" text-anchor="start">--enable-multi-layer-eagle（MiMoV2、Step3p5 在 EAGLE 下自动打开）选 MultiLayerEagleWorkerV2：锁定源码里没有 update_weights_from_tensor，本图 tensor 行不覆盖它</text>
+<text x="24" y="880" class="cap" text-anchor="start">阅读顺序：① 名字与层号只决定"转换器能否对上 HF 名" → ② 名字对上以后，还要看 transport 入口是否把张量交给 draft runner。</text>
+</svg>

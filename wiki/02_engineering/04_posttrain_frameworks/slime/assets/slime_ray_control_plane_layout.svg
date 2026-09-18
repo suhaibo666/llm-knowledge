@@ -137,31 +137,41 @@
 <rect x="658" y="698" width="186" height="22" rx="4" class="acc1"/>
 <text x="748" y="713" class="sm" text-anchor="middle">engine 1 · 0.2 · base_gpu_id=2</text>
 <text x="40" y="738" class="cap" text-anchor="start">无重叠：group 起点 4 ≥ Megatron GPU 数 4 → needs_offload=False；若全局开了 offload_rollout，则 setdefault enable_memory_saver=False</text>
-<rect x="900" y="80" width="256" height="560" rx="10" class="panel"/>
+<rect x="900" y="80" width="256" height="440" rx="10" class="panel"/>
 <text x="914" y="104" class="pt" text-anchor="start">端口分配（两条泳道相同）</text>
 <text x="914" y="124" class="sm" text-anchor="start">同一节点 2 个 engine 槽位，从 15000 起全部空闲</text>
 <text x="914" y="140" class="sm" text-anchor="start">先给所有 engine 分 server、nccl，</text>
-<text x="914" y="155" class="sm" text-anchor="start">再逐 engine 分 dist_init_addr，各预留 30 + dp = 31 个</text>
-<rect x="914" y="176" width="228" height="88" rx="7" class="neutral"/>
-<text x="926" y="196" class="pt" text-anchor="start">engine 0</text>
-<text x="926" y="216" class="tx" text-anchor="start">server 15000 · nccl 15001</text>
-<text x="926" y="234" class="tx" text-anchor="start">dist_init_addr 端口 15004</text>
-<text x="926" y="252" class="sm" text-anchor="start">预留 15004–15034</text>
-<rect x="914" y="276" width="228" height="88" rx="7" class="neutral"/>
-<text x="926" y="296" class="pt" text-anchor="start">engine 1</text>
-<text x="926" y="316" class="tx" text-anchor="start">server 15002 · nccl 15003</text>
-<text x="926" y="334" class="tx" text-anchor="start">dist_init_addr 端口 15035</text>
-<text x="926" y="352" class="sm" text-anchor="start">预留 15035–15065</text>
-<rect x="914" y="376" width="228" height="48" rx="7" class="acc2"/>
-<text x="926" y="396" class="tx" text-anchor="start">节点 cursor 终值 15066</text>
-<text x="926" y="414" class="sm" text-anchor="start">被占用的端口让 get_free_port 向后搜索</text>
-<text x="914" y="440" class="sm" text-anchor="start">router 单独取 3000–4000 间空闲端口，</text>
-<text x="914" y="456" class="sm" text-anchor="start">不在此区间；每个模型一个 router。</text>
-<text x="914" y="480" class="sm" text-anchor="start">trainer rendezvous：rank 0 在</text>
-<text x="914" y="496" class="sm" text-anchor="start">20000–21000 间取空闲端口作 MASTER_PORT。</text>
-<text x="914" y="524" class="sm" text-anchor="start">橙：共卡重叠区间，代价是显存让渡；</text>
-<text x="914" y="540" class="sm" text-anchor="start">蓝：决定性映射与 engine 的 base 槽位。</text>
+<text x="914" y="155" class="sm" text-anchor="start">再逐 engine 分 dist_init_addr，</text>
+<text x="914" y="170" class="sm" text-anchor="start">各预留 30 + dp = 31 个</text>
+<rect x="914" y="184" width="228" height="88" rx="7" class="neutral"/>
+<text x="926" y="204" class="pt" text-anchor="start">engine 0</text>
+<text x="926" y="224" class="tx" text-anchor="start">server 15000 · nccl 15001</text>
+<text x="926" y="242" class="tx" text-anchor="start">dist_init_addr 端口 15004</text>
+<text x="926" y="260" class="sm" text-anchor="start">预留 15004–15034</text>
+<rect x="914" y="284" width="228" height="88" rx="7" class="neutral"/>
+<text x="926" y="304" class="pt" text-anchor="start">engine 1</text>
+<text x="926" y="324" class="tx" text-anchor="start">server 15002 · nccl 15003</text>
+<text x="926" y="342" class="tx" text-anchor="start">dist_init_addr 端口 15035</text>
+<text x="926" y="360" class="sm" text-anchor="start">预留 15035–15065</text>
+<rect x="914" y="384" width="228" height="48" rx="7" class="acc2"/>
+<text x="926" y="404" class="tx" text-anchor="start">节点 cursor 终值 15066</text>
+<text x="926" y="422" class="sm" text-anchor="start">被占用的端口让 get_free_port 向后搜索</text>
+<text x="914" y="450" class="sm" text-anchor="start">router 单独取 3000–4000 间空闲端口，</text>
+<text x="914" y="466" class="sm" text-anchor="start">不在此区间；每个模型一个 router。</text>
+<text x="914" y="488" class="sm" text-anchor="start">trainer rendezvous：rank 0 在</text>
+<text x="914" y="504" class="sm" text-anchor="start">20000–21000 间取空闲端口作 MASTER_PORT。</text>
+<rect x="900" y="532" width="256" height="228" rx="10" class="panel"/>
+<text x="914" y="556" class="pt" text-anchor="start">external 布局（同一输入）</text>
+<text x="914" y="574" class="sm" text-anchor="start">--rollout-external-engine-addrs 非空</text>
+<rect x="914" y="584" width="228" height="56" rx="7" class="acc1"/>
+<text x="926" y="604" class="tx" text-anchor="start">PG GPU 数 = 4，offset = 4</text>
+<text x="926" y="624" class="tx" text-anchor="start">rollout 切片 = 4 − 4 = 0 个槽位</text>
+<text x="914" y="658" class="sm" text-anchor="start">engine actor 声明 0 GPU、不进 PG，</text>
+<text x="914" y="674" class="sm" text-anchor="start">base_gpu_id=0；GPU 数与偏移按</text>
+<text x="914" y="690" class="sm" text-anchor="start">/server_info 逐地址累加。</text>
+<text x="914" y="714" class="sm" text-anchor="start">再加 debug_rollout_only：offset = 0，</text>
+<text x="914" y="730" class="sm" text-anchor="start">4 个 trainer 照建，init 立即返回。</text>
 <text x="24" y="786" class="cap" text-anchor="start">阅读顺序：输入 → 布局函数（总量 + 偏移）→ 排序后的逻辑序号 → 绑定（rank 按序号，engine 按偏移 + 步长）→ 让渡判定与端口。</text>
-<text x="24" y="804" class="cap" text-anchor="start">两条泳道的绑定规则一字不差，差别只在 PG 总量、rollout 偏移和是否重叠；这正是 slime 把"布局"与"对象"分开的收益。</text>
-<text x="24" y="828" class="su" text-anchor="start">源码基线：THUDM/slime@681b3adca541 · 复现 _get_placement_group_layout / sort_key / start_engines / _allocate_rollout_engine_addr_and_ports_normal</text>
+<text x="24" y="804" class="cap" text-anchor="start">两条泳道绑定规则相同，差别只在 PG 总量、rollout 偏移和是否重叠。橙：共卡重叠区间（代价是显存让渡）；蓝：决定性映射与 engine 的 base 槽位。</text>
+<text x="24" y="828" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f3750 · 复现 _get_placement_group_layout / sort_key / start_engines / ServerGroupPlacement.create / 端口分配</text>
 </svg>

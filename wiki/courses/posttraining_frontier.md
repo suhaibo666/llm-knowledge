@@ -8,10 +8,12 @@ title: "LLM 后训练前沿阅读课程"
 > 已归属功能树三处:`01_theory/04_posttraining`(算法理论)、`02_engineering/04_posttrain_frameworks`
 > (框架源码,含 `verl/` 子目录)与 `01_theory/01_models/moonshot_kimi`(K3 工业案例);本页过时
 > 只改链接/顺序,不要在此加正文。
-> 四个工业框架的固定基线 commit(verl `983cb0f`、slime `681b3adc`、AReaL `b23fa6c`、
-> ROLL `370cb24`)与工程定位见 [[01_posttraining_frontier_map_analysis|D01]] §3,本页不重复。
-> 最后更新:2026-08-14（在 D08 增补 vime/vLLM 衍生实现的源码审计；课程骨架仍沿用
-> kb-reorg P5 Task 7 合并后的 D01–D12 与 S00–S05 路线）
+> 四个工业框架的 S00 快照 commit(verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、
+> ROLL `370cb24`)与工程定位见 [[01_posttraining_frontier_map_analysis|D01]] §3,本页不重复;
+> verl 与 slime 分析域此后已分别统一到 `254a23ed` 与 `4c193f1f`,以 D01 §3.2 和各域页头为准。
+> 最后更新:2026-09-17（更正四框架快照中的 slime commit;D08 系列补入 Loss 与并行归一化页,
+> 训推一致性与稳定性页的导读按现有页面归属改写；课程骨架仍沿用 kb-reorg P5 Task 7 合并后的
+> D01–D12 与 S00–S05 路线）
 
 ---
 
@@ -84,11 +86,12 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D08 | [[01_slime_architecture_overview_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | Megatron、SGLang、Ray/DataSource、同步/一拍异步主链与 versioned weight commit 怎样闭环；backend 扩展、OPD、MTP、低精度、新架构、Agent 与 vime/vLLM 衍生实现的源码矩阵见 [[slime/index]] |
+| D08 | [[01_slime_architecture_overview_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | Megatron、SGLang、Ray/DataSource、同步/一拍异步主链与 versioned weight commit 怎样闭环（统一基线 `4c193f1f`）；backend 扩展、OPD、MTP、低精度、新架构、Agent 与 vime/vLLM 衍生实现的源码矩阵见 [[02_engineering/04_posttrain_frameworks/slime/index|slime 分析域]] |
 | D08a | [[30_slime_rollout_optimization_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 请求并发、动态补采、partial/streaming、warm queue、phase overlap、PD/spec/FP8 分别优化哪段吞吐 |
-| D08b | [[17_slime_train_inference_consistency_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 权重快照、token/mask、sampling distribution 与 kernel/MoE 路径怎样逐层对齐 |
-| D08c | [[31_slime_posttraining_stability_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | rollout-aware denominator、DP×CP whitening、clip/mask 与 recovery 怎样阻止静默漂移 |
-| D08d | [[25_vime_vllm_backend_support_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | vime 如何保留 slime 上层而把 rollout、路由和权重同步改造成 vLLM 原生实现；按 P1 接口/P2 功能/P3 正确性/P4 生产与性能判断实际支持度 |
+| D08b | [[17_slime_train_inference_consistency_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 按六层一致性阶梯 L0–L5 逐层定位 logprob 差异:权重版本、输入轨迹、行为策略元数据与支持集、MoE 路由、对齐 kernel、批次与并行执行,以及 TIS/ICEPOP 校正 |
+| D08c | [[15_slime_loss_parallelism_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | rollout-aware 分母、DP×CP 归约与 advantage 白化怎样让 loss 口径不随并行切分改变,以及 KL 的两个入口 |
+| D08d | [[31_slime_posttraining_stability_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 四控制环诊断:指标出现条件、判别实验与回放验收 |
+| D08e | [[25_vime_vllm_backend_support_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | vime 如何保留 slime 上层而把 rollout、路由和权重同步改造成 vLLM 原生实现；按 P1 接口/P2 功能/P3 正确性/P4 生产与性能判断实际支持度 |
 | D09 | [[21_areal_async_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 |
 
 ### S04 · 异构、多后端与 Ascend
@@ -113,7 +116,7 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 | 框架 | 研究角色 | 重点问题 |
 |---|---|---|
 | verl(D07) | 覆盖面和可读性主基线 | 一次训练迭代、角色编排、算法扩展、weight sync/reshard |
-| slime(D08/D08a–d) | 高性能训练—生成解耦、正确性与 vLLM 衍生实现对照 | Megatron + SGLang、DataSource/buffer、rollout stack、backend 扩展边界、vime/vLLM、OPD/MTP/低精度/Agent、四层训推一致性、rollout-aware reducer、weight transport |
+| slime(D08/D08a–e) | 高性能训练—生成解耦、正确性与 vLLM 衍生实现对照 | Megatron + SGLang、DataSource/buffer、rollout stack、backend 扩展边界、vime/vLLM、OPD/MTP/低精度/Agent、[[17_slime_train_inference_consistency_analysis#1.2 六层一致性阶梯 L0–L5|六层一致性阶梯]]（L0–L5）、rollout-aware reducer、weight transport |
 | AReaL(D09) | Fully async/Agentic 对照 | 微服务、Hermes、policy lag、agent trajectory |
 | ROLL(D10) | 多后端/异构/Ascend 专项 | Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
 
@@ -159,7 +162,7 @@ D09/D10 自身的入口—调用链描述细致度均超过 D00 原表),核对�
 - [[01_posttraining_frontier_map_analysis]] — D01,五层后训练栈与四个工业源码样本的固定基线
 - [[13_reasoning_rl_algorithm_evolution_analysis]] — D02,GRPO 系列演进权威页
 - [[30_rl_framework_comparison]] — D06,四框架统一机制矩阵与四级支持证据
-- [[10_verl_end_to_end_iteration_analysis]] — D07,verl 端到端主基线(`983cb0f`)
+- [[10_verl_end_to_end_iteration_analysis]] — D07,verl 端到端主基线(`254a23ed`)
 - [[31_cuda_ascend_posttraining_stack_comparison]] — D11,CUDA–Ascend 差距矩阵与四级迁移验收
 - [[24_kimi_k3_posttraining_case_study_analysis]] — D12,Kimi K3 工业闭环案例
 - [[01_theory/04_posttraining/index]] — 后训练算法理论域索引

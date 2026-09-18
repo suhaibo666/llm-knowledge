@@ -1,0 +1,622 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="698" viewBox="0 0 1200 698" role="img" aria-labelledby="title desc">
+<title id="title">slime SFT loss mask 回放：qwen lane × Qwen3 模板</title>
+<desc id="desc">一段两轮对话经 Qwen3 模板逐条渲染成 54 个 token，完整 mask 首个 1 在位置 18，response_length=36，目标 token 24 个；get_batch 用 F.pad(loss_mask, (17, 1)) 把 mask 平移到预测位置。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:10px;fill:#38414D}
+  .bit{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:10px;fill:#38414D;font-weight:700}
+  .pos{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:8.5px;fill:#8A919C}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.3}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.3}
+  .acc2d{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.3;stroke-dasharray:3 2}
+  .zoom{fill:#fff;stroke:#747C88;stroke-width:1;stroke-dasharray:4 3}
+  .main{fill:none;stroke:#2563EB;stroke-width:1.4;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:4 3}
+</style><rect width="1200" height="698" fill="white"/>
+<text x="24" y="30" class="ti" text-anchor="start">SFT loss mask 回放：默认 --loss-mask-type qwen × 真实 Qwen3 模板，一段两轮对话 = 54 个 token</text>
+<text x="24" y="52" class="su" text-anchor="start">逐条消息套模板（system_message_length=0，gen_token_length=3）· token id 取自 SGLang Qwen3 tokenizer 夹具 · ↵ 为换行，␣ 为空格 · 蓝：mask=1 · 白：response 内的 0</text>
+<rect x="20" y="72" width="1160" height="118" rx="8" class="panel"/>
+<text x="150" y="116" class="sm" text-anchor="end">token</text>
+<text x="150" y="130" class="sm" text-anchor="end">位置</text>
+<text x="150" y="147" class="sm" text-anchor="end">完整 mask</text>
+<text x="150" y="163" class="sm" text-anchor="end">Sample.loss_mask</text>
+<text x="150" y="179" class="sm" text-anchor="end">get_batch 平移后</text>
+<text x="160" y="92" class="pt" text-anchor="start">m0 system</text>
+<text x="245.60000000000002" y="92" class="cap" text-anchor="start">prompt 段</text>
+<rect x="160" y="102" width="80" height="20" rx="3" class="ghost"/>
+<text x="200" y="116" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="200" y="132" class="pos" text-anchor="middle">0</text>
+<rect x="160" y="136" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="147" class="bit" text-anchor="middle">0</text>
+<text x="200" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="160" y="168" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="243" y="102" width="44" height="20" rx="3" class="ghost"/>
+<text x="265" y="116" class="mono" text-anchor="middle">system</text>
+<text x="265" y="132" class="pos" text-anchor="middle">1</text>
+<rect x="243" y="136" width="44" height="14" rx="2" class="ghost"/>
+<text x="265" y="147" class="bit" text-anchor="middle">0</text>
+<text x="265" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="243" y="168" width="44" height="14" rx="2" class="ghost"/>
+<text x="265" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="290" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="301" y="116" class="mono" text-anchor="middle">↵</text>
+<text x="301" y="132" class="pos" text-anchor="middle">2</text>
+<rect x="290" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="301" y="147" class="bit" text-anchor="middle">0</text>
+<text x="301" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="290" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="301" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="315" y="102" width="26" height="20" rx="3" class="ghost"/>
+<text x="328" y="116" class="mono" text-anchor="middle">You</text>
+<text x="328" y="132" class="pos" text-anchor="middle">3</text>
+<rect x="315" y="136" width="26" height="14" rx="2" class="ghost"/>
+<text x="328" y="147" class="bit" text-anchor="middle">0</text>
+<text x="328" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="315" y="168" width="26" height="14" rx="2" class="ghost"/>
+<text x="328" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="344" y="102" width="38" height="20" rx="3" class="ghost"/>
+<text x="363" y="116" class="mono" text-anchor="middle">␣have</text>
+<text x="363" y="132" class="pos" text-anchor="middle">4</text>
+<rect x="344" y="136" width="38" height="14" rx="2" class="ghost"/>
+<text x="363" y="147" class="bit" text-anchor="middle">0</text>
+<text x="363" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="344" y="168" width="38" height="14" rx="2" class="ghost"/>
+<text x="363" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="385" y="102" width="44" height="20" rx="3" class="ghost"/>
+<text x="407" y="116" class="mono" text-anchor="middle">␣tools</text>
+<text x="407" y="132" class="pos" text-anchor="middle">5</text>
+<rect x="385" y="136" width="44" height="14" rx="2" class="ghost"/>
+<text x="407" y="147" class="bit" text-anchor="middle">0</text>
+<text x="407" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="385" y="168" width="44" height="14" rx="2" class="ghost"/>
+<text x="407" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="432" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="443" y="116" class="mono" text-anchor="middle">.</text>
+<text x="443" y="132" class="pos" text-anchor="middle">6</text>
+<rect x="432" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="443" y="147" class="bit" text-anchor="middle">0</text>
+<text x="443" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="432" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="443" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="457" y="102" width="68" height="20" rx="3" class="ghost"/>
+<text x="491" y="116" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="491" y="132" class="pos" text-anchor="middle">7</text>
+<rect x="457" y="136" width="68" height="14" rx="2" class="ghost"/>
+<text x="491" y="147" class="bit" text-anchor="middle">0</text>
+<text x="491" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="457" y="168" width="68" height="14" rx="2" class="ghost"/>
+<text x="491" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="528" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="539" y="116" class="mono" text-anchor="middle">↵</text>
+<text x="539" y="132" class="pos" text-anchor="middle">8</text>
+<rect x="528" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="539" y="147" class="bit" text-anchor="middle">0</text>
+<text x="539" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="528" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="539" y="179" class="bit" text-anchor="middle">0</text>
+<path d="M559 80 L559 182" class="aux"/>
+<text x="567" y="92" class="pt" text-anchor="start">m1 user</text>
+<text x="635.8" y="92" class="cap" text-anchor="start">prompt 段</text>
+<rect x="567" y="102" width="80" height="20" rx="3" class="ghost"/>
+<text x="607" y="116" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="607" y="132" class="pos" text-anchor="middle">9</text>
+<rect x="567" y="136" width="80" height="14" rx="2" class="ghost"/>
+<text x="607" y="147" class="bit" text-anchor="middle">0</text>
+<text x="607" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="567" y="168" width="80" height="14" rx="2" class="ghost"/>
+<text x="607" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="650" y="102" width="32" height="20" rx="3" class="ghost"/>
+<text x="666" y="116" class="mono" text-anchor="middle">user</text>
+<text x="666" y="132" class="pos" text-anchor="middle">10</text>
+<rect x="650" y="136" width="32" height="14" rx="2" class="ghost"/>
+<text x="666" y="147" class="bit" text-anchor="middle">0</text>
+<text x="666" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="650" y="168" width="32" height="14" rx="2" class="ghost"/>
+<text x="666" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="685" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="696" y="116" class="mono" text-anchor="middle">↵</text>
+<text x="696" y="132" class="pos" text-anchor="middle">11</text>
+<rect x="685" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="696" y="147" class="bit" text-anchor="middle">0</text>
+<text x="696" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="685" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="696" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="710" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="721" y="116" class="mono" text-anchor="middle">Hi</text>
+<text x="721" y="132" class="pos" text-anchor="middle">12</text>
+<rect x="710" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="721" y="147" class="bit" text-anchor="middle">0</text>
+<text x="721" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="710" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="721" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="735" y="102" width="68" height="20" rx="3" class="ghost"/>
+<text x="769" y="116" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="769" y="132" class="pos" text-anchor="middle">13</text>
+<rect x="735" y="136" width="68" height="14" rx="2" class="ghost"/>
+<text x="769" y="147" class="bit" text-anchor="middle">0</text>
+<text x="769" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="735" y="168" width="68" height="14" rx="2" class="ghost"/>
+<text x="769" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="806" y="102" width="22" height="20" rx="3" class="ghost"/>
+<text x="817" y="116" class="mono" text-anchor="middle">↵</text>
+<text x="817" y="132" class="pos" text-anchor="middle">14</text>
+<rect x="806" y="136" width="22" height="14" rx="2" class="ghost"/>
+<text x="817" y="147" class="bit" text-anchor="middle">0</text>
+<text x="817" y="163" class="pos" text-anchor="middle">·</text>
+<rect x="806" y="168" width="22" height="14" rx="2" class="ghost"/>
+<text x="817" y="179" class="bit" text-anchor="middle">0</text>
+<rect x="20" y="198" width="1160" height="118" rx="8" class="panel"/>
+<text x="150" y="242" class="sm" text-anchor="end">token</text>
+<text x="150" y="256" class="sm" text-anchor="end">位置</text>
+<text x="150" y="273" class="sm" text-anchor="end">完整 mask</text>
+<text x="150" y="289" class="sm" text-anchor="end">Sample.loss_mask</text>
+<text x="150" y="305" class="sm" text-anchor="end">get_batch 平移后</text>
+<text x="160" y="218" class="pt" text-anchor="start">m2 assistant</text>
+<text x="270.8" y="218" class="cap" text-anchor="start">模板头为 0，首个 1 在 18</text>
+<rect x="160" y="228" width="80" height="20" rx="3" class="ghost"/>
+<text x="200" y="242" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="200" y="258" class="pos" text-anchor="middle">15</text>
+<rect x="160" y="262" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="273" class="bit" text-anchor="middle">0</text>
+<text x="200" y="289" class="pos" text-anchor="middle">·</text>
+<rect x="160" y="294" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="243" y="228" width="62" height="20" rx="3" class="ghost"/>
+<text x="274" y="242" class="mono" text-anchor="middle">assistant</text>
+<text x="274" y="258" class="pos" text-anchor="middle">16</text>
+<rect x="243" y="262" width="62" height="14" rx="2" class="ghost"/>
+<text x="274" y="273" class="bit" text-anchor="middle">0</text>
+<text x="274" y="289" class="pos" text-anchor="middle">·</text>
+<rect x="243" y="294" width="62" height="14" rx="2" class="ghost"/>
+<text x="274" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="308" y="228" width="22" height="20" rx="3" class="ghost"/>
+<text x="319" y="242" class="mono" text-anchor="middle">↵</text>
+<text x="319" y="258" class="pos" text-anchor="middle">17</text>
+<rect x="308" y="262" width="22" height="14" rx="2" class="ghost"/>
+<text x="319" y="273" class="bit" text-anchor="middle">0</text>
+<text x="319" y="289" class="pos" text-anchor="middle">·</text>
+<rect x="308" y="294" width="22" height="14" rx="2" class="acc1"/>
+<text x="319" y="305" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="228" width="38" height="20" rx="3" class="acc1"/>
+<text x="352" y="242" class="mono" text-anchor="middle">Hello</text>
+<text x="352" y="258" class="pos" text-anchor="middle">18</text>
+<rect x="333" y="262" width="38" height="14" rx="2" class="acc1"/>
+<text x="352" y="273" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="278" width="38" height="14" rx="2" class="acc1"/>
+<text x="352" y="289" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="294" width="38" height="14" rx="2" class="acc1"/>
+<text x="352" y="305" class="bit" text-anchor="middle">1</text>
+<rect x="374" y="228" width="68" height="20" rx="3" class="acc1"/>
+<text x="408" y="242" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="408" y="258" class="pos" text-anchor="middle">19</text>
+<rect x="374" y="262" width="68" height="14" rx="2" class="acc1"/>
+<text x="408" y="273" class="bit" text-anchor="middle">1</text>
+<rect x="374" y="278" width="68" height="14" rx="2" class="acc1"/>
+<text x="408" y="289" class="bit" text-anchor="middle">1</text>
+<rect x="374" y="294" width="68" height="14" rx="2" class="acc1"/>
+<text x="408" y="305" class="bit" text-anchor="middle">1</text>
+<rect x="445" y="228" width="22" height="20" rx="3" class="acc1"/>
+<text x="456" y="242" class="mono" text-anchor="middle">↵</text>
+<text x="456" y="258" class="pos" text-anchor="middle">20</text>
+<rect x="445" y="262" width="22" height="14" rx="2" class="acc1"/>
+<text x="456" y="273" class="bit" text-anchor="middle">1</text>
+<rect x="445" y="278" width="22" height="14" rx="2" class="acc1"/>
+<text x="456" y="289" class="bit" text-anchor="middle">1</text>
+<rect x="445" y="294" width="22" height="14" rx="2" class="ghost"/>
+<text x="456" y="305" class="bit" text-anchor="middle">0</text>
+<path d="M476 206 L476 308" class="aux"/>
+<text x="484" y="218" class="pt" text-anchor="start">m3 user</text>
+<text x="552.8" y="218" class="cap" text-anchor="start">response 内的上下文，全 0</text>
+<rect x="484" y="228" width="80" height="20" rx="3" class="neutral"/>
+<text x="524" y="242" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="524" y="258" class="pos" text-anchor="middle">21</text>
+<rect x="484" y="262" width="80" height="14" rx="2" class="ghost"/>
+<text x="524" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="484" y="278" width="80" height="14" rx="2" class="neutral"/>
+<text x="524" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="484" y="294" width="80" height="14" rx="2" class="ghost"/>
+<text x="524" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="567" y="228" width="32" height="20" rx="3" class="neutral"/>
+<text x="583" y="242" class="mono" text-anchor="middle">user</text>
+<text x="583" y="258" class="pos" text-anchor="middle">22</text>
+<rect x="567" y="262" width="32" height="14" rx="2" class="ghost"/>
+<text x="583" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="567" y="278" width="32" height="14" rx="2" class="neutral"/>
+<text x="583" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="567" y="294" width="32" height="14" rx="2" class="ghost"/>
+<text x="583" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="602" y="228" width="22" height="20" rx="3" class="neutral"/>
+<text x="613" y="242" class="mono" text-anchor="middle">↵</text>
+<text x="613" y="258" class="pos" text-anchor="middle">23</text>
+<rect x="602" y="262" width="22" height="14" rx="2" class="ghost"/>
+<text x="613" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="602" y="278" width="22" height="14" rx="2" class="neutral"/>
+<text x="613" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="602" y="294" width="22" height="14" rx="2" class="ghost"/>
+<text x="613" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="627" y="228" width="50" height="20" rx="3" class="neutral"/>
+<text x="652" y="242" class="mono" text-anchor="middle">Weather</text>
+<text x="652" y="258" class="pos" text-anchor="middle">24</text>
+<rect x="627" y="262" width="50" height="14" rx="2" class="ghost"/>
+<text x="652" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="627" y="278" width="50" height="14" rx="2" class="neutral"/>
+<text x="652" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="627" y="294" width="50" height="14" rx="2" class="ghost"/>
+<text x="652" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="680" y="228" width="26" height="20" rx="3" class="neutral"/>
+<text x="693" y="242" class="mono" text-anchor="middle">␣in</text>
+<text x="693" y="258" class="pos" text-anchor="middle">25</text>
+<rect x="680" y="262" width="26" height="14" rx="2" class="ghost"/>
+<text x="693" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="680" y="278" width="26" height="14" rx="2" class="neutral"/>
+<text x="693" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="680" y="294" width="26" height="14" rx="2" class="ghost"/>
+<text x="693" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="709" y="228" width="44" height="20" rx="3" class="neutral"/>
+<text x="731" y="242" class="mono" text-anchor="middle">␣Paris</text>
+<text x="731" y="258" class="pos" text-anchor="middle">26</text>
+<rect x="709" y="262" width="44" height="14" rx="2" class="ghost"/>
+<text x="731" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="709" y="278" width="44" height="14" rx="2" class="neutral"/>
+<text x="731" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="709" y="294" width="44" height="14" rx="2" class="ghost"/>
+<text x="731" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="756" y="228" width="22" height="20" rx="3" class="neutral"/>
+<text x="767" y="242" class="mono" text-anchor="middle">?</text>
+<text x="767" y="258" class="pos" text-anchor="middle">27</text>
+<rect x="756" y="262" width="22" height="14" rx="2" class="ghost"/>
+<text x="767" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="756" y="278" width="22" height="14" rx="2" class="neutral"/>
+<text x="767" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="756" y="294" width="22" height="14" rx="2" class="ghost"/>
+<text x="767" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="781" y="228" width="68" height="20" rx="3" class="neutral"/>
+<text x="815" y="242" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="815" y="258" class="pos" text-anchor="middle">28</text>
+<rect x="781" y="262" width="68" height="14" rx="2" class="ghost"/>
+<text x="815" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="781" y="278" width="68" height="14" rx="2" class="neutral"/>
+<text x="815" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="781" y="294" width="68" height="14" rx="2" class="ghost"/>
+<text x="815" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="852" y="228" width="22" height="20" rx="3" class="neutral"/>
+<text x="863" y="242" class="mono" text-anchor="middle">↵</text>
+<text x="863" y="258" class="pos" text-anchor="middle">29</text>
+<rect x="852" y="262" width="22" height="14" rx="2" class="ghost"/>
+<text x="863" y="273" class="bit" text-anchor="middle">0</text>
+<rect x="852" y="278" width="22" height="14" rx="2" class="neutral"/>
+<text x="863" y="289" class="bit" text-anchor="middle">0</text>
+<rect x="852" y="294" width="22" height="14" rx="2" class="ghost"/>
+<text x="863" y="305" class="bit" text-anchor="middle">0</text>
+<rect x="20" y="324" width="1160" height="118" rx="8" class="panel"/>
+<text x="150" y="368" class="sm" text-anchor="end">token</text>
+<text x="150" y="382" class="sm" text-anchor="end">位置</text>
+<text x="150" y="399" class="sm" text-anchor="end">完整 mask</text>
+<text x="150" y="415" class="sm" text-anchor="end">Sample.loss_mask</text>
+<text x="150" y="431" class="sm" text-anchor="end">get_batch 平移后</text>
+<text x="160" y="344" class="pt" text-anchor="start">m4 assistant（tool_calls）</text>
+<text x="382.80000000000007" y="344" class="cap" text-anchor="start">模板头为 0；tool call、&lt;/tool_call&gt;、&lt;|im_end|&gt;、↵ 全为 1</text>
+<rect x="160" y="354" width="80" height="20" rx="3" class="neutral"/>
+<text x="200" y="368" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="200" y="384" class="pos" text-anchor="middle">30</text>
+<rect x="160" y="388" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="399" class="bit" text-anchor="middle">0</text>
+<rect x="160" y="404" width="80" height="14" rx="2" class="neutral"/>
+<text x="200" y="415" class="bit" text-anchor="middle">0</text>
+<rect x="160" y="420" width="80" height="14" rx="2" class="ghost"/>
+<text x="200" y="431" class="bit" text-anchor="middle">0</text>
+<rect x="243" y="354" width="62" height="20" rx="3" class="neutral"/>
+<text x="274" y="368" class="mono" text-anchor="middle">assistant</text>
+<text x="274" y="384" class="pos" text-anchor="middle">31</text>
+<rect x="243" y="388" width="62" height="14" rx="2" class="ghost"/>
+<text x="274" y="399" class="bit" text-anchor="middle">0</text>
+<rect x="243" y="404" width="62" height="14" rx="2" class="neutral"/>
+<text x="274" y="415" class="bit" text-anchor="middle">0</text>
+<rect x="243" y="420" width="62" height="14" rx="2" class="ghost"/>
+<text x="274" y="431" class="bit" text-anchor="middle">0</text>
+<rect x="308" y="354" width="22" height="20" rx="3" class="neutral"/>
+<text x="319" y="368" class="mono" text-anchor="middle">↵</text>
+<text x="319" y="384" class="pos" text-anchor="middle">32</text>
+<rect x="308" y="388" width="22" height="14" rx="2" class="ghost"/>
+<text x="319" y="399" class="bit" text-anchor="middle">0</text>
+<rect x="308" y="404" width="22" height="14" rx="2" class="neutral"/>
+<text x="319" y="415" class="bit" text-anchor="middle">0</text>
+<rect x="308" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="319" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="354" width="74" height="20" rx="3" class="acc1"/>
+<text x="370" y="368" class="mono" text-anchor="middle">&lt;tool_call&gt;</text>
+<text x="370" y="384" class="pos" text-anchor="middle">33</text>
+<rect x="333" y="388" width="74" height="14" rx="2" class="acc1"/>
+<text x="370" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="404" width="74" height="14" rx="2" class="acc1"/>
+<text x="370" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="333" y="420" width="74" height="14" rx="2" class="acc1"/>
+<text x="370" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="410" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="421" y="368" class="mono" text-anchor="middle">↵</text>
+<text x="421" y="384" class="pos" text-anchor="middle">34</text>
+<rect x="410" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="421" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="410" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="421" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="410" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="421" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="435" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="446" y="368" class="mono" text-anchor="middle">{"</text>
+<text x="446" y="384" class="pos" text-anchor="middle">35</text>
+<rect x="435" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="446" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="435" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="446" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="435" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="446" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="460" y="354" width="32" height="20" rx="3" class="acc1"/>
+<text x="476" y="368" class="mono" text-anchor="middle">name</text>
+<text x="476" y="384" class="pos" text-anchor="middle">36</text>
+<rect x="460" y="388" width="32" height="14" rx="2" class="acc1"/>
+<text x="476" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="460" y="404" width="32" height="14" rx="2" class="acc1"/>
+<text x="476" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="460" y="420" width="32" height="14" rx="2" class="acc1"/>
+<text x="476" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="495" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="506" y="368" class="mono" text-anchor="middle">":</text>
+<text x="506" y="384" class="pos" text-anchor="middle">37</text>
+<rect x="495" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="506" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="495" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="506" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="495" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="506" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="520" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="531" y="368" class="mono" text-anchor="middle">␣"</text>
+<text x="531" y="384" class="pos" text-anchor="middle">38</text>
+<rect x="520" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="531" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="520" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="531" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="520" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="531" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="545" y="354" width="26" height="20" rx="3" class="acc1"/>
+<text x="558" y="368" class="mono" text-anchor="middle">get</text>
+<text x="558" y="384" class="pos" text-anchor="middle">39</text>
+<rect x="545" y="388" width="26" height="14" rx="2" class="acc1"/>
+<text x="558" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="545" y="404" width="26" height="14" rx="2" class="acc1"/>
+<text x="558" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="545" y="420" width="26" height="14" rx="2" class="acc1"/>
+<text x="558" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="574" y="354" width="56" height="20" rx="3" class="acc1"/>
+<text x="602" y="368" class="mono" text-anchor="middle">_weather</text>
+<text x="602" y="384" class="pos" text-anchor="middle">40</text>
+<rect x="574" y="388" width="56" height="14" rx="2" class="acc1"/>
+<text x="602" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="574" y="404" width="56" height="14" rx="2" class="acc1"/>
+<text x="602" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="574" y="420" width="56" height="14" rx="2" class="acc1"/>
+<text x="602" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="633" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="644" y="368" class="mono" text-anchor="middle">",</text>
+<text x="644" y="384" class="pos" text-anchor="middle">41</text>
+<rect x="633" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="644" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="633" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="644" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="633" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="644" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="658" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="669" y="368" class="mono" text-anchor="middle">␣"</text>
+<text x="669" y="384" class="pos" text-anchor="middle">42</text>
+<rect x="658" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="669" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="658" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="669" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="658" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="669" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="683" y="354" width="62" height="20" rx="3" class="acc1"/>
+<text x="714" y="368" class="mono" text-anchor="middle">arguments</text>
+<text x="714" y="384" class="pos" text-anchor="middle">43</text>
+<rect x="683" y="388" width="62" height="14" rx="2" class="acc1"/>
+<text x="714" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="683" y="404" width="62" height="14" rx="2" class="acc1"/>
+<text x="714" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="683" y="420" width="62" height="14" rx="2" class="acc1"/>
+<text x="714" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="748" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="759" y="368" class="mono" text-anchor="middle">":</text>
+<text x="759" y="384" class="pos" text-anchor="middle">44</text>
+<rect x="748" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="759" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="748" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="759" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="748" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="759" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="773" y="354" width="26" height="20" rx="3" class="acc1"/>
+<text x="786" y="368" class="mono" text-anchor="middle">␣{"</text>
+<text x="786" y="384" class="pos" text-anchor="middle">45</text>
+<rect x="773" y="388" width="26" height="14" rx="2" class="acc1"/>
+<text x="786" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="773" y="404" width="26" height="14" rx="2" class="acc1"/>
+<text x="786" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="773" y="420" width="26" height="14" rx="2" class="acc1"/>
+<text x="786" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="802" y="354" width="32" height="20" rx="3" class="acc1"/>
+<text x="818" y="368" class="mono" text-anchor="middle">city</text>
+<text x="818" y="384" class="pos" text-anchor="middle">46</text>
+<rect x="802" y="388" width="32" height="14" rx="2" class="acc1"/>
+<text x="818" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="802" y="404" width="32" height="14" rx="2" class="acc1"/>
+<text x="818" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="802" y="420" width="32" height="14" rx="2" class="acc1"/>
+<text x="818" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="837" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="848" y="368" class="mono" text-anchor="middle">":</text>
+<text x="848" y="384" class="pos" text-anchor="middle">47</text>
+<rect x="837" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="848" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="837" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="848" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="837" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="848" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="862" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="873" y="368" class="mono" text-anchor="middle">␣"</text>
+<text x="873" y="384" class="pos" text-anchor="middle">48</text>
+<rect x="862" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="873" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="862" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="873" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="862" y="420" width="22" height="14" rx="2" class="acc1"/>
+<text x="873" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="887" y="354" width="38" height="20" rx="3" class="acc1"/>
+<text x="906" y="368" class="mono" text-anchor="middle">Paris</text>
+<text x="906" y="384" class="pos" text-anchor="middle">49</text>
+<rect x="887" y="388" width="38" height="14" rx="2" class="acc1"/>
+<text x="906" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="887" y="404" width="38" height="14" rx="2" class="acc1"/>
+<text x="906" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="887" y="420" width="38" height="14" rx="2" class="acc1"/>
+<text x="906" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="928" y="354" width="32" height="20" rx="3" class="acc1"/>
+<text x="944" y="368" class="mono" text-anchor="middle">"}}↵</text>
+<text x="944" y="384" class="pos" text-anchor="middle">50</text>
+<rect x="928" y="388" width="32" height="14" rx="2" class="acc1"/>
+<text x="944" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="928" y="404" width="32" height="14" rx="2" class="acc1"/>
+<text x="944" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="928" y="420" width="32" height="14" rx="2" class="acc1"/>
+<text x="944" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="963" y="354" width="80" height="20" rx="3" class="acc1"/>
+<text x="1003" y="368" class="mono" text-anchor="middle">&lt;/tool_call&gt;</text>
+<text x="1003" y="384" class="pos" text-anchor="middle">51</text>
+<rect x="963" y="388" width="80" height="14" rx="2" class="acc1"/>
+<text x="1003" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="963" y="404" width="80" height="14" rx="2" class="acc1"/>
+<text x="1003" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="963" y="420" width="80" height="14" rx="2" class="acc1"/>
+<text x="1003" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="1046" y="354" width="68" height="20" rx="3" class="acc1"/>
+<text x="1080" y="368" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="1080" y="384" class="pos" text-anchor="middle">52</text>
+<rect x="1046" y="388" width="68" height="14" rx="2" class="acc1"/>
+<text x="1080" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="1046" y="404" width="68" height="14" rx="2" class="acc1"/>
+<text x="1080" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="1046" y="420" width="68" height="14" rx="2" class="acc1"/>
+<text x="1080" y="431" class="bit" text-anchor="middle">1</text>
+<rect x="1117" y="354" width="22" height="20" rx="3" class="acc1"/>
+<text x="1128" y="368" class="mono" text-anchor="middle">↵</text>
+<text x="1128" y="384" class="pos" text-anchor="middle">53</text>
+<rect x="1117" y="388" width="22" height="14" rx="2" class="acc1"/>
+<text x="1128" y="399" class="bit" text-anchor="middle">1</text>
+<rect x="1117" y="404" width="22" height="14" rx="2" class="acc1"/>
+<text x="1128" y="415" class="bit" text-anchor="middle">1</text>
+<rect x="1117" y="420" width="22" height="14" rx="2" class="ghost"/>
+<text x="1128" y="431" class="bit" text-anchor="middle">0</text>
+<rect x="20" y="454" width="1160" height="234" rx="8" class="zoom"/>
+<text x="30" y="474" class="pt" text-anchor="start">放大：F.pad(loss_mask, (prompt_length−1, 1)) = F.pad(loss_mask, (17, 1))，位置 p 的 1 表示"用 p 处 logits 预测 token p+1"</text>
+<text x="130" y="506" class="cap" text-anchor="start">位置 16–21：m2 模板头 ↵（p=17）预测首个目标 Hello</text>
+<text x="124" y="526" class="sm" text-anchor="end">token</text>
+<text x="124" y="552" class="sm" text-anchor="end">loss_mask[i]</text>
+<text x="124" y="604" class="sm" text-anchor="end">平移后 [p]</text>
+<rect x="130" y="512" width="76" height="20" rx="3" class="ghost"/>
+<text x="168" y="526" class="mono" text-anchor="middle">assistant</text>
+<text x="168" y="542" class="pos" text-anchor="middle">p=16</text>
+<text x="168" y="555" class="pos" text-anchor="middle">左补 0</text>
+<rect x="130" y="592" width="76" height="16" rx="2" class="ghost"/>
+<text x="168" y="604" class="bit" text-anchor="middle">0</text>
+<rect x="212" y="512" width="76" height="20" rx="3" class="ghost"/>
+<text x="250" y="526" class="mono" text-anchor="middle">↵</text>
+<text x="250" y="542" class="pos" text-anchor="middle">p=17</text>
+<text x="250" y="555" class="pos" text-anchor="middle">左补 0</text>
+<rect x="212" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="250" y="604" class="bit" text-anchor="middle">1</text>
+<rect x="294" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="332" y="526" class="mono" text-anchor="middle">Hello</text>
+<text x="332" y="542" class="pos" text-anchor="middle">p=18</text>
+<rect x="294" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="332" y="555" class="bit" text-anchor="middle">i=0:1</text>
+<rect x="294" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="332" y="604" class="bit" text-anchor="middle">1</text>
+<path d="M332 560 L252 590" class="main"/>
+<rect x="376" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="414" y="526" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="414" y="542" class="pos" text-anchor="middle">p=19</text>
+<rect x="376" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="414" y="555" class="bit" text-anchor="middle">i=1:1</text>
+<rect x="376" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="414" y="604" class="bit" text-anchor="middle">1</text>
+<path d="M414 560 L334 590" class="main"/>
+<rect x="458" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="496" y="526" class="mono" text-anchor="middle">↵</text>
+<text x="496" y="542" class="pos" text-anchor="middle">p=20</text>
+<rect x="458" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="496" y="555" class="bit" text-anchor="middle">i=2:1</text>
+<rect x="458" y="592" width="76" height="16" rx="2" class="ghost"/>
+<text x="496" y="604" class="bit" text-anchor="middle">0</text>
+<path d="M496 560 L416 590" class="main"/>
+<rect x="540" y="512" width="76" height="20" rx="3" class="neutral"/>
+<text x="578" y="526" class="mono" text-anchor="middle">&lt;|im_start|&gt;</text>
+<text x="578" y="542" class="pos" text-anchor="middle">p=21</text>
+<rect x="540" y="544" width="76" height="14" rx="2" class="neutral"/>
+<text x="578" y="555" class="bit" text-anchor="middle">i=3:0</text>
+<rect x="540" y="592" width="76" height="16" rx="2" class="ghost"/>
+<text x="578" y="604" class="bit" text-anchor="middle">0</text>
+<path d="M578 560 L498 590" class="aux"/>
+<text x="700" y="506" class="cap" text-anchor="start">位置 49–53：最后一个 ↵ 没有下一 token，右补 0</text>
+<text x="694" y="526" class="sm" text-anchor="end">token</text>
+<text x="694" y="552" class="sm" text-anchor="end">loss_mask[i]</text>
+<text x="694" y="604" class="sm" text-anchor="end">平移后 [p]</text>
+<rect x="700" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="738" y="526" class="mono" text-anchor="middle">Paris</text>
+<text x="738" y="542" class="pos" text-anchor="middle">p=49</text>
+<rect x="700" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="738" y="555" class="bit" text-anchor="middle">i=31:1</text>
+<rect x="700" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="738" y="604" class="bit" text-anchor="middle">1</text>
+<rect x="782" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="820" y="526" class="mono" text-anchor="middle">"}}↵</text>
+<text x="820" y="542" class="pos" text-anchor="middle">p=50</text>
+<rect x="782" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="820" y="555" class="bit" text-anchor="middle">i=32:1</text>
+<rect x="782" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="820" y="604" class="bit" text-anchor="middle">1</text>
+<path d="M820 560 L740 590" class="main"/>
+<rect x="864" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="902" y="526" class="mono" text-anchor="middle">&lt;/tool_call&gt;</text>
+<text x="902" y="542" class="pos" text-anchor="middle">p=51</text>
+<rect x="864" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="902" y="555" class="bit" text-anchor="middle">i=33:1</text>
+<rect x="864" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="902" y="604" class="bit" text-anchor="middle">1</text>
+<path d="M902 560 L822 590" class="main"/>
+<rect x="946" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="984" y="526" class="mono" text-anchor="middle">&lt;|im_end|&gt;</text>
+<text x="984" y="542" class="pos" text-anchor="middle">p=52</text>
+<rect x="946" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="984" y="555" class="bit" text-anchor="middle">i=34:1</text>
+<rect x="946" y="592" width="76" height="16" rx="2" class="acc1"/>
+<text x="984" y="604" class="bit" text-anchor="middle">1</text>
+<path d="M984 560 L904 590" class="main"/>
+<rect x="1028" y="512" width="76" height="20" rx="3" class="acc1"/>
+<text x="1066" y="526" class="mono" text-anchor="middle">↵</text>
+<text x="1066" y="542" class="pos" text-anchor="middle">p=53</text>
+<rect x="1028" y="544" width="76" height="14" rx="2" class="acc1"/>
+<text x="1066" y="555" class="bit" text-anchor="middle">i=35:1</text>
+<rect x="1028" y="592" width="76" height="16" rx="2" class="ghost"/>
+<text x="1066" y="604" class="bit" text-anchor="middle">0</text>
+<path d="M1066 560 L986 590" class="main"/>
+<text x="30" y="632" class="tx" text-anchor="start">T=54 · 首个 1 在 18 → prompt_length P=18，response_length R=36 · Σloss_mask=24，response 内另有 12 个 mask=0 的上下文 token</text>
+<text x="30" y="652" class="tx" text-anchor="start">sft_loss_function 取 logits 位置 [17, 53) 的 36 个 logprob，与 Sample.loss_mask 相乘 → 24 项 NLL；平移后的 mask 作为 loss_mask 传入模型前向</text>
+<text x="30" y="672" class="cap" text-anchor="start">平移后为 1 的位置：17, 18, 19 与 32–52；训练目标 token 位置：18, 19, 20 与 33–53</text>
+</svg>

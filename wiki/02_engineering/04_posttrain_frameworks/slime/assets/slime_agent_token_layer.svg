@@ -1,0 +1,278 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="630" viewBox="0 0 1180 630" role="img" aria-labelledby="title desc">
+<title id="title">slime agent token 层：消息相等但 prompt_ids 漂移时的 CLEAN、REALIGN 与 FORK</title>
+<desc id="desc">同一两轮会话在 linearize 时的 token 行与 loss_mask：turn 1 后 builder 持有 9 个 token，turn 2 的 prompt_ids 在位置 8 漂移；公共前缀 8、最近 response 起点 7，新 output 2 个 token 短于默认阈值 1024，走 REALIGN，A 整段改为 mask 0，只训练 2 个 token；阈值取 1 时走 FORK，两条 Sample 共训练 4 个 token，第二条带 13 个 prompt token 作为上下文。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .tk{font-size:10.5px;fill:#2A313B;font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;marker-end:url(#arrowAux)}
+  .brk{fill:none;stroke:#8A93A0;stroke-width:1.1}
+</style><rect width="1180" height="630" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">token 层（get_trajectory）：消息已挂在同一条链上，prompt_ids 却与已持有的 token 不一致</text>
+<text x="24" y="56" class="su" text-anchor="start">已持有 = turn 1 的 prompt 7 + A 2；turn 2 的 prompt_ids 在位置 8（A 回放的 &lt;/ast&gt;）被替换成 &lt;DRIFT&gt;；C = r:done &lt;/ast&gt;</text>
+<rect x="24" y="72" width="1132" height="196" rx="10" class="panel"/>
+<text x="32" y="92" class="sm" text-anchor="start">位置</text>
+<text x="260" y="92" class="sm" text-anchor="middle">0</text>
+<text x="320" y="92" class="sm" text-anchor="middle">1</text>
+<text x="380" y="92" class="sm" text-anchor="middle">2</text>
+<text x="440" y="92" class="sm" text-anchor="middle">3</text>
+<text x="500" y="92" class="sm" text-anchor="middle">4</text>
+<text x="560" y="92" class="sm" text-anchor="middle">5</text>
+<text x="620" y="92" class="sm" text-anchor="middle">6</text>
+<text x="680" y="92" class="sm" text-anchor="middle">7</text>
+<text x="740" y="92" class="sm" text-anchor="middle">8</text>
+<text x="800" y="92" class="sm" text-anchor="middle">9</text>
+<text x="860" y="92" class="sm" text-anchor="middle">10</text>
+<text x="920" y="92" class="sm" text-anchor="middle">11</text>
+<text x="980" y="92" class="sm" text-anchor="middle">12</text>
+<text x="1040" y="92" class="sm" text-anchor="middle">13</text>
+<text x="1100" y="92" class="sm" text-anchor="middle">14</text>
+<text x="32" y="119" class="tx" text-anchor="start">turn 1 后 builder 持有</text>
+<text x="32" y="135" class="sm" text-anchor="start">A 从位置 7 起（最近 response 起点）</text>
+<rect x="232" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="119" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<text x="260" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="292" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="119" class="tk" text-anchor="middle">system:S</text>
+<text x="320" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="352" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="119" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<text x="380" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="412" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="119" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<text x="440" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="472" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="119" class="tk" text-anchor="middle">user:u</text>
+<text x="500" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="532" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="119" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<text x="560" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="592" y="102" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="119" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="620" y="141" class="sm" text-anchor="middle">·</text>
+<rect x="652" y="102" width="56" height="26" rx="3" class="acc1"/>
+<text x="680" y="119" class="tk" text-anchor="middle">r:call</text>
+<text x="680" y="141" class="sm" text-anchor="middle">1</text>
+<rect x="712" y="102" width="56" height="26" rx="3" class="acc1"/>
+<text x="740" y="119" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="740" y="141" class="sm" text-anchor="middle">1</text>
+<text x="32" y="175" class="tx" text-anchor="start">turn 2 prompt_ids</text>
+<text x="32" y="191" class="sm" text-anchor="start">共 13 个 token</text>
+<rect x="232" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="175" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<rect x="292" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="175" class="tk" text-anchor="middle">system:S</text>
+<rect x="352" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="175" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<rect x="412" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="175" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<rect x="472" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="175" class="tk" text-anchor="middle">user:u</text>
+<rect x="532" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="175" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<rect x="592" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="175" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<rect x="652" y="158" width="56" height="26" rx="3" class="ghost"/>
+<text x="680" y="175" class="tk" text-anchor="middle">r:call</text>
+<rect x="712" y="158" width="56" height="26" rx="3" class="acc2"/>
+<text x="740" y="175" class="tk" text-anchor="middle">&lt;DRIFT&gt;</text>
+<rect x="772" y="158" width="56" height="26" rx="3" class="neutral"/>
+<text x="800" y="175" class="tk" text-anchor="middle">&lt;tul&gt;</text>
+<rect x="832" y="158" width="56" height="26" rx="3" class="neutral"/>
+<text x="860" y="175" class="tk" text-anchor="middle">tool:t</text>
+<rect x="892" y="158" width="56" height="26" rx="3" class="neutral"/>
+<text x="920" y="175" class="tk" text-anchor="middle">&lt;/tul&gt;</text>
+<rect x="952" y="158" width="56" height="26" rx="3" class="neutral"/>
+<text x="980" y="175" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<path d="M233 187 L233 192 L707 192 L707 187" class="brk"/>
+<text x="470" y="205" class="sm" text-anchor="middle">公共前缀 8</text>
+<text x="32" y="232" class="tx" text-anchor="start">drift = 9 − 8 = 1；8 ≥ 7，漂移在 A 内；新 output 长度 2：默认阈值 2 &lt; 1024 → REALIGN，阈值 1 时 2 ≥ 1 → FORK</text>
+<text x="32" y="252" class="tx" text-anchor="start">对照：漂移若插在位置 6（A 起点之前），公共前缀 6 &lt; 7 → FORK，与阈值无关</text>
+<rect x="24" y="282" width="1132" height="308" rx="10" class="panel"/>
+<text x="32" y="313" class="tx" text-anchor="start">对照：无漂移 CLEAN</text>
+<text x="32" y="329" class="sm" text-anchor="start">1 条，训练 4 个 token</text>
+<rect x="232" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="313" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<text x="260" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="292" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="313" class="tk" text-anchor="middle">system:S</text>
+<text x="320" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="352" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="313" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<text x="380" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="412" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="313" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<text x="440" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="472" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="313" class="tk" text-anchor="middle">user:u</text>
+<text x="500" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="532" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="313" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<text x="560" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="592" y="296" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="313" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="620" y="335" class="sm" text-anchor="middle">·</text>
+<rect x="652" y="296" width="56" height="26" rx="3" class="acc1"/>
+<text x="680" y="313" class="tk" text-anchor="middle">r:call</text>
+<text x="680" y="335" class="sm" text-anchor="middle">1</text>
+<rect x="712" y="296" width="56" height="26" rx="3" class="acc1"/>
+<text x="740" y="313" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="740" y="335" class="sm" text-anchor="middle">1</text>
+<rect x="772" y="296" width="56" height="26" rx="3" class="neutral"/>
+<text x="800" y="313" class="tk" text-anchor="middle">&lt;tul&gt;</text>
+<text x="800" y="335" class="sm" text-anchor="middle">0</text>
+<rect x="832" y="296" width="56" height="26" rx="3" class="neutral"/>
+<text x="860" y="313" class="tk" text-anchor="middle">tool:t</text>
+<text x="860" y="335" class="sm" text-anchor="middle">0</text>
+<rect x="892" y="296" width="56" height="26" rx="3" class="neutral"/>
+<text x="920" y="313" class="tk" text-anchor="middle">&lt;/tul&gt;</text>
+<text x="920" y="335" class="sm" text-anchor="middle">0</text>
+<rect x="952" y="296" width="56" height="26" rx="3" class="neutral"/>
+<text x="980" y="313" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="980" y="335" class="sm" text-anchor="middle">0</text>
+<rect x="1012" y="296" width="56" height="26" rx="3" class="acc1"/>
+<text x="1040" y="313" class="tk" text-anchor="middle">r:done</text>
+<text x="1040" y="335" class="sm" text-anchor="middle">1</text>
+<rect x="1072" y="296" width="56" height="26" rx="3" class="acc1"/>
+<text x="1100" y="313" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="1100" y="335" class="sm" text-anchor="middle">1</text>
+<text x="32" y="369" class="tx" text-anchor="start">REALIGN（阈值 1024）</text>
+<text x="32" y="385" class="sm" text-anchor="start">1 条，训练 2 个 token；A 清零</text>
+<rect x="232" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="369" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<text x="260" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="292" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="369" class="tk" text-anchor="middle">system:S</text>
+<text x="320" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="352" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="369" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<text x="380" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="412" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="369" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<text x="440" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="472" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="369" class="tk" text-anchor="middle">user:u</text>
+<text x="500" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="532" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="369" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<text x="560" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="592" y="352" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="369" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="620" y="391" class="sm" text-anchor="middle">·</text>
+<rect x="652" y="352" width="56" height="26" rx="3" class="acc2"/>
+<text x="680" y="369" class="tk" text-anchor="middle">r:call</text>
+<text x="680" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="712" y="352" width="56" height="26" rx="3" class="acc2"/>
+<text x="740" y="369" class="tk" text-anchor="middle">&lt;DRIFT&gt;</text>
+<text x="740" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="772" y="352" width="56" height="26" rx="3" class="neutral"/>
+<text x="800" y="369" class="tk" text-anchor="middle">&lt;tul&gt;</text>
+<text x="800" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="832" y="352" width="56" height="26" rx="3" class="neutral"/>
+<text x="860" y="369" class="tk" text-anchor="middle">tool:t</text>
+<text x="860" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="892" y="352" width="56" height="26" rx="3" class="neutral"/>
+<text x="920" y="369" class="tk" text-anchor="middle">&lt;/tul&gt;</text>
+<text x="920" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="952" y="352" width="56" height="26" rx="3" class="neutral"/>
+<text x="980" y="369" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="980" y="391" class="sm" text-anchor="middle">0</text>
+<rect x="1012" y="352" width="56" height="26" rx="3" class="acc1"/>
+<text x="1040" y="369" class="tk" text-anchor="middle">r:done</text>
+<text x="1040" y="391" class="sm" text-anchor="middle">1</text>
+<rect x="1072" y="352" width="56" height="26" rx="3" class="acc1"/>
+<text x="1100" y="369" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="1100" y="391" class="sm" text-anchor="middle">1</text>
+<text x="32" y="425" class="tx" text-anchor="start">FORK（阈值 1）Sample 1</text>
+<text x="32" y="441" class="sm" text-anchor="start">response 2，保住 A</text>
+<rect x="232" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="425" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<text x="260" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="292" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="425" class="tk" text-anchor="middle">system:S</text>
+<text x="320" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="352" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="425" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<text x="380" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="412" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="425" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<text x="440" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="472" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="425" class="tk" text-anchor="middle">user:u</text>
+<text x="500" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="532" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="425" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<text x="560" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="592" y="408" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="425" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="620" y="447" class="sm" text-anchor="middle">·</text>
+<rect x="652" y="408" width="56" height="26" rx="3" class="acc1"/>
+<text x="680" y="425" class="tk" text-anchor="middle">r:call</text>
+<text x="680" y="447" class="sm" text-anchor="middle">1</text>
+<rect x="712" y="408" width="56" height="26" rx="3" class="acc1"/>
+<text x="740" y="425" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="740" y="447" class="sm" text-anchor="middle">1</text>
+<text x="32" y="481" class="tx" text-anchor="start">FORK Sample 2</text>
+<text x="32" y="497" class="sm" text-anchor="start">prompt 13 个 token 重算</text>
+<rect x="232" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="260" y="481" class="tk" text-anchor="middle">&lt;sys&gt;</text>
+<text x="260" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="292" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="320" y="481" class="tk" text-anchor="middle">system:S</text>
+<text x="320" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="352" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="380" y="481" class="tk" text-anchor="middle">&lt;/sys&gt;</text>
+<text x="380" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="412" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="440" y="481" class="tk" text-anchor="middle">&lt;usr&gt;</text>
+<text x="440" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="472" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="500" y="481" class="tk" text-anchor="middle">user:u</text>
+<text x="500" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="532" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="560" y="481" class="tk" text-anchor="middle">&lt;/usr&gt;</text>
+<text x="560" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="592" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="620" y="481" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="620" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="652" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="680" y="481" class="tk" text-anchor="middle">r:call</text>
+<text x="680" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="712" y="464" width="56" height="26" rx="3" class="acc2"/>
+<text x="740" y="481" class="tk" text-anchor="middle">&lt;DRIFT&gt;</text>
+<text x="740" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="772" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="800" y="481" class="tk" text-anchor="middle">&lt;tul&gt;</text>
+<text x="800" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="832" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="860" y="481" class="tk" text-anchor="middle">tool:t</text>
+<text x="860" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="892" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="920" y="481" class="tk" text-anchor="middle">&lt;/tul&gt;</text>
+<text x="920" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="952" y="464" width="56" height="26" rx="3" class="ghost"/>
+<text x="980" y="481" class="tk" text-anchor="middle">&lt;gen&gt;</text>
+<text x="980" y="503" class="sm" text-anchor="middle">·</text>
+<rect x="1012" y="464" width="56" height="26" rx="3" class="acc1"/>
+<text x="1040" y="481" class="tk" text-anchor="middle">r:done</text>
+<text x="1040" y="503" class="sm" text-anchor="middle">1</text>
+<rect x="1072" y="464" width="56" height="26" rx="3" class="acc1"/>
+<text x="1100" y="481" class="tk" text-anchor="middle">&lt;/ast&gt;</text>
+<text x="1100" y="503" class="sm" text-anchor="middle">1</text>
+<text x="32" y="532" class="sm" text-anchor="start">REALIGN：位置 7 起整段改为 mask 0，未漂移的 r:call 也清零</text>
+<text x="32" y="552" class="sm" text-anchor="start">FORK：保住 4 个训练 token，代价是多 1 条 Sample、13 个 prompt token 重算</text>
+<text x="32" y="572" class="sm" text-anchor="start">图例：灰 = 首轮 prompt 或公共前缀，白 = mask 0，蓝 = mask 1，橙 = 漂移或失去信号</text>
+<text x="24" y="614" class="cap" text-anchor="start">阅读顺序：先看决策行的三个量（公共前缀、最近 response 起点、新 output 长度），再比较 REALIGN 与 FORK 在"保住 A"和"多一条 Sample"之间的取舍。</text>
+</svg>

@@ -6,8 +6,8 @@ title: "D06 工业后训练框架对比"
 
 > **阶段**：S02–S05
 > **文档编号**：D06
-> **快照日期**：2026-07-27；slime 列于 2026-08-14 单独重验
-> **证据基线**：verl `983cb0f`、slime `681b3adc`、AReaL `b23fa6c`、ROLL `370cb24`
+> **快照日期**：2026-07-27；slime 列于 2026-09-17 单独重验
+> **证据基线**：verl `983cb0f`、slime `4c193f1f`、AReaL `b23fa6c`、ROLL `370cb24`
 > **结论先行**：verl、slime、AReaL、ROLL 不是同一目标函数下的排行榜；它们分别优化通用可组合性、Megatron+SGLang 深集成、fully async 服务化和多 Strategy/异构硬件。
 > **阅读导航**：[[01_posttraining_infra_mechanism_analysis|上一篇 D05]] · [[10_verl_end_to_end_iteration_analysis|下一篇 D07]]
 
@@ -18,7 +18,7 @@ title: "D06 工业后训练框架对比"
 | 框架 | commit | 本文角色 |
 |---|---|---|
 | verl | `983cb0f24443f87b3d161fad318445130a620b07` | 主 baseline，先贯通稳定同步链 |
-| slime | `681b3adca54105d5ecd3fb822fa0dc58a427e0f9` | Megatron+SGLang 性能、训推一致性与稳定性对照；2026-08-14 重验 |
+| slime | `4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03） | Megatron+SGLang 性能、训推一致性与稳定性对照；2026-09-17 重验 |
 | AReaL | `b23fa6cf9c8edfebcf055079ab78913128bc4579` | fully async、agent service、freshness 对照 |
 | ROLL | `370cb24c1036ea9145365478fcc40612b2186fc8` | 多 Strategy、资源映射、Ascend 对照 |
 
@@ -37,7 +37,7 @@ title: "D06 工业后训练框架对比"
 | fully async | experimental 独立路径 | warm queue rollout path | 核心设计与 freshness manager | `async_pipeline` 与 agentic 分支 |
 | Agentic | rollout interface/loop 扩展 | custom generate + agent harness | workflow + online agent service | env manager + tools + proxy |
 | TIM 工具 | correction/bypass/metrics | rollout log-prob、temperature/top-p replay、routing replay、TIS/OPSM 与 GLM-5 strict gate | behave/proximal 分离 | train-infer corrections |
-| NPU | 官方 Ascend 扩展列出 vLLM/SGLang + FSDP/FSDP2/Megatron/MindSpeed；固定 upstream commit 仍需逐后端核验 | 本快照非主路径 | 独立 Ascend 文档/分支 + vLLM-Ascend | 主树 platform 抽象与 vLLM-Ascend |
+| NPU | 官方 Ascend 扩展列出 vLLM/SGLang + FSDP/FSDP2/Megatron/MindSpeed；固定 upstream commit 仍需逐后端核验 | 非主路径：主树加速器注册表只有 CUDA（含 ROCm）与 MUSA；`docker/npu_patch` 是钉 slime v0.2.2 的旧版 Ascend 补丁 | 独立 Ascend 文档/分支 + vLLM-Ascend | 主树 platform 抽象与 vLLM-Ascend |
 
 ## 3. 四级支持证据
 
@@ -70,14 +70,14 @@ title: "D06 工业后训练框架对比"
 
 优点：
 
-- `train.py:49-93` 的主循环非常直接；
+- `train.py::train` 的主循环非常直接；
 - 深押 Megatron+SGLang，可以暴露上游后端的高级能力；
 - weight transport 与 custom rollout 的扩展面清晰。
 
 代价：
 
 - 单 rollout backend 的设计降低通用后端可替换性；
-- fully async 当前主要让 rollout producer/queue 跨轮保温；`train_async.py` 只做一拍 generate/train overlap，换权重前仍等待生成完成；
+- fully async 当前主要让 rollout producer/queue 跨轮保温；`train_async.py` 只做一拍 generate/train overlap，换权重前只等待当前批次的 generate future，叠加 fully-async 时不等待后台池里的在途组；
 - README 中生态项目能力不能自动算进 slime core。
 
 ### 4.3 AReaL
@@ -113,7 +113,7 @@ title: "D06 工业后训练框架对比"
 | 框架 | 可确认实现 | 不是 |
 |---|---|---|
 | verl | experimental fully async policy 拥有单独 main/queue/rollouter/trainer | stable `RayPPOTrainer.fit` 自动 fully async |
-| slime | background asyncio worker 持续产组、逻辑 backpressure、surplus 跨调用保温；另有一拍 generate/train overlap | 无版本 admission 上限的任意 replay，或生成中途换权重 |
+| slime | background asyncio worker 持续产组、逻辑 backpressure、surplus 跨调用保温；另有一拍 generate/train overlap | 轨迹级版本一致：fully-async 下权重更新先 pause engine（上游 SGLang 默认 abort 模式），后台池在途组以 ABORTED 回队，文本请求续用 `sample.tokens` 在新权重下接着生成，同一轨迹前缀属旧版本、后缀属新版本，worker 没有版本年龄上限，见 [[13_slime_sglang_rollout_engine_analysis#2.3 变体：同一协议的三条替换轴|ABORTED 回队可达条件]] |
 | AReaL | producer admission + version staleness + workflow executor | 单纯把 `asyncio` 包在 rollout 外 |
 | ROLL | pipeline flag 控制 generate/model update 与 scheduler pause | 所有 agent env 都天然 on-policy |
 
@@ -135,8 +135,8 @@ independent inference service
 | 新 loss | `core_algos.py` registry | Megatron loss/ppo utils | PPO actor/loss config | actor worker + strategy |
 | 新 rollout | rollout class/agent loop | `--rollout-function-path` | `RolloutWorkflow`/agent | scheduler/env manager |
 | 新 reward | reward manager/function | RM hub/custom function | workflow reward | reward worker |
-| 新 weight transport | worker/rollout path | updater class | gateway adapter | update group/strategy |
-| 新硬件 | worker/backend 适配 | 训练/serving 双栈 | platform + branch/image | platform + strategy |
+| 新 weight transport | worker/rollout path | updater class（由 `create_weight_updater` 工厂选择） | gateway adapter | update group/strategy |
+| 新硬件 | worker/backend 适配 | 训练/serving 双栈；训练侧经 `slime/utils/accelerator/` 注册表 | platform + branch/image | platform + strategy |
 
 对工业修改，建议先选“最小变更面”而非“功能最多”：
 
@@ -152,10 +152,12 @@ independent inference service
 | policy version 字段 | 部分路径需追 meta | rollout id/weight version | 一等字段 | global step/model update |
 | TIM correction | helper 与 loss 接口 | log-prob/routing replay | 双 ratio 指标 | correction utility |
 | fault injection | 部分 worker/test | health monitor/CI injection | controller/service recovery | scheduler/cluster 机制 |
-| checkpoint queue state | 需按路径核验 | DataSource save/load | recovery/version hook | pipeline checkpoint |
-| weight atomicity | backend-dependent | engine pause/flush/version compare | gateway last-version commit | all worker refs |
+| checkpoint queue state | 需按路径核验 | 仅开 `--rollout-global-dataset` 时存 DataSource 游标与计数器；partial 回收队列与 fully-async 在途池不进 checkpoint | recovery/version hook | pipeline checkpoint |
+| weight atomicity | backend-dependent | engine pause/flush/continue 包住权重装载；engine 版本号比对只在 full+disk 且开 `--ci-test` 时执行 | gateway last-version commit | all worker refs |
 
 这张表表示源码中的机制入口，不表示完成了统一规模的故障注入验证。
+
+slime 列（`THUDM/slime@4c193f1f`）的两处边界：`slime/rollout/data_source.py::RolloutDataSource.save` 只在开 `--rollout-global-dataset` 时写 `sample_offset`、`epoch_id`、`sample_group_index`、`sample_index` 与 `metadata`，`RolloutDataSourceWithBuffer` 不覆写 `save`，因此 partial 回收的 buffer 与 `slime/rollout/fully_async_rollout.py::AsyncRolloutWorker` 的在途任务都不进 checkpoint；四条权重更新路径都在 `pause_generation`、`flush_cache` 与 `continue_generation` 之间装载，而 `slime/ray/actor_group.py::RayTrainGroup._reload_rollout_weights_from_disk` 仅在 `args.ci_test` 为真时读回各 engine 的 weight version 并与期望值比对，其余路径只把版本标签写给 engine。续训切点与恢复链见 [[18_slime_fault_tolerance_observability_analysis|slime 容错与可观测性]]，权重提交边界见 [[16_slime_weight_sync_analysis|slime 权重同步]]。
 
 ## 8. 选型树
 
@@ -197,7 +199,7 @@ flowchart TD
 >
 > **重验时的已知障碍**:四框架的 commit 比对需要访问 GitHub,本次会话所处环境无法访问,故只能从官方文档侧做部分核验。slime / AReaL / ROLL 三列本次**未做任何重验**。
 >
-> **后续状态（2026-08-14）**：slime 本地 `origin/main@681b3adc` 已完成源码重验，本页 slime commit、TIM 与 async 语义已更新；AReaL / ROLL 仍维持 2026-07-27 快照。slime 的完整证据链见 [[slime/index]] 独立知识域。
+> **后续状态（2026-09-17）**：slime 列已按 `THUDM/slime@4c193f1f` 源码重验，含 checkpoint 队列状态与权重版本比对两项更正；AReaL / ROLL 仍维持 2026-07-27 快照。slime 的完整证据链见 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]]。
 >
 > 另有两项已知边界,重验时一并处理:
 > 1. **verl 列的基线与本库 verl 深潜页不一致**——本页 verl 列锁 `983cb0f`,而 [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] 已更新到另一冻结基线。跨页引用 verl 结论时须先对齐基线。

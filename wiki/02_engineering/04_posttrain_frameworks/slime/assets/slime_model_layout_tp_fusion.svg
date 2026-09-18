@@ -1,0 +1,307 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1010" viewBox="0 0 1180 1010" role="img" aria-labelledby="title desc">
+<title id="title">slime 权重布局规则一：GLU fc1 的 TP 切分与重排、非 GLU fc1 的静默错配、Qwen3-Next 门控 QKV 的按组交错</title>
+<desc id="desc">玩具层 hidden 8、4 个 query head 与 2 个 KV group、head_dim 2、FFN 4，TP=2。面板一：HF gate_proj 与 up_proj 拼成 linear_fc1 后，导入按 gate、up 各自切半，导出先各自拆半再按全部 gate、全部 up 拼接；朴素按 rank 拼接会让 gate_proj 混入 up 行。面板二：同一名称规则套到非 GLU 的 fc1 时，fc1 行与按列常规切分的 fc2 在 rank 内错配，但导出重排又把它拼回原序，往返恒等。面板三：HF q_proj 每头 query 与 gate 交错，导入重排成按 KV group 连续的 query、gate、key、value，TP=2 时每个 rank 恰好持有整组，导出逆变换逐行还原。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .cl{font-size:11px;fill:#1F2430}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .h1{fill:#DCE7FB;stroke:#7DA2E8;stroke-width:1}
+  .h2{fill:#F7E3CF;stroke:#D79A62;stroke-width:1}
+  .h3{fill:#E6E9EE;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+</style><rect width="1180" height="1010" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一层权重的三条布局规则：导入切分与导出重排必须配对，且只按参数名生效</text>
+<text x="24" y="56" class="su" text-anchor="start">玩具层：hidden 8、4 个 query head / 2 个 KV group、head_dim 2、FFN 4；训练 TP=2。格子里一个标签代表一整行（QKV 面板里一个标签代表 head_dim 行）</text>
+<rect x="24" y="72" width="1132" height="292" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① GLU linear_fc1：导入先把 gate、up 各自切半，导出先把每片拆成 gate、up 再分别拼</text>
+<text x="40" y="134" class="tx" text-anchor="start">HF gate_proj · up_proj</text>
+<rect x="250" y="118" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="133" class="cl" text-anchor="middle">g0</text>
+<rect x="287" y="118" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="133" class="cl" text-anchor="middle">g1</text>
+<rect x="324" y="118" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="133" class="cl" text-anchor="middle">g2</text>
+<rect x="361" y="118" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="133" class="cl" text-anchor="middle">g3</text>
+<rect x="413" y="118" width="34" height="22" rx="3" class="h2"/>
+<text x="430" y="133" class="cl" text-anchor="middle">u0</text>
+<rect x="450" y="118" width="34" height="22" rx="3" class="h2"/>
+<text x="467" y="133" class="cl" text-anchor="middle">u1</text>
+<rect x="487" y="118" width="34" height="22" rx="3" class="h2"/>
+<text x="504" y="133" class="cl" text-anchor="middle">u2</text>
+<rect x="524" y="118" width="34" height="22" rx="3" class="h2"/>
+<text x="541" y="133" class="cl" text-anchor="middle">u3</text>
+<text x="40" y="172" class="tx" text-anchor="start">merge_gate_up → 8×8</text>
+<rect x="250" y="156" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="171" class="cl" text-anchor="middle">g0</text>
+<rect x="287" y="156" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="171" class="cl" text-anchor="middle">g1</text>
+<rect x="324" y="156" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="171" class="cl" text-anchor="middle">g2</text>
+<rect x="361" y="156" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="171" class="cl" text-anchor="middle">g3</text>
+<rect x="398" y="156" width="34" height="22" rx="3" class="h2"/>
+<text x="415" y="171" class="cl" text-anchor="middle">u0</text>
+<rect x="435" y="156" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="171" class="cl" text-anchor="middle">u1</text>
+<rect x="472" y="156" width="34" height="22" rx="3" class="h2"/>
+<text x="489" y="171" class="cl" text-anchor="middle">u2</text>
+<rect x="509" y="156" width="34" height="22" rx="3" class="h2"/>
+<text x="526" y="171" class="cl" text-anchor="middle">u3</text>
+<text x="557" y="172" class="sm" text-anchor="start">Megatron fc1 的逻辑全量</text>
+<text x="40" y="216" class="tx" text-anchor="start">_tensor_parallel_shard</text>
+<text x="250" y="195" class="sm" text-anchor="start">rank0</text>
+<rect x="250" y="200" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="215" class="cl" text-anchor="middle">g0</text>
+<rect x="287" y="200" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="215" class="cl" text-anchor="middle">g1</text>
+<rect x="324" y="200" width="34" height="22" rx="3" class="h2"/>
+<text x="341" y="215" class="cl" text-anchor="middle">u0</text>
+<rect x="361" y="200" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="215" class="cl" text-anchor="middle">u1</text>
+<text x="421" y="195" class="sm" text-anchor="start">rank1</text>
+<rect x="421" y="200" width="34" height="22" rx="3" class="h1"/>
+<text x="438" y="215" class="cl" text-anchor="middle">g2</text>
+<rect x="458" y="200" width="34" height="22" rx="3" class="h1"/>
+<text x="475" y="215" class="cl" text-anchor="middle">g3</text>
+<rect x="495" y="200" width="34" height="22" rx="3" class="h2"/>
+<text x="512" y="215" class="cl" text-anchor="middle">u2</text>
+<rect x="532" y="200" width="34" height="22" rx="3" class="h2"/>
+<text x="549" y="215" class="cl" text-anchor="middle">u3</text>
+<text x="592" y="216" class="sm" text-anchor="start">每片 4×8：前半 gate、后半 up，与 Megatron 列并行一致</text>
+<text x="40" y="256" class="tx" text-anchor="start">导出：按 rank 朴素拼接</text>
+<rect x="250" y="240" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="255" class="cl" text-anchor="middle">g0</text>
+<rect x="287" y="240" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="255" class="cl" text-anchor="middle">g1</text>
+<rect x="324" y="240" width="34" height="22" rx="3" class="h2"/>
+<text x="341" y="255" class="cl" text-anchor="middle">u0</text>
+<rect x="361" y="240" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="255" class="cl" text-anchor="middle">u1</text>
+<rect x="398" y="240" width="34" height="22" rx="3" class="h1"/>
+<text x="415" y="255" class="cl" text-anchor="middle">g2</text>
+<rect x="435" y="240" width="34" height="22" rx="3" class="h1"/>
+<text x="452" y="255" class="cl" text-anchor="middle">g3</text>
+<rect x="472" y="240" width="34" height="22" rx="3" class="h2"/>
+<text x="489" y="255" class="cl" text-anchor="middle">u2</text>
+<rect x="509" y="240" width="34" height="22" rx="3" class="h2"/>
+<text x="526" y="255" class="cl" text-anchor="middle">u3</text>
+<path d="M551 251 L581 251" class="main"/>
+<rect x="587" y="240" width="298" height="22" rx="4" class="acc2"/>
+<text x="595" y="255" class="sm" text-anchor="start">chunk(2) → gate_proj = [g0 g1 u0 u1]，混入 up 行</text>
+<text x="40" y="294" class="tx" text-anchor="start">all_gather_params_async</text>
+<rect x="250" y="278" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="293" class="cl" text-anchor="middle">g0</text>
+<rect x="287" y="278" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="293" class="cl" text-anchor="middle">g1</text>
+<rect x="324" y="278" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="293" class="cl" text-anchor="middle">g2</text>
+<rect x="361" y="278" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="293" class="cl" text-anchor="middle">g3</text>
+<rect x="398" y="278" width="34" height="22" rx="3" class="h2"/>
+<text x="415" y="293" class="cl" text-anchor="middle">u0</text>
+<rect x="435" y="278" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="293" class="cl" text-anchor="middle">u1</text>
+<rect x="472" y="278" width="34" height="22" rx="3" class="h2"/>
+<text x="489" y="293" class="cl" text-anchor="middle">u2</text>
+<rect x="509" y="278" width="34" height="22" rx="3" class="h2"/>
+<text x="526" y="293" class="cl" text-anchor="middle">u3</text>
+<path d="M551 289 L581 289" class="main"/>
+<rect x="587" y="278" width="285" height="22" rx="4" class="acc1"/>
+<text x="595" y="293" class="sm" text-anchor="start">chunk(2) → gate_proj = [g0 g1 g2 g3]，逐行还原</text>
+<text x="40" y="334" class="sm" text-anchor="start">两处都只看参数名含 linear_fc1，不读 partition_stride（Megatron 对 GLU 设为 2）；family converter 再按 dim 0 对半拆成 gate_proj / up_proj</text>
+<text x="40" y="352" class="sm" text-anchor="start">同一重排也用于 expert fc1：名字里的 linear_fc1 决定一切，expert 参数改用 expert-TP 组</text>
+<rect x="24" y="376" width="1132" height="250" rx="10" class="panel"/>
+<text x="40" y="400" class="pt" text-anchor="start">② 同一规则套到非 GLU 的 fc1：rank 内 fc1 行与 fc2 列错配，导出重排却把它拼回原序</text>
+<text x="40" y="438" class="tx" text-anchor="start">HF fc1 行 · fc2 列</text>
+<rect x="250" y="422" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="437" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="422" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="437" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="422" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="437" class="cl" text-anchor="middle">a2</text>
+<rect x="361" y="422" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="437" class="cl" text-anchor="middle">a3</text>
+<rect x="413" y="422" width="34" height="22" rx="3" class="h3"/>
+<text x="430" y="437" class="cl" text-anchor="middle">c0</text>
+<rect x="450" y="422" width="34" height="22" rx="3" class="h3"/>
+<text x="467" y="437" class="cl" text-anchor="middle">c1</text>
+<rect x="487" y="422" width="34" height="22" rx="3" class="h3"/>
+<text x="504" y="437" class="cl" text-anchor="middle">c2</text>
+<rect x="524" y="422" width="34" height="22" rx="3" class="h3"/>
+<text x="541" y="437" class="cl" text-anchor="middle">c3</text>
+<text x="40" y="482" class="tx" text-anchor="start">导入后各 rank 持有</text>
+<text x="250" y="461" class="sm" text-anchor="start">rank0  fc1 · fc2</text>
+<rect x="250" y="466" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="481" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="466" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="481" class="cl" text-anchor="middle">a2</text>
+<rect x="329" y="466" width="34" height="22" rx="3" class="h3"/>
+<text x="346" y="481" class="cl" text-anchor="middle">c0</text>
+<rect x="366" y="466" width="34" height="22" rx="3" class="h3"/>
+<text x="383" y="481" class="cl" text-anchor="middle">c1</text>
+<text x="430" y="461" class="sm" text-anchor="start">rank1  fc1 · fc2</text>
+<rect x="430" y="466" width="34" height="22" rx="3" class="h1"/>
+<text x="447" y="481" class="cl" text-anchor="middle">a1</text>
+<rect x="467" y="466" width="34" height="22" rx="3" class="h1"/>
+<text x="484" y="481" class="cl" text-anchor="middle">a3</text>
+<rect x="509" y="466" width="34" height="22" rx="3" class="h3"/>
+<text x="526" y="481" class="cl" text-anchor="middle">c2</text>
+<rect x="546" y="466" width="34" height="22" rx="3" class="h3"/>
+<text x="563" y="481" class="cl" text-anchor="middle">c3</text>
+<text x="610" y="482" class="sm" text-anchor="start">fc1 走同名 GLU 分支，fc2 按列常规切</text>
+<text x="40" y="516" class="tx" text-anchor="start">rank 内神经元配对</text>
+<rect x="250" y="500" width="51" height="22" rx="4" class="ghost"/>
+<text x="258" y="515" class="sm" text-anchor="start">a0↔c0</text>
+<rect x="307" y="500" width="51" height="22" rx="4" class="acc2"/>
+<text x="315" y="515" class="sm" text-anchor="start">a2↔c1</text>
+<rect x="364" y="500" width="51" height="22" rx="4" class="acc2"/>
+<text x="372" y="515" class="sm" text-anchor="start">a1↔c2</text>
+<rect x="421" y="500" width="51" height="22" rx="4" class="ghost"/>
+<text x="429" y="515" class="sm" text-anchor="start">a3↔c3</text>
+<rect x="492" y="500" width="191" height="22" rx="4" class="acc2"/>
+<text x="500" y="515" class="sm" text-anchor="start">2/4 个神经元错配，shape 全部正确</text>
+<text x="40" y="554" class="tx" text-anchor="start">导出 all_gather_params_async</text>
+<rect x="250" y="538" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="553" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="538" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="553" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="538" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="553" class="cl" text-anchor="middle">a2</text>
+<rect x="361" y="538" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="553" class="cl" text-anchor="middle">a3</text>
+<rect x="415" y="538" width="303" height="22" rx="4" class="acc2"/>
+<text x="423" y="553" class="sm" text-anchor="start">= HF [a0 a1 a2 a3]：往返恒等，round-trip 单测看不出</text>
+<text x="40" y="592" class="sm" text-anchor="start">无守卫：Direct 路径只 assert partition_dim is not None（Megatron 默认 -1，恒真）；distributed 路径的 stride 断言也放行 stride=1 的 fc1</text>
+<text x="40" y="610" class="sm" text-anchor="start">因此 linear_fc1 必须是 [gate; up] 融合；39 个 scripts/models preset 都带 --swiglu（直接或经 source）</text>
+<rect x="24" y="638" width="1132" height="350" rx="10" class="panel"/>
+<text x="40" y="662" class="pt" text-anchor="start">③ Qwen3-Next 门控 QKV：q_proj 每头 [query, gate] 交错，导入按 KV group 重排成连续的 [query…, gate…, key, value]</text>
+<text x="40" y="700" class="tx" text-anchor="start">HF q_proj（16 行）</text>
+<rect x="250" y="684" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="699" class="cl" text-anchor="middle">q0</text>
+<rect x="287" y="684" width="34" height="22" rx="3" class="h2"/>
+<text x="304" y="699" class="cl" text-anchor="middle">z0</text>
+<rect x="324" y="684" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="699" class="cl" text-anchor="middle">q1</text>
+<rect x="361" y="684" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="699" class="cl" text-anchor="middle">z1</text>
+<rect x="398" y="684" width="34" height="22" rx="3" class="h1"/>
+<text x="415" y="699" class="cl" text-anchor="middle">q2</text>
+<rect x="435" y="684" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="699" class="cl" text-anchor="middle">z2</text>
+<rect x="472" y="684" width="34" height="22" rx="3" class="h1"/>
+<text x="489" y="699" class="cl" text-anchor="middle">q3</text>
+<rect x="509" y="684" width="34" height="22" rx="3" class="h2"/>
+<text x="526" y="699" class="cl" text-anchor="middle">z3</text>
+<text x="561" y="700" class="sm" text-anchor="start">k_proj</text>
+<rect x="601" y="684" width="34" height="22" rx="3" class="h3"/>
+<text x="618" y="699" class="cl" text-anchor="middle">k0</text>
+<rect x="638" y="684" width="34" height="22" rx="3" class="h3"/>
+<text x="655" y="699" class="cl" text-anchor="middle">k1</text>
+<text x="690" y="700" class="sm" text-anchor="start">v_proj</text>
+<rect x="730" y="684" width="34" height="22" rx="3" class="h3"/>
+<text x="747" y="699" class="cl" text-anchor="middle">v0</text>
+<rect x="767" y="684" width="34" height="22" rx="3" class="h3"/>
+<text x="784" y="699" class="cl" text-anchor="middle">v1</text>
+<text x="40" y="746" class="tx" text-anchor="start">linear_qkv（24×8）</text>
+<text x="250" y="726" class="sm" text-anchor="start">group 0</text>
+<rect x="250" y="730" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="745" class="cl" text-anchor="middle">q0</text>
+<rect x="287" y="730" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="745" class="cl" text-anchor="middle">q1</text>
+<rect x="324" y="730" width="34" height="22" rx="3" class="h2"/>
+<text x="341" y="745" class="cl" text-anchor="middle">z0</text>
+<rect x="361" y="730" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="745" class="cl" text-anchor="middle">z1</text>
+<rect x="398" y="730" width="34" height="22" rx="3" class="h3"/>
+<text x="415" y="745" class="cl" text-anchor="middle">k0</text>
+<rect x="435" y="730" width="34" height="22" rx="3" class="h3"/>
+<text x="452" y="745" class="cl" text-anchor="middle">v0</text>
+<text x="495" y="726" class="sm" text-anchor="start">group 1</text>
+<rect x="495" y="730" width="34" height="22" rx="3" class="h1"/>
+<text x="512" y="745" class="cl" text-anchor="middle">q2</text>
+<rect x="532" y="730" width="34" height="22" rx="3" class="h1"/>
+<text x="549" y="745" class="cl" text-anchor="middle">q3</text>
+<rect x="569" y="730" width="34" height="22" rx="3" class="h2"/>
+<text x="586" y="745" class="cl" text-anchor="middle">z2</text>
+<rect x="606" y="730" width="34" height="22" rx="3" class="h2"/>
+<text x="623" y="745" class="cl" text-anchor="middle">z3</text>
+<rect x="643" y="730" width="34" height="22" rx="3" class="h3"/>
+<text x="660" y="745" class="cl" text-anchor="middle">k1</text>
+<rect x="680" y="730" width="34" height="22" rx="3" class="h3"/>
+<text x="697" y="745" class="cl" text-anchor="middle">v1</text>
+<text x="740" y="746" class="sm" text-anchor="start">reshape(groups, qpg, 2, hd).transpose(1, 2)</text>
+<text x="40" y="792" class="tx" text-anchor="start">TP2 按行均分（stride 1）</text>
+<text x="250" y="772" class="sm" text-anchor="start">rank0：12 行</text>
+<rect x="250" y="776" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="791" class="cl" text-anchor="middle">q0</text>
+<rect x="287" y="776" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="791" class="cl" text-anchor="middle">q1</text>
+<rect x="324" y="776" width="34" height="22" rx="3" class="h2"/>
+<text x="341" y="791" class="cl" text-anchor="middle">z0</text>
+<rect x="361" y="776" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="791" class="cl" text-anchor="middle">z1</text>
+<rect x="398" y="776" width="34" height="22" rx="3" class="h3"/>
+<text x="415" y="791" class="cl" text-anchor="middle">k0</text>
+<rect x="435" y="776" width="34" height="22" rx="3" class="h3"/>
+<text x="452" y="791" class="cl" text-anchor="middle">v0</text>
+<text x="495" y="772" class="sm" text-anchor="start">rank1：12 行</text>
+<rect x="495" y="776" width="34" height="22" rx="3" class="h1"/>
+<text x="512" y="791" class="cl" text-anchor="middle">q2</text>
+<rect x="532" y="776" width="34" height="22" rx="3" class="h1"/>
+<text x="549" y="791" class="cl" text-anchor="middle">q3</text>
+<rect x="569" y="776" width="34" height="22" rx="3" class="h2"/>
+<text x="586" y="791" class="cl" text-anchor="middle">z2</text>
+<rect x="606" y="776" width="34" height="22" rx="3" class="h2"/>
+<text x="623" y="791" class="cl" text-anchor="middle">z3</text>
+<rect x="643" y="776" width="34" height="22" rx="3" class="h3"/>
+<text x="660" y="791" class="cl" text-anchor="middle">k1</text>
+<rect x="680" y="776" width="34" height="22" rx="3" class="h3"/>
+<text x="697" y="791" class="cl" text-anchor="middle">v1</text>
+<rect x="740" y="776" width="277" height="22" rx="4" class="acc1"/>
+<text x="748" y="791" class="sm" text-anchor="start">每个 rank 恰好一整组，本地就能拆出 q、gate、k、v</text>
+<text x="40" y="838" class="tx" text-anchor="start">Megatron 每组拆分（依赖侧）</text>
+<rect x="250" y="822" width="74" height="22" rx="4" class="h1"/>
+<text x="258" y="837" class="sm" text-anchor="start">query 4 行</text>
+<rect x="330" y="822" width="68" height="22" rx="4" class="h2"/>
+<text x="338" y="837" class="sm" text-anchor="start">gate 4 行</text>
+<rect x="404" y="822" width="62" height="22" rx="4" class="h3"/>
+<text x="412" y="837" class="sm" text-anchor="start">key 2 行</text>
+<rect x="472" y="822" width="74" height="22" rx="4" class="h3"/>
+<text x="480" y="837" class="sm" text-anchor="start">value 2 行</text>
+<text x="564" y="838" class="sm" text-anchor="start">SelfAttention.get_query_key_value_tensors（output_gate，Megatron@1dcf0daf）</text>
+<text x="40" y="884" class="tx" text-anchor="start">导出逆变换</text>
+<rect x="250" y="868" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="883" class="cl" text-anchor="middle">q0</text>
+<rect x="287" y="868" width="34" height="22" rx="3" class="h2"/>
+<text x="304" y="883" class="cl" text-anchor="middle">z0</text>
+<rect x="324" y="868" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="883" class="cl" text-anchor="middle">q1</text>
+<rect x="361" y="868" width="34" height="22" rx="3" class="h2"/>
+<text x="378" y="883" class="cl" text-anchor="middle">z1</text>
+<rect x="398" y="868" width="34" height="22" rx="3" class="h1"/>
+<text x="415" y="883" class="cl" text-anchor="middle">q2</text>
+<rect x="435" y="868" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="883" class="cl" text-anchor="middle">z2</text>
+<rect x="472" y="868" width="34" height="22" rx="3" class="h1"/>
+<text x="489" y="883" class="cl" text-anchor="middle">q3</text>
+<rect x="509" y="868" width="34" height="22" rx="3" class="h2"/>
+<text x="526" y="883" class="cl" text-anchor="middle">z3</text>
+<rect x="563" y="868" width="303" height="22" rx="4" class="acc1"/>
+<text x="571" y="883" class="sm" text-anchor="start">q_proj = [q0 z0 q1 z1 q2 z2 q3 z3]，与 HF 逐块相同</text>
+<text x="40" y="928" class="sm" text-anchor="start">若误用不带门控的 merge_qkv：它期望 q 为 4 × 2 = 8 行，实得 16 行，reshape 直接报错</text>
+<text x="40" y="946" class="sm" text-anchor="start">group 数小于 TP 时，Megatron 前向先 all-gather 整个 qkv 输出再取本组（依赖侧），导入仍按行均分</text>
+<text x="40" y="970" class="cap" text-anchor="start">颜色：蓝 = gate_proj 行 g 或 query 块 q；橙 = up_proj 行 u 或 attention gate 块 z；灰 = key、value 与非 GLU 行</text>
+</svg>

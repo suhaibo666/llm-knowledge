@@ -5,6 +5,7 @@ title: "GLM-5 训练稳定性深挖 — 从架构 logits 到异步 RL 的「失�
 # GLM-5 训练稳定性深挖 — 从架构 logits 到异步 RL 的「失配 × 噪声 × 故障」三线防御
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)
+> **源码基线**：`THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）
 > **维度**: Deep Dive（机制级·跨章节主线）
 > 本页把散落在论文架构（§2）、Reasoning RL（§3.2）、General RL（§3.4）、Agentic RL（§4.1–4.2）与基础设施（§3.6.3）各处的**训练稳定性**线索收拢成一条主线。GLM-5 的稳定性问题集中在三类失稳源——**训练-推理分布失配**、**奖励/样本噪声**、**大规模系统故障**；本页逐一给出机制（原理 / 效果 / 为什么）。概要见 [[01_glm_5_analysis]]，架构与后训练细节见 [[20_glm5_architecture_deepdive]]、[[23_glm5_posttraining_deepdive]]、[[24_glm5_agentic_rl_deepdive]]。
 
@@ -224,6 +225,32 @@ $$
 4. 由此**单机事故不会中断 rollout**，保住端到端 RL 的连续性。
 
 **为什么算「稳定性」**：异步 RL 的吞吐建立在数百~上千并发 rollout 上（编排器支持 1k+ 并发，§4.1.1, p16），任一节点静默故障若不被剔除，会让一批 rollout 卡死、拖垮 step 级进度。心跳把「故障检测—剔除—重路由」做成闭环，使训练对单点故障**容错而非中断**。相关 PD 解耦、MTP 长尾加速等吞吐侧设计见 [[22_glm5_training_infra_deepdive]] 与 [[24_glm5_agentic_rl_deepdive]]。
+
+> **论文 vs 开源基线**（`THUDM/slime@4c193f1f`）：开源 slime 的实现与上面四步的描述不同，不能互相替代举证。
+>
+> - **检测**：没有服务器主动发出的心跳。开启 `--use-fault-tolerance`（默认关）后，`RolloutManager`（单个 Ray actor）在自身进程内为每个 server group 起一个 `slime/utils/health_monitor.py::RolloutHealthMonitor` 守护线程，按 `--rollout-health-check-interval` 逐个调用 engine 的 `health_generate`。
+> - **剔除**：一次检查失败，`RolloutHealthMonitor._kill_engine` 就把这个逻辑 engine 的全部节点 `shutdown` 并 `ray.kill`，槽位置为 `None`；router 自带的健康检查与熔断器在 `slime/backends/sglang_utils/deployment.py::_start_router` 中被关闭。
+> - **恢复**：不当场重建。下一次 `slime/backends/megatron_utils/actor.py::MegatronTrainRayActor.update_weights` 先调用 `slime/ray/rollout.py::RolloutManager.recover_updatable_engines`，只为空槽建新 engine，且只重建接收权重的模型的 engine（`RolloutManager._get_updatable_server` 取第一个 `update_weights=True` 的 server），再重连并推送权重。
+> - **请求**：slime 侧没有显式重路由。默认生成路径上，失败请求靠 `slime/utils/http_utils.py::_post` 的通用重试（最多 60 次）再次发往 router；外部 rollout engine 下这套监控不生效。
+>
+> 状态机、检测上界与恢复边界见 [[18_slime_fault_tolerance_observability_analysis|slime 容错与可观测性]]。
+
+---
+
+## 7. 论文机制在开源 slime 中的对应
+
+论文描述的是 GLM-5 训练时的配方，开源 slime（`THUDM/slime@4c193f1f`）只提供其中一部分开关，且多数默认关闭。下表只列与本页机制直接对应的源码事实；“无内置实现”指基线源码中没有对应代码路径，并不排除用自定义钩子自建。
+
+| 论文机制 | 开源 slime 对应 | 差异与边界 | 详见 |
+|---|---|---|---|
+| IcePop `pop` 门（本页 §3.1） | `slime/backends/megatron_utils/loss.py::icepop_function`，经 `--use-tis --custom-tis-function-path slime.backends.megatron_utils.loss.icepop_function` 启用，区间端点为 `--tis-clip-low`/`--tis-clip`；`tests/test_glm52_6layer_deterministic_e2e.py` 用 0.5/2.0，对应 $\beta=2$ | 不配自定义函数时，`--use-tis` 走 `vanilla_tis_function`，做的是截断而非置零 | [[17_slime_train_inference_consistency_analysis\|slime 训推一致性]] |
+| 冻结 indexer（本页 §3.2） | `--freeze-indexer` | 默认关；按结构识别 GLM 插件与 Megatron 上游两种 indexer 命名 | [[14_slime_megatron_training_analysis\|slime Megatron 训练]] |
+| TITO Gateway（本页 §4.1） | agent 适配层按“消息进、采样 token 出”记录每轮 `prompt_ids`、`output_ids` 与逐 token logprob（`slime/agent/trajectory.py::TurnRecord`） | 没有名为 TITO Gateway 的独立组件；README 把 TITO 列为衍生框架 Miles 新增的特性 | [[24_slime_agent_workflow_examples_analysis\|slime Agent 工作流]] |
+| 直接双边 IS（本页 §4.2） | `--use-rollout-logprobs` 让 PPO ratio 的分母改用 rollout logprob | 仍走 `slime/utils/ppo_utils.py::compute_policy_loss` 的 PPO 式 clip（`--eps-clip`/`--eps-clip-high`），不是区间外整 token 置零；它与 `--use-tis` 在参数校验中互斥，基线没有与 Eq.(3)–(5) 同构的内置 loss | [[17_slime_train_inference_consistency_analysis\|slime 训推一致性]] |
+| 丢弃过期样本 $w'-w_0>\tau$（本页 §4.3） | `Sample.weight_versions` 记录每次请求返回的版本 | 无内置实现：基线源码中没有读取该字段做过期丢弃的调用方 | [[17_slime_train_inference_consistency_analysis\|slime 训推一致性]] |
+| 丢弃噪声样本 + 组补齐（本页 §4.4） | `--rollout-sample-filter-path` 可原地设置 `Sample.remove_sample`，converter 把这类样本的 loss mask 清零 | 帮助文本写明 `remove_sample` 不决定样本是否参与 advantage 归一化；没有“复制有效样本补齐 / 不足半数整组丢弃”的内置规则 | [[12_slime_sample_datasource_analysis\|slime Sample 与 DataSource]] |
+| 同步权重后 reset 优化器（本页 §4.5） | `--reset-optimizer-states`、`--use-stateless-adam` | 默认关；清零按训练轮而不是按权重推送计，`train_async.py` 的 `--update-weights-interval` 大于 1 时两者不重合 | [[14_slime_megatron_training_analysis#4.5 优化器状态重置：--reset-optimizer-states 与 --use-stateless-adam|slime 优化器状态重置]] |
+| 心跳驱动容错（本页 §6） | `RolloutHealthMonitor` 在 `RolloutManager` 内按间隔轮询 | 失败即 shutdown 并 kill 整个逻辑 engine，到下一次 `update_weights` 才重建；见 §6 注记 | [[18_slime_fault_tolerance_observability_analysis\|slime 容错与可观测性]] |
 
 ---
 

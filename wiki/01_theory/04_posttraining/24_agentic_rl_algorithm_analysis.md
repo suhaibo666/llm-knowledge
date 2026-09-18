@@ -7,7 +7,9 @@ title: "D03 Agentic RL 算法与环境"
 > **阶段**：S01
 > **文档编号**：D03
 > **快照日期**：2026-07-28
-> **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
+> **证据基线**：固定 arXiv 版本；AReaL 与 ROLL（`370cb24`）引用沿用 S00 快照，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
+> **源码基线**：`THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）
+> **源码基线**：`inclusionAI/AReaL@b23fa6cf9c8edfebcf055079ab78913128bc4579`（`main`，2026-07-24）
 > **结论先行**：Agentic RL 的主要变化不是“多轮 prompt”，而是 policy action、环境状态、credit、版本和失败恢复不再与单条 token 序列天然对齐。
 > **阅读导航**：[[13_reasoning_rl_algorithm_evolution_analysis|上一篇 D02]] · [[25_on_policy_off_policy_staleness_analysis|下一篇 D04]]
 
@@ -115,8 +117,8 @@ K3 选择第二条的一个具体版本：$N\times K$ 活跃轨迹完成到 $\la
 
 三个固定源码例子展示了这一点：
 
-- slime `examples/coding_agent_rl/swe.py:151-364` 分开 evaluability、workspace、patch 与 evaluator；
-- AReaL `examples/sandbox_daytona/reward_example.py:11` 把代码执行封装为 grader；
+- slime 的 coding-agent 示例分开 evaluability、workspace、patch 与 evaluator：`examples/coding_agent_rl/swe.py::evaluability_check` 先拒绝不可评测的实例，`prepare_workspace` 准备 agent 沙箱，`git_diff` 取出模型改动，`run_evaluation` 在同镜像的干净沙箱里应用 diff 并跑数据集测试；
+- AReaL（仓库已从 `inclusionAI/AReaL` 迁到 `areal-project/AReaL`，旧地址重定向到新地址）`examples/sandbox_daytona/reward_example.py:11` 把代码执行封装为 grader；
 - ROLL `roll/pipeline/rlvr/rewards/code_sandbox_reward_worker.py` 把 sandbox reward 作为独立 worker。
 
 因此 sandbox 是训练数据面的一部分，不只是安全外围设施。
@@ -133,6 +135,11 @@ K3 选择第二条的一个具体版本：$N\times K$ 活跃轨迹完成到 $\la
 | 保证环境隔离和幂等 | batch、parallel、weight publish |
 
 AReaL 当前代码用 `RolloutWorkflow`、`WorkflowExecutor` 和 v2 agent service protocol 表达这条边界：`areal/infra/workflow_executor.py:263,747` 与 `areal/v2/agent_service/protocol.py:29-318`。ROLL 用多种 env manager、tool 与 proxy 适配不同交互语义；slime 则把 custom rollout function 接入同一 DataSource/rollout 路径。
+
+slime 的 agent 适配层是这条边界上“记录每次 LLM call”的一个具体实现，也暴露了两处需要显式确认的契约（机制见 [[24_slime_agent_workflow_examples_analysis|slime Agent 工作流]]）：
+
+- **记录内容**：每轮 `slime/agent/trajectory.py::TurnRecord` 只保存 `prompt_ids`、`output_ids`、`finish_reason`、逐 token `output_log_probs` 与 `ill_formed`，没有 policy version 字段；默认单请求路径则由 `slime/utils/types.py::Sample.append_response_tokens` 把每次返回的 `weight_version` 追加到 `Sample.weight_versions`。上面 schema 中的 `policy_version_per_call` 在 agent 路径上需要自行补齐（分析判断）。
+- **提交点**：`slime/agent/adapters/common.py::BaseAdapter._run_turn` 先调用 `_respond`、再 `record_turn`。OpenAI 与 Anthropic 两个适配器的流式响应都在 `_respond` 内已经写出，非流式只构造 `web.json_response`，由 aiohttp 在 handler 返回后发送；因此非流式时客户端断连，仍可能记录一轮客户端从未收到的 assistant 回复。
 
 ### 6.1 Harness configuration 也是环境状态
 
@@ -176,7 +183,9 @@ MAX_TOKENS
 - 保留已完成 prefix，继续 partial rollout；
 - 标记 infra failure，不污染 reward。
 
-slime 的 fully async worker 会把 aborted group 重新加入 data buffer，而不是直接送训：`slime/rollout/fully_async_rollout.py:178-189`。这是一种清晰的失败语义，但 README 也说明续跑未完全接线，当前是整条重启。
+slime 的 fully async worker 会把含 `ABORTED` 样本的组重新加入 data buffer，而不是直接送训（`slime/rollout/fully_async_rollout.py::AsyncRolloutWorker._make_done_cb`）。这是一种清晰的失败语义，但 `examples/fully_async/README.md` 的 Limitations 写明 partial 式续跑尚未接线、轨迹重新入队后从头开始；源码回填的却是原 Sample 对象，未清空已生成 token。两者的落差见 [[13_slime_sglang_rollout_engine_analysis|slime SGLang rollout 引擎]]。
+
+同一仓库的 coding-agent 示例也说明“失败原因”与“训练处置”需要分开记录：`examples/coding_agent_rl/generate.py::_abort_result` 把缺镜像或工作目录、实例不可评测、适配器会话为空、墙钟超时与未捕获异常统一标为 `ABORTED`，reward 置 0、`remove_sample=True`，只在 `metadata.abort_reason` 保留原因。`remove_sample` 只让 converter 把该样本的 loss mask 清零；`--rollout-sample-filter-path` 的帮助文本也写明，它不决定样本是否参与 advantage 归一化。
 
 K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 KV/KDA state，也要保存环境侧 microVM state。AgentENV 的 Pause/Resume 释放等待 inference 时的环境资源，Fork 为无副作用 reward judging 派生同状态副本，Snapshot 用于错误恢复（Kimi K3 Technical Report §5.3.1–5.3.2，pp.21–22）。这三种操作分别对应“续跑”“旁路判分”和“故障恢复”，不应压成一个 `sandbox_snapshot` 布尔值。
 
@@ -202,3 +211,4 @@ K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 K
 - [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[10_qwen3_8_analysis|Qwen3.8 真实工作 RL]] — Task / Workspace / Harness 组合环境、统一奖励系统与在线 batch 均衡的工业配方
 - [[02_engineering/04_posttrain_frameworks/11_rl_sandbox_design_analysis|既有 RL Sandbox 设计]]
+- [[24_slime_agent_workflow_examples_analysis|slime Agent 工作流]] — 一个开源实现如何按轮记录 sampled token、把执行树压成训练片段并处理中止与副作用

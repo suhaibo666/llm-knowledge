@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="740" viewBox="0 0 1180 740" role="img" aria-labelledby="title desc">
+<title id="title">slime Megatron 训练后端（下）：一轮角色切换、PPO critic 数据面与训练步</title>
+<desc id="desc">泳道 C 复现 train_actor 一轮内 ref 与 actor 两个 CPU tag 的切换、logprob 复用条件、全批前向次数与 forward_backward_func 调用次数；泳道 D 用同一 schedule 复现 --advantage-estimator ppo 时 critic 与 actor 在同一 GPU 上分时的一轮：critic 取 V_old、按自身参数算 returns、训练 value head 并把 values 经 Ray ref 交给同 rank 的 actor；泳道 E 复现 train_one_step 的清梯度、全部 micro-batch 前反向、一次 optimizer step 与按逻辑 rollout 数推进 LR scheduler。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11px;fill:#38414D}
+  .mono2{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:9.5px;fill:#38414D}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .h1{fill:#DCE7FB;stroke:#AEB6C2;stroke-width:1.1}
+  .x{fill:#EEF1F5;stroke:#D9DEE7;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="740" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">一份训练字典怎样变成 optimizer step（下）：一轮角色切换、PPO critic 数据面、训练步</text>
+<text x="24" y="56" class="su" text-anchor="start">同一实例：dp_size=2 · global_batch_size=4 · 每 rank K=2 个 micro-batch · num_steps_per_rollout=1 · use_kl_loss 开、kl_coef=0（ref tag 因此存在）</text>
+<rect x="24" y="74" width="1132" height="164" rx="10" class="panel"/>
+<text x="40" y="98" class="pt" text-anchor="start">C  默认 grpo 一轮：同一份 GPU 模型按 CPU tag 换入换出，只有训练前向走反向</text>
+<rect x="40" y="118" width="200" height="62" rx="6" class="neutral"/>
+<text x="140" y="136" class="mono" text-anchor="middle">1. tag ref</text>
+<text x="140" y="153" class="sm" text-anchor="middle">forward_only</text>
+<text x="140" y="170" class="mono2" text-anchor="middle">ref_log_probs</text>
+<path d="M240 149 L248 149" class="aux"/>
+<rect x="248" y="118" width="200" height="62" rx="6" class="acc2"/>
+<text x="348" y="136" class="mono" text-anchor="middle">2. tag actor</text>
+<text x="348" y="153" class="sm" text-anchor="middle">_switch_model 无前向</text>
+<text x="348" y="170" class="mono2" text-anchor="middle">跳过前向；detach 充当 old</text>
+<path d="M448 149 L456 149" class="aux"/>
+<rect x="456" y="118" width="200" height="62" rx="6" class="ghost"/>
+<text x="556" y="136" class="mono" text-anchor="middle">3. tag actor</text>
+<text x="556" y="153" class="sm" text-anchor="middle">advantages</text>
+<text x="556" y="170" class="mono2" text-anchor="middle">advantages, returns</text>
+<path d="M656 149 L664 149" class="aux"/>
+<rect x="664" y="118" width="200" height="62" rx="6" class="acc1"/>
+<text x="764" y="136" class="mono" text-anchor="middle">4. tag actor</text>
+<text x="764" y="153" class="sm" text-anchor="middle">train</text>
+<text x="764" y="170" class="mono2" text-anchor="middle">1 × train_one_step</text>
+<path d="M864 149 L872 149" class="aux"/>
+<rect x="872" y="118" width="200" height="62" rx="6" class="ghost"/>
+<text x="972" y="136" class="mono" text-anchor="middle">5. tag actor</text>
+<text x="972" y="153" class="sm" text-anchor="middle">backup</text>
+<text x="972" y="170" class="mono2" text-anchor="middle">CPU tag actor ← GPU</text>
+<text x="40" y="206" class="tx" text-anchor="start">复用条件：单步(1) ∧ policy_loss ∧ kl_coef=0 ∧ 无 rollout logprob / mismatch / critic / old_actor / OPD / gspo ∧ (¬routing_replay ∨ R3) → true</text>
+<text x="40" y="224" class="tx" text-anchor="start">全批前向 = ref 1 + 训练 1 = 2（forward_backward_func 调用 2 次）；num_steps_per_rollout=2 时不可复用：3 次全批前向、6 次调用</text>
+<rect x="24" y="250" width="1132" height="262" rx="10" class="panel"/>
+<text x="40" y="274" class="pt" text-anchor="start">D  --advantage-estimator ppo：critic 与 actor 同卡分时，V_old 经 Ray ref 交给同 rank 的 actor</text>
+<text x="40" y="294" class="sm" text-anchor="start">回放取 cp_size=1、max_tokens_per_gpu=18：cap 仍为 18，partition 与上图逐项相同；参数校验强制 offload_train</text>
+<text x="40" y="341" class="mono" text-anchor="start">critic</text>
+<text x="40" y="433" class="mono" text-anchor="start">actor</text>
+<rect x="112" y="308" width="196" height="62" rx="6" class="ghost"/>
+<text x="210" y="326" class="mono" text-anchor="middle">wake_up</text>
+<text x="210" y="343" class="sm" text-anchor="middle">reload process groups</text>
+<text x="210" y="360" class="mono2" text-anchor="middle">offload_train 强制开</text>
+<path d="M308 339 L320 339" class="aux"/>
+<rect x="320" y="308" width="196" height="62" rx="6" class="neutral"/>
+<text x="418" y="326" class="mono" text-anchor="middle">forward_only(get_values)</text>
+<text x="418" y="343" class="sm" text-anchor="middle">value head 不除 rollout 温度</text>
+<text x="418" y="360" class="mono2" text-anchor="middle">values = V_old</text>
+<path d="M516 339 L528 339" class="aux"/>
+<rect x="528" y="308" width="196" height="62" rx="6" class="ghost"/>
+<text x="626" y="326" class="mono" text-anchor="middle">advantages（critic 参数）</text>
+<text x="626" y="343" class="sm" text-anchor="middle">GAE，reward 不含 KL 整形</text>
+<text x="626" y="360" class="mono2" text-anchor="middle">无 log_probs → KL 为零</text>
+<path d="M724 339 L736 339" class="aux"/>
+<rect x="736" y="308" width="196" height="62" rx="6" class="acc1"/>
+<text x="834" y="326" class="mono" text-anchor="middle">train(value_loss)</text>
+<text x="834" y="343" class="sm" text-anchor="middle">optimizer.step · scheduler +4</text>
+<text x="834" y="360" class="mono2" text-anchor="middle">1 × train_one_step（value_loss）</text>
+<path d="M932 339 L944 339" class="aux"/>
+<rect x="944" y="308" width="196" height="62" rx="6" class="acc2"/>
+<text x="1042" y="326" class="mono" text-anchor="middle">PP last stage 返回</text>
+<text x="1042" y="343" class="sm" text-anchor="middle">{"values": CPU 张量}</text>
+<text x="1042" y="360" class="mono2" text-anchor="middle">values → CPU，sleep</text>
+<rect x="112" y="400" width="196" height="62" rx="6" class="ghost"/>
+<text x="210" y="418" class="mono" text-anchor="middle">wake_up</text>
+<text x="210" y="435" class="sm" text-anchor="middle">_switch_model("actor")</text>
+<text x="210" y="452" class="mono2" text-anchor="middle">offload_train 强制开</text>
+<path d="M308 431 L320 431" class="aux"/>
+<rect x="320" y="400" width="196" height="62" rx="6" class="neutral"/>
+<text x="418" y="418" class="mono" text-anchor="middle">tag ref · forward_only</text>
+<text x="418" y="435" class="sm" text-anchor="middle">use_kl_loss 让 ref 存在</text>
+<text x="418" y="452" class="mono2" text-anchor="middle">ref_log_probs</text>
+<path d="M516 431 L528 431" class="aux"/>
+<rect x="528" y="400" width="196" height="62" rx="6" class="acc2"/>
+<text x="626" y="418" class="mono" text-anchor="middle">tag actor · forward_only</text>
+<text x="626" y="435" class="sm" text-anchor="middle">use_critic 关掉复用</text>
+<text x="626" y="452" class="mono2" text-anchor="middle">log_probs</text>
+<path d="M724 431 L736 431" class="aux"/>
+<rect x="736" y="400" width="196" height="62" rx="6" class="neutral"/>
+<text x="834" y="418" class="mono" text-anchor="middle">values ← external_data</text>
+<text x="834" y="435" class="sm" text-anchor="middle">GAE 用 actor 的 kl_coef</text>
+<text x="834" y="452" class="mono2" text-anchor="middle">advantages, returns</text>
+<path d="M932 431 L944 431" class="aux"/>
+<rect x="944" y="400" width="196" height="62" rx="6" class="acc1"/>
+<text x="1042" y="418" class="mono" text-anchor="middle">train(policy_loss)</text>
+<text x="1042" y="435" class="sm" text-anchor="middle">optimizer.step · scheduler +4</text>
+<text x="1042" y="452" class="mono2" text-anchor="middle">backup actor，sleep</text>
+<path d="M1042 370 L864 400" class="main"/>
+<text x="112" y="388" class="sm" text-anchor="start">Ray 先解析 value ref：actor worker i 的 train 在 critic worker i 训完之后开始</text>
+<text x="40" y="484" class="tx" text-anchor="start">训练阶段每 GPU：全批前向 critic 2 + actor 3 = 5（默认 grpo 为 2）；optimizer.step 2 次；wake_up/sleep 2 次，update_weights 再重建 1 次</text>
+<text x="40" y="502" class="cap" text-anchor="start">若保持 cp_size=2：s1、s2b、s3 在 cp0 没有 response 位置，ppo 分支的 token_level_rewards[-1] += reward 会抛 IndexError（源码推导，未运行）</text>
+<rect x="24" y="524" width="1132" height="182" rx="10" class="panel"/>
+<text x="40" y="548" class="pt" text-anchor="start">E  train_one_step（每个训练步一次）：K=2 个 micro-batch 前反向累积，一次 optimizer.step，scheduler.step(increment=4)</text>
+<rect x="40" y="568" width="176" height="66" rx="6" class="neutral"/>
+<text x="128" y="588" class="mono2" text-anchor="middle">zero_grad_buffer / zero_grad</text>
+<text x="128" y="605" class="sm" text-anchor="middle">before-train-step hook</text>
+<text x="128" y="622" class="sm" text-anchor="middle">（可选自定义钩子）</text>
+<path d="M216 601 L224 601" class="aux"/>
+<rect x="224" y="568" width="176" height="66" rx="6" class="acc1"/>
+<text x="312" y="588" class="mono2" text-anchor="middle">forward_backward_func(K=2)</text>
+<text x="312" y="605" class="sm" text-anchor="middle">closure：get_batch → model</text>
+<text x="312" y="622" class="sm" text-anchor="middle">→ loss_function 回调</text>
+<path d="M400 601 L408 601" class="main"/>
+<rect x="408" y="568" width="176" height="66" rx="6" class="neutral"/>
+<text x="496" y="588" class="mono2" text-anchor="middle">loss × M / G × world</text>
+<text x="496" y="605" class="sm" text-anchor="middle">M=2 G=4 world=dp·cp=4</text>
+<text x="496" y="622" class="sm" text-anchor="middle">Megatron 再 ÷ M</text>
+<path d="M584 601 L592 601" class="aux"/>
+<rect x="592" y="568" width="176" height="66" rx="6" class="acc1"/>
+<text x="680" y="588" class="mono2" text-anchor="middle">valid_step → optimizer.step</text>
+<text x="680" y="605" class="sm" text-anchor="middle">assert update_successful</text>
+<text x="680" y="622" class="sm" text-anchor="middle">NaN 检查关时 slime 预检</text>
+<path d="M768 601 L776 601" class="aux"/>
+<rect x="776" y="568" width="176" height="66" rx="6" class="acc1"/>
+<text x="864" y="588" class="mono2" text-anchor="middle">scheduler.step(+4)</text>
+<text x="864" y="605" class="sm" text-anchor="middle">以逻辑 rollout 数</text>
+<text x="864" y="622" class="sm" text-anchor="middle">计 samples-seen</text>
+<path d="M952 601 L960 601" class="aux"/>
+<rect x="960" y="568" width="176" height="66" rx="6" class="ghost"/>
+<text x="1048" y="588" class="mono2" text-anchor="middle">reduce_train_step_metrics</text>
+<text x="1048" y="605" class="sm" text-anchor="middle">PP last stage：Σ_mb</text>
+<text x="1048" y="622" class="sm" text-anchor="middle">all-reduce dp·cp，再 ÷ G</text>
+<text x="40" y="660" class="tx" text-anchor="start">三种边界：rollout round 是数据版本；global_batch_sizes 的一个元素（4 个 rollout）是一次 optimizer step；micro-batch 只是流水线与梯度累积单元</text>
+<text x="40" y="678" class="tx" text-anchor="start">train_iters = 100×2×2 // 4 = 100，lr_decay_steps = 400：只定 LR 衰减长度，实际进度靠每步 increment 累加</text>
+<text x="24" y="728" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f3750 · 复现 train_actor / train_critic / train.py::train / train_one_step</text>
+</svg>

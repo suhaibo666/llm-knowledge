@@ -1,0 +1,424 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="904" viewBox="0 0 1180 904" role="img" aria-labelledby="title desc">
+<title id="title">slime 迭代时序：同一 4 轮例子在同步、异步 interval 1 与 2、fully-async rollout 下的版本、年龄、发布栅栏、积压与保存游标</title>
+<desc id="desc">上方三条泳道共用时间轴，画 train.py 与 train_async.py 两种 interval 下 RolloutManager 的生成与保存、trainer 的训练与发布，标出每批数据的生成版本与训练时的策略年龄，以及 rollout 1 保存时的游标。下方画 fully-async rollout：逐组的等待、生成、发布开始时中止并回队、接前缀续生成、排队与被哪一轮消费，发布暂停带贯穿，保存时游标领先已训练数据的组成。</desc>
+<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#F5F7FA"/><line x1="0" y1="0" x2="0" y2="6" stroke="#C9CFD8" stroke-width="2"/></pattern></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .xs{font-size:9.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .inv{font-size:10.5px;fill:#1F2430}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .wait{fill:url(#hatch);stroke:#C9CFD8;stroke-width:1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}
+  .acc1b{fill:#CFE0FB;stroke:#2563EB;stroke-width:1.4}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.4}
+  .fence{stroke:#C3651F;stroke-width:1.4;stroke-dasharray:4 3}
+  .savel{stroke:#2A313B;stroke-width:1.2;stroke-dasharray:2 2}
+  .grid{stroke:#E6E9EF;stroke-width:1}
+  .qline{stroke:#8A93A0;stroke-width:1.6}
+  .band{fill:#FCF1E6;stroke:none}
+  .ab{font-size:11px;font-weight:700;fill:#C3651F}
+</style><rect width="1180" height="904" fill="white"/>
+<text x="24" y="32" class="ti" text-anchor="start">同一个 4 轮例子：阶段边界在四种执行方式下落在哪里</text>
+<text x="24" y="54" class="su" text-anchor="start">num_rollout 4，rollout_batch_size 2 组，save_interval 2；示意时长：一批生成 3、一次训练 2、一次发布 1（只看顺序，不比较吞吐）</text>
+<text x="24" y="72" class="su" text-anchor="start">vk = 训练 k 次后发布的权重（v0 是启动首推）；龄 = 训练起点版本 − 这批数据最早 token 的 serving 版本</text>
+<text x="258" y="98" class="xs" text-anchor="middle">0</text>
+<text x="291" y="98" class="xs" text-anchor="middle">1</text>
+<text x="324" y="98" class="xs" text-anchor="middle">2</text>
+<text x="357" y="98" class="xs" text-anchor="middle">3</text>
+<text x="390" y="98" class="xs" text-anchor="middle">4</text>
+<text x="423" y="98" class="xs" text-anchor="middle">5</text>
+<text x="456" y="98" class="xs" text-anchor="middle">6</text>
+<text x="489" y="98" class="xs" text-anchor="middle">7</text>
+<text x="522" y="98" class="xs" text-anchor="middle">8</text>
+<text x="555" y="98" class="xs" text-anchor="middle">9</text>
+<text x="588" y="98" class="xs" text-anchor="middle">10</text>
+<text x="621" y="98" class="xs" text-anchor="middle">11</text>
+<text x="654" y="98" class="xs" text-anchor="middle">12</text>
+<text x="687" y="98" class="xs" text-anchor="middle">13</text>
+<text x="720" y="98" class="xs" text-anchor="middle">14</text>
+<text x="753" y="98" class="xs" text-anchor="middle">15</text>
+<text x="786" y="98" class="xs" text-anchor="middle">16</text>
+<text x="819" y="98" class="xs" text-anchor="middle">17</text>
+<text x="852" y="98" class="xs" text-anchor="middle">18</text>
+<text x="885" y="98" class="xs" text-anchor="middle">19</text>
+<text x="918" y="98" class="xs" text-anchor="middle">20</text>
+<text x="951" y="98" class="xs" text-anchor="middle">21</text>
+<text x="984" y="98" class="xs" text-anchor="middle">22</text>
+<text x="1017" y="98" class="xs" text-anchor="middle">23</text>
+<text x="1050" y="98" class="xs" text-anchor="middle">24</text>
+<text x="1083" y="98" class="xs" text-anchor="middle">25</text>
+<text x="246" y="98" class="xs" text-anchor="end">t</text>
+<rect x="16" y="108" width="1148" height="320" rx="10" class="panel"/>
+<text x="28" y="144" class="pt" text-anchor="start">train.py 同步</text>
+<text x="28" y="162" class="sm" text-anchor="start">每轮 generate → train → save → publish</text>
+<text x="250" y="145" class="xs" text-anchor="end">RolloutManager</text>
+<text x="250" y="177" class="xs" text-anchor="end">driver·trainer</text>
+<line x1="258" y1="128" x2="258" y2="186" class="grid"/>
+<line x1="291" y1="128" x2="291" y2="186" class="grid"/>
+<line x1="324" y1="128" x2="324" y2="186" class="grid"/>
+<line x1="357" y1="128" x2="357" y2="186" class="grid"/>
+<line x1="390" y1="128" x2="390" y2="186" class="grid"/>
+<line x1="423" y1="128" x2="423" y2="186" class="grid"/>
+<line x1="456" y1="128" x2="456" y2="186" class="grid"/>
+<line x1="489" y1="128" x2="489" y2="186" class="grid"/>
+<line x1="522" y1="128" x2="522" y2="186" class="grid"/>
+<line x1="555" y1="128" x2="555" y2="186" class="grid"/>
+<line x1="588" y1="128" x2="588" y2="186" class="grid"/>
+<line x1="621" y1="128" x2="621" y2="186" class="grid"/>
+<line x1="654" y1="128" x2="654" y2="186" class="grid"/>
+<line x1="687" y1="128" x2="687" y2="186" class="grid"/>
+<line x1="720" y1="128" x2="720" y2="186" class="grid"/>
+<line x1="753" y1="128" x2="753" y2="186" class="grid"/>
+<line x1="786" y1="128" x2="786" y2="186" class="grid"/>
+<line x1="819" y1="128" x2="819" y2="186" class="grid"/>
+<line x1="852" y1="128" x2="852" y2="186" class="grid"/>
+<line x1="885" y1="128" x2="885" y2="186" class="grid"/>
+<line x1="918" y1="128" x2="918" y2="186" class="grid"/>
+<line x1="951" y1="128" x2="951" y2="186" class="grid"/>
+<line x1="984" y1="128" x2="984" y2="186" class="grid"/>
+<line x1="1017" y1="128" x2="1017" y2="186" class="grid"/>
+<line x1="1050" y1="128" x2="1050" y2="186" class="grid"/>
+<line x1="1083" y1="128" x2="1083" y2="186" class="grid"/>
+<rect x="291" y="130" width="99" height="22" rx="3" class="acc1"/>
+<text x="340.5" y="145" class="inv" text-anchor="middle">生成0·v0</text>
+<rect x="489" y="130" width="99" height="22" rx="3" class="acc1"/>
+<text x="538.5" y="145" class="inv" text-anchor="middle">生成1·v1</text>
+<rect x="687" y="130" width="99" height="22" rx="3" class="acc1"/>
+<text x="736.5" y="145" class="inv" text-anchor="middle">生成2·v2</text>
+<rect x="885" y="130" width="99" height="22" rx="3" class="acc1"/>
+<text x="934.5" y="145" class="inv" text-anchor="middle">生成3·v3</text>
+<rect x="390" y="162" width="66" height="22" rx="3" class="neutral"/>
+<text x="423" y="177" class="inv" text-anchor="middle">训0 龄0</text>
+<rect x="588" y="162" width="66" height="22" rx="3" class="neutral"/>
+<text x="621" y="177" class="inv" text-anchor="middle">训1 龄0</text>
+<rect x="786" y="162" width="66" height="22" rx="3" class="neutral"/>
+<text x="819" y="177" class="inv" text-anchor="middle">训2 龄0</text>
+<rect x="984" y="162" width="66" height="22" rx="3" class="neutral"/>
+<text x="1017" y="177" class="inv" text-anchor="middle">训3 龄0</text>
+<rect x="258" y="162" width="33" height="22" rx="3" class="acc2"/>
+<text x="274.5" y="177" class="inv" text-anchor="middle">v0</text>
+<line x1="291" y1="126" x2="291" y2="188" class="fence"/>
+<rect x="456" y="162" width="33" height="22" rx="3" class="acc2"/>
+<text x="472.5" y="177" class="inv" text-anchor="middle">v1</text>
+<line x1="489" y1="126" x2="489" y2="188" class="fence"/>
+<rect x="654" y="162" width="33" height="22" rx="3" class="acc2"/>
+<text x="670.5" y="177" class="inv" text-anchor="middle">v2</text>
+<line x1="687" y1="126" x2="687" y2="188" class="fence"/>
+<rect x="852" y="162" width="33" height="22" rx="3" class="acc2"/>
+<text x="868.5" y="177" class="inv" text-anchor="middle">v3</text>
+<line x1="885" y1="126" x2="885" y2="188" class="fence"/>
+<rect x="1050" y="162" width="33" height="22" rx="3" class="acc2"/>
+<text x="1066.5" y="177" class="inv" text-anchor="middle">v4</text>
+<line x1="1083" y1="126" x2="1083" y2="188" class="fence"/>
+<line x1="654" y1="126" x2="654" y2="188" class="savel"/>
+<rect x="650" y="137" width="8" height="8" rx="1" class="neutral"/>
+<text x="661" y="145" class="xs" text-anchor="start">存1</text>
+<line x1="1050" y1="126" x2="1050" y2="188" class="savel"/>
+<rect x="1046" y="137" width="8" height="8" rx="1" class="neutral"/>
+<text x="1057" y="145" class="xs" text-anchor="start">存3</text>
+<text x="258" y="204" class="sm" text-anchor="start">年龄 0、0、0、0 · 发布 5 次（含启动首推）· 存 1：游标 4 = 已训 4 组</text>
+<text x="28" y="248" class="pt" text-anchor="start">train_async.py</text>
+<text x="28" y="266" class="sm" text-anchor="start">--update-weights-interval 1</text>
+<text x="250" y="249" class="xs" text-anchor="end">RolloutManager</text>
+<text x="250" y="281" class="xs" text-anchor="end">driver·trainer</text>
+<line x1="258" y1="232" x2="258" y2="290" class="grid"/>
+<line x1="291" y1="232" x2="291" y2="290" class="grid"/>
+<line x1="324" y1="232" x2="324" y2="290" class="grid"/>
+<line x1="357" y1="232" x2="357" y2="290" class="grid"/>
+<line x1="390" y1="232" x2="390" y2="290" class="grid"/>
+<line x1="423" y1="232" x2="423" y2="290" class="grid"/>
+<line x1="456" y1="232" x2="456" y2="290" class="grid"/>
+<line x1="489" y1="232" x2="489" y2="290" class="grid"/>
+<line x1="522" y1="232" x2="522" y2="290" class="grid"/>
+<line x1="555" y1="232" x2="555" y2="290" class="grid"/>
+<line x1="588" y1="232" x2="588" y2="290" class="grid"/>
+<line x1="621" y1="232" x2="621" y2="290" class="grid"/>
+<line x1="654" y1="232" x2="654" y2="290" class="grid"/>
+<line x1="687" y1="232" x2="687" y2="290" class="grid"/>
+<line x1="720" y1="232" x2="720" y2="290" class="grid"/>
+<line x1="753" y1="232" x2="753" y2="290" class="grid"/>
+<line x1="786" y1="232" x2="786" y2="290" class="grid"/>
+<line x1="819" y1="232" x2="819" y2="290" class="grid"/>
+<line x1="852" y1="232" x2="852" y2="290" class="grid"/>
+<line x1="885" y1="232" x2="885" y2="290" class="grid"/>
+<line x1="918" y1="232" x2="918" y2="290" class="grid"/>
+<line x1="951" y1="232" x2="951" y2="290" class="grid"/>
+<line x1="984" y1="232" x2="984" y2="290" class="grid"/>
+<line x1="1017" y1="232" x2="1017" y2="290" class="grid"/>
+<line x1="1050" y1="232" x2="1050" y2="290" class="grid"/>
+<line x1="1083" y1="232" x2="1083" y2="290" class="grid"/>
+<rect x="291" y="234" width="99" height="22" rx="3" class="acc1"/>
+<text x="340.5" y="249" class="inv" text-anchor="middle">生成0·v0</text>
+<rect x="390" y="234" width="99" height="22" rx="3" class="acc1"/>
+<text x="439.5" y="249" class="inv" text-anchor="middle">生成1·v0</text>
+<rect x="522" y="234" width="99" height="22" rx="3" class="acc1"/>
+<text x="571.5" y="249" class="inv" text-anchor="middle">生成2·v1</text>
+<rect x="654" y="234" width="99" height="22" rx="3" class="acc1"/>
+<text x="703.5" y="249" class="inv" text-anchor="middle">生成3·v2</text>
+<rect x="390" y="266" width="66" height="22" rx="3" class="neutral"/>
+<text x="423" y="281" class="inv" text-anchor="middle">训0 龄0</text>
+<rect x="522" y="266" width="66" height="22" rx="3" class="neutral"/>
+<text x="555" y="281" class="inv" text-anchor="middle">训1 龄1</text>
+<rect x="654" y="266" width="66" height="22" rx="3" class="neutral"/>
+<text x="687" y="281" class="inv" text-anchor="middle">训2 龄1</text>
+<rect x="786" y="266" width="66" height="22" rx="3" class="neutral"/>
+<text x="819" y="281" class="inv" text-anchor="middle">训3 龄1</text>
+<rect x="258" y="266" width="33" height="22" rx="3" class="acc2"/>
+<text x="274.5" y="281" class="inv" text-anchor="middle">v0</text>
+<line x1="291" y1="230" x2="291" y2="292" class="fence"/>
+<rect x="489" y="266" width="33" height="22" rx="3" class="acc2"/>
+<text x="505.5" y="281" class="inv" text-anchor="middle">v1</text>
+<line x1="522" y1="230" x2="522" y2="292" class="fence"/>
+<rect x="621" y="266" width="33" height="22" rx="3" class="acc2"/>
+<text x="637.5" y="281" class="inv" text-anchor="middle">v2</text>
+<line x1="654" y1="230" x2="654" y2="292" class="fence"/>
+<rect x="753" y="266" width="33" height="22" rx="3" class="acc2"/>
+<text x="769.5" y="281" class="inv" text-anchor="middle">v3</text>
+<line x1="786" y1="230" x2="786" y2="292" class="fence"/>
+<rect x="852" y="266" width="33" height="22" rx="3" class="acc2"/>
+<text x="868.5" y="281" class="inv" text-anchor="middle">v4</text>
+<line x1="885" y1="230" x2="885" y2="292" class="fence"/>
+<line x1="621" y1="230" x2="621" y2="292" class="savel"/>
+<rect x="617" y="241" width="8" height="8" rx="1" class="acc2"/>
+<text x="628" y="249" class="xs" text-anchor="start">存1</text>
+<line x1="852" y1="230" x2="852" y2="292" class="savel"/>
+<rect x="848" y="241" width="8" height="8" rx="1" class="neutral"/>
+<text x="859" y="249" class="xs" text-anchor="start">存3</text>
+<text x="258" y="308" class="tx" text-anchor="start">年龄 0、1、1、1 · 发布 5 次（含启动首推）· 存 1 在生成 2 之后执行：游标 6 &gt; 已训 4 组，从 1 恢复跳过 2 组</text>
+<text x="28" y="352" class="pt" text-anchor="start">train_async.py</text>
+<text x="28" y="370" class="sm" text-anchor="start">--update-weights-interval 2</text>
+<text x="250" y="353" class="xs" text-anchor="end">RolloutManager</text>
+<text x="250" y="385" class="xs" text-anchor="end">driver·trainer</text>
+<line x1="258" y1="336" x2="258" y2="394" class="grid"/>
+<line x1="291" y1="336" x2="291" y2="394" class="grid"/>
+<line x1="324" y1="336" x2="324" y2="394" class="grid"/>
+<line x1="357" y1="336" x2="357" y2="394" class="grid"/>
+<line x1="390" y1="336" x2="390" y2="394" class="grid"/>
+<line x1="423" y1="336" x2="423" y2="394" class="grid"/>
+<line x1="456" y1="336" x2="456" y2="394" class="grid"/>
+<line x1="489" y1="336" x2="489" y2="394" class="grid"/>
+<line x1="522" y1="336" x2="522" y2="394" class="grid"/>
+<line x1="555" y1="336" x2="555" y2="394" class="grid"/>
+<line x1="588" y1="336" x2="588" y2="394" class="grid"/>
+<line x1="621" y1="336" x2="621" y2="394" class="grid"/>
+<line x1="654" y1="336" x2="654" y2="394" class="grid"/>
+<line x1="687" y1="336" x2="687" y2="394" class="grid"/>
+<line x1="720" y1="336" x2="720" y2="394" class="grid"/>
+<line x1="753" y1="336" x2="753" y2="394" class="grid"/>
+<line x1="786" y1="336" x2="786" y2="394" class="grid"/>
+<line x1="819" y1="336" x2="819" y2="394" class="grid"/>
+<line x1="852" y1="336" x2="852" y2="394" class="grid"/>
+<line x1="885" y1="336" x2="885" y2="394" class="grid"/>
+<line x1="918" y1="336" x2="918" y2="394" class="grid"/>
+<line x1="951" y1="336" x2="951" y2="394" class="grid"/>
+<line x1="984" y1="336" x2="984" y2="394" class="grid"/>
+<line x1="1017" y1="336" x2="1017" y2="394" class="grid"/>
+<line x1="1050" y1="336" x2="1050" y2="394" class="grid"/>
+<line x1="1083" y1="336" x2="1083" y2="394" class="grid"/>
+<rect x="291" y="338" width="99" height="22" rx="3" class="acc1"/>
+<text x="340.5" y="353" class="inv" text-anchor="middle">生成0·v0</text>
+<rect x="390" y="338" width="99" height="22" rx="3" class="acc1"/>
+<text x="439.5" y="353" class="inv" text-anchor="middle">生成1·v0</text>
+<rect x="489" y="338" width="99" height="22" rx="3" class="acc1"/>
+<text x="538.5" y="353" class="inv" text-anchor="middle">生成2·v0</text>
+<rect x="621" y="338" width="99" height="22" rx="3" class="acc1"/>
+<text x="670.5" y="353" class="inv" text-anchor="middle">生成3·v2</text>
+<rect x="390" y="370" width="66" height="22" rx="3" class="neutral"/>
+<text x="423" y="385" class="inv" text-anchor="middle">训0 龄0</text>
+<rect x="489" y="370" width="66" height="22" rx="3" class="neutral"/>
+<text x="522" y="385" class="inv" text-anchor="middle">训1 龄1</text>
+<rect x="621" y="370" width="66" height="22" rx="3" class="neutral"/>
+<text x="654" y="385" class="inv" text-anchor="middle">训2 龄2</text>
+<rect x="720" y="370" width="66" height="22" rx="3" class="neutral"/>
+<text x="753" y="385" class="inv" text-anchor="middle">训3 龄1</text>
+<rect x="258" y="370" width="33" height="22" rx="3" class="acc2"/>
+<text x="274.5" y="385" class="inv" text-anchor="middle">v0</text>
+<line x1="291" y1="334" x2="291" y2="396" class="fence"/>
+<rect x="588" y="370" width="33" height="22" rx="3" class="acc2"/>
+<text x="604.5" y="385" class="inv" text-anchor="middle">v2</text>
+<line x1="621" y1="334" x2="621" y2="396" class="fence"/>
+<rect x="786" y="370" width="33" height="22" rx="3" class="acc2"/>
+<text x="802.5" y="385" class="inv" text-anchor="middle">v4</text>
+<line x1="819" y1="334" x2="819" y2="396" class="fence"/>
+<line x1="588" y1="334" x2="588" y2="396" class="savel"/>
+<rect x="584" y="345" width="8" height="8" rx="1" class="acc2"/>
+<text x="595" y="353" class="xs" text-anchor="start">存1</text>
+<line x1="786" y1="334" x2="786" y2="396" class="savel"/>
+<rect x="782" y="345" width="8" height="8" rx="1" class="neutral"/>
+<text x="793" y="353" class="xs" text-anchor="start">存3</text>
+<text x="258" y="412" class="tx" text-anchor="start">年龄 0、1、2、1 · 发布 3 次（含启动首推）· 存 1 在生成 2 之后执行：游标 6 &gt; 已训 4 组，从 1 恢复跳过 2 组</text>
+<rect x="16" y="454" width="1148" height="406" rx="10" class="panel"/>
+<text x="28" y="476" class="pt" text-anchor="start">train_async.py（interval 1）+ fully-async rollout：批次边界 = 完成队列里凑够 2 组</text>
+<text x="28" y="494" class="sm" text-anchor="start">池 = concurrency 2 × engine 2 = 4 组；信号量 4 条请求，每组 2 条 → 同时生成 2 组（模型按整组放行）；qsize ≥ 4 停止补位</text>
+<text x="250" y="523" class="xs" text-anchor="end">RolloutManager</text>
+<text x="250" y="553" class="xs" text-anchor="end">driver·trainer</text>
+<rect x="291" y="508" width="99" height="22" rx="3" class="acc1"/>
+<text x="340.5" y="523" class="inv" text-anchor="middle">取0</text>
+<rect x="390" y="508" width="66" height="22" rx="3" class="acc1"/>
+<text x="423" y="523" class="inv" text-anchor="middle">取1</text>
+<rect x="489" y="508" width="165" height="22" rx="3" class="acc1"/>
+<text x="571.5" y="523" class="inv" text-anchor="middle">取2</text>
+<rect x="687" y="508" width="66" height="22" rx="3" class="acc1"/>
+<text x="720" y="523" class="inv" text-anchor="middle">取3</text>
+<rect x="390" y="538" width="66" height="22" rx="3" class="neutral"/>
+<text x="423" y="553" class="inv" text-anchor="middle">训0 龄0</text>
+<rect x="489" y="538" width="66" height="22" rx="3" class="neutral"/>
+<text x="522" y="553" class="inv" text-anchor="middle">训1 龄1</text>
+<rect x="687" y="538" width="66" height="22" rx="3" class="neutral"/>
+<text x="720" y="553" class="inv" text-anchor="middle">训2 龄2</text>
+<rect x="786" y="538" width="66" height="22" rx="3" class="neutral"/>
+<text x="819" y="553" class="inv" text-anchor="middle">训3 龄2</text>
+<line x1="258" y1="506" x2="258" y2="776" class="grid"/>
+<line x1="291" y1="506" x2="291" y2="776" class="grid"/>
+<line x1="324" y1="506" x2="324" y2="776" class="grid"/>
+<line x1="357" y1="506" x2="357" y2="776" class="grid"/>
+<line x1="390" y1="506" x2="390" y2="776" class="grid"/>
+<line x1="423" y1="506" x2="423" y2="776" class="grid"/>
+<line x1="456" y1="506" x2="456" y2="776" class="grid"/>
+<line x1="489" y1="506" x2="489" y2="776" class="grid"/>
+<line x1="522" y1="506" x2="522" y2="776" class="grid"/>
+<line x1="555" y1="506" x2="555" y2="776" class="grid"/>
+<line x1="588" y1="506" x2="588" y2="776" class="grid"/>
+<line x1="621" y1="506" x2="621" y2="776" class="grid"/>
+<line x1="654" y1="506" x2="654" y2="776" class="grid"/>
+<line x1="687" y1="506" x2="687" y2="776" class="grid"/>
+<line x1="720" y1="506" x2="720" y2="776" class="grid"/>
+<line x1="753" y1="506" x2="753" y2="776" class="grid"/>
+<line x1="786" y1="506" x2="786" y2="776" class="grid"/>
+<line x1="819" y1="506" x2="819" y2="776" class="grid"/>
+<line x1="852" y1="506" x2="852" y2="776" class="grid"/>
+<line x1="885" y1="506" x2="885" y2="776" class="grid"/>
+<rect x="258" y="572" width="33" height="204" class="band"/>
+<rect x="258" y="538" width="33" height="22" rx="3" class="acc2"/>
+<text x="274.5" y="553" class="inv" text-anchor="middle">v0</text>
+<line x1="258" y1="504" x2="258" y2="780" class="fence"/>
+<line x1="291" y1="504" x2="291" y2="780" class="fence"/>
+<rect x="456" y="572" width="33" height="204" class="band"/>
+<rect x="456" y="538" width="33" height="22" rx="3" class="acc2"/>
+<text x="472.5" y="553" class="inv" text-anchor="middle">v1</text>
+<line x1="456" y1="504" x2="456" y2="780" class="fence"/>
+<line x1="489" y1="504" x2="489" y2="780" class="fence"/>
+<rect x="654" y="572" width="33" height="204" class="band"/>
+<rect x="654" y="538" width="33" height="22" rx="3" class="acc2"/>
+<text x="670.5" y="553" class="inv" text-anchor="middle">v2</text>
+<line x1="654" y1="504" x2="654" y2="780" class="fence"/>
+<line x1="687" y1="504" x2="687" y2="780" class="fence"/>
+<rect x="753" y="572" width="33" height="204" class="band"/>
+<rect x="753" y="538" width="33" height="22" rx="3" class="acc2"/>
+<text x="769.5" y="553" class="inv" text-anchor="middle">v3</text>
+<line x1="753" y1="504" x2="753" y2="780" class="fence"/>
+<line x1="786" y1="504" x2="786" y2="780" class="fence"/>
+<rect x="852" y="572" width="33" height="204" class="band"/>
+<rect x="852" y="538" width="33" height="22" rx="3" class="acc2"/>
+<text x="868.5" y="553" class="inv" text-anchor="middle">v4</text>
+<line x1="852" y1="504" x2="852" y2="780" class="fence"/>
+<line x1="885" y1="504" x2="885" y2="780" class="fence"/>
+<text x="250" y="584" class="xs" text-anchor="end">组 0</text>
+<rect x="291" y="574" width="99" height="13" rx="2" class="acc1b"/>
+<text x="295" y="584" class="xs" text-anchor="start">v0</text>
+<text x="394" y="584" class="xs" text-anchor="start">→训0</text>
+<text x="250" y="601" class="xs" text-anchor="end">组 1</text>
+<rect x="291" y="591" width="66" height="13" rx="2" class="acc1b"/>
+<text x="295" y="601" class="xs" text-anchor="start">v0</text>
+<text x="361" y="601" class="xs" text-anchor="start">→训0</text>
+<text x="250" y="618" class="xs" text-anchor="end">组 2</text>
+<rect x="291" y="608" width="66" height="13" rx="2" class="wait"/>
+<rect x="357" y="608" width="66" height="13" rx="2" class="acc1b"/>
+<text x="361" y="618" class="xs" text-anchor="start">v0</text>
+<text x="427" y="618" class="xs" text-anchor="start">→训1</text>
+<text x="250" y="635" class="xs" text-anchor="end">组 3</text>
+<rect x="291" y="625" width="99" height="13" rx="2" class="wait"/>
+<rect x="390" y="625" width="66" height="13" rx="2" class="acc1b"/>
+<text x="394" y="635" class="xs" text-anchor="start">v0</text>
+<text x="460" y="635" class="xs" text-anchor="start">→训1</text>
+<text x="250" y="652" class="xs" text-anchor="end">组 4</text>
+<rect x="357" y="642" width="66" height="13" rx="2" class="wait"/>
+<rect x="456" y="642" width="165" height="13" rx="2" class="wait"/>
+<rect x="423" y="642" width="33" height="13" rx="2" class="acc1b"/>
+<text x="427" y="652" class="xs" text-anchor="start">v0</text>
+<rect x="621" y="642" width="33" height="13" rx="2" class="acc2"/>
+<text x="625" y="652" class="xs" text-anchor="start">续v1</text>
+<text x="456" y="653" class="ab" text-anchor="middle">✕</text>
+<text x="658" y="652" class="xs" text-anchor="start">→训2</text>
+<text x="250" y="669" class="xs" text-anchor="end">组 5</text>
+<rect x="390" y="659" width="99" height="13" rx="2" class="wait"/>
+<rect x="489" y="659" width="165" height="13" rx="2" class="acc1b"/>
+<text x="493" y="669" class="xs" text-anchor="start">v1</text>
+<line x1="654" y1="665.5" x2="687" y2="665.5" class="qline"/>
+<text x="691" y="669" class="xs" text-anchor="start">→训3</text>
+<text x="250" y="686" class="xs" text-anchor="end">组 6</text>
+<rect x="423" y="676" width="66" height="13" rx="2" class="wait"/>
+<rect x="489" y="676" width="132" height="13" rx="2" class="acc1b"/>
+<text x="493" y="686" class="xs" text-anchor="start">v1</text>
+<text x="625" y="686" class="xs" text-anchor="start">→训2</text>
+<text x="250" y="703" class="xs" text-anchor="end">组 7</text>
+<rect x="456" y="693" width="231" height="13" rx="2" class="wait"/>
+<rect x="753" y="693" width="132" height="13" rx="2" class="wait"/>
+<rect x="687" y="693" width="66" height="13" rx="2" class="acc1b"/>
+<text x="691" y="703" class="xs" text-anchor="start">v2</text>
+<text x="753" y="704" class="ab" text-anchor="middle">✕</text>
+<text x="250" y="720" class="xs" text-anchor="end">组 8</text>
+<rect x="621" y="710" width="66" height="13" rx="2" class="wait"/>
+<rect x="687" y="710" width="66" height="13" rx="2" class="acc1b"/>
+<text x="691" y="720" class="xs" text-anchor="start">v2</text>
+<text x="757" y="720" class="xs" text-anchor="start">→训3</text>
+<text x="250" y="737" class="xs" text-anchor="end">组 9</text>
+<rect x="654" y="727" width="132" height="13" rx="2" class="wait"/>
+<rect x="852" y="727" width="33" height="13" rx="2" class="wait"/>
+<rect x="786" y="727" width="66" height="13" rx="2" class="acc1b"/>
+<text x="790" y="737" class="xs" text-anchor="start">v3</text>
+<text x="852" y="738" class="ab" text-anchor="middle">✕</text>
+<text x="250" y="754" class="xs" text-anchor="end">组 10</text>
+<rect x="654" y="744" width="132" height="13" rx="2" class="wait"/>
+<rect x="852" y="744" width="33" height="13" rx="2" class="wait"/>
+<rect x="786" y="744" width="66" height="13" rx="2" class="acc1b"/>
+<text x="790" y="754" class="xs" text-anchor="start">v3</text>
+<text x="852" y="755" class="ab" text-anchor="middle">✕</text>
+<text x="250" y="771" class="xs" text-anchor="end">组 11</text>
+<rect x="753" y="761" width="132" height="13" rx="2" class="wait"/>
+<line x1="654" y1="504" x2="654" y2="780" class="savel"/>
+<rect x="650" y="515" width="8" height="8" rx="1" class="acc2"/>
+<text x="661" y="523" class="xs" text-anchor="start">存1</text>
+<text x="258" y="792" class="xs" text-anchor="middle">0</text>
+<text x="291" y="792" class="xs" text-anchor="middle">1</text>
+<text x="324" y="792" class="xs" text-anchor="middle">2</text>
+<text x="357" y="792" class="xs" text-anchor="middle">3</text>
+<text x="390" y="792" class="xs" text-anchor="middle">4</text>
+<text x="423" y="792" class="xs" text-anchor="middle">5</text>
+<text x="456" y="792" class="xs" text-anchor="middle">6</text>
+<text x="489" y="792" class="xs" text-anchor="middle">7</text>
+<text x="522" y="792" class="xs" text-anchor="middle">8</text>
+<text x="555" y="792" class="xs" text-anchor="middle">9</text>
+<text x="588" y="792" class="xs" text-anchor="middle">10</text>
+<text x="621" y="792" class="xs" text-anchor="middle">11</text>
+<text x="654" y="792" class="xs" text-anchor="middle">12</text>
+<text x="687" y="792" class="xs" text-anchor="middle">13</text>
+<text x="720" y="792" class="xs" text-anchor="middle">14</text>
+<text x="753" y="792" class="xs" text-anchor="middle">15</text>
+<text x="786" y="792" class="xs" text-anchor="middle">16</text>
+<text x="819" y="792" class="xs" text-anchor="middle">17</text>
+<text x="852" y="792" class="xs" text-anchor="middle">18</text>
+<text x="885" y="792" class="xs" text-anchor="middle">19</text>
+<text x="28" y="812" class="tx" text-anchor="start">存 1（t=12）：游标 9 = 已训 4 + 取2 的 2 + 完成队列 1 + 池内 2 + buffer 0；这些都不进 checkpoint，从 1 恢复跳过 5 组</text>
+<rect x="28" y="824" width="22" height="12" rx="2" class="wait"/>
+<text x="56" y="834" class="sm" text-anchor="start">已取出、等信号量</text>
+<rect x="162" y="824" width="22" height="12" rx="2" class="acc1b"/>
+<text x="190" y="834" class="sm" text-anchor="start">生成中（标版本）</text>
+<text x="307" y="835" class="ab" text-anchor="middle">✕</text>
+<text x="324" y="834" class="sm" text-anchor="start">发布开始时中止（mode=abort）</text>
+<rect x="545.5" y="824" width="22" height="12" rx="2" class="acc2"/>
+<text x="573.5" y="834" class="sm" text-anchor="start">回队后接前缀续生成</text>
+<line x1="690" y1="830" x2="712" y2="830" class="qline"/>
+<text x="718" y="834" class="sm" text-anchor="start">完成后在队列里等待</text>
+<line x1="844.5" y1="822" x2="844.5" y2="836" class="fence"/>
+<text x="854.5" y="834" class="sm" text-anchor="start">发布暂停起止</text>
+<text x="24" y="888" class="cap" text-anchor="start">阅读顺序：同步年龄恒 0 → 异步先提交下一次生成再训练 → interval 2 一半批次再老一拍 → fully-async 每次发布中止在途组、回队接前缀续生成，队列里的组继续变老</text>
+</svg>

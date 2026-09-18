@@ -277,27 +277,16 @@ Megatron 侧的等价配置与拓扑见 `13_megatron_cp_analysis.md` §3.2：KV 
 
 ### 5.2 在线 softmax 合并
 
-> 骨架取自 `20_mindspeed_context_parallel_analysis.md` §4.4(公式最严格,显式给出数值稳定的合并式);torchtitan 的 Python 实现是同一公式的等价代码形态,并列给出。
+通用的块统计 $(m,\ell,u)$、合并公式与两块可复算算例，统一见 [[01_theory/05_inference/18_efficient_attention_analysis|高效 Attention：分块、在线归一化与 IO]] §2–3。本页只跟踪它在 Ring 中的使用：rank 固定本地 Q；每轮收到一段 K/V 后产出该段的局部 attention 输出及 log-sum-exp（LSE），并入已有累积；走完 $cp$ 轮，本地 Q 才得到对所有可见 K/V 的结果。数学上的合并等价不意味着浮点逐位无误差；跨 rank 的 K/V 交付、掩码选择和同步仍由本页 §5.1、§5.3 负责。
 
-每步产出局部 $(\text{out}_{\mathrm{cur}}, m_{\mathrm{cur}}, \ell_{\mathrm{cur}})$($m$=running max,$\ell$=log-sum-exp 的和项),按下式无误差并入累积量:
-
-$$
-\begin{aligned}
-m
-&\leftarrow \max(m_{\mathrm{prev}},m_{\mathrm{cur}}),\quad \ell \leftarrow e^{m_{\mathrm{prev}}-m}\ell_{\mathrm{prev}} \\
-&\quad +e^{m_{\mathrm{cur}}-m}\ell_{\mathrm{cur}},\quad \text{out} \leftarrow \frac{e^{m_{\mathrm{prev}}-m}\ell_{\mathrm{prev}}}{\ell}\text{out}_{\mathrm{prev}} \\
-&\quad +\frac{e^{m_{\mathrm{cur}}-m}\ell_{\mathrm{cur}}}{\ell}\text{out}_{\mathrm{cur}}
-\end{aligned}
-$$
-
-torchtitan 侧(`_SDPAMerger.step`)是这一数学式的等价 PyTorch 实现,用 `sigmoid`/`logsigmoid` 改写同一组增量合并公式,并强制 `convert_to_f32=True` 全程 fp32 累加避免误差:
+torchtitan 侧的 `_SDPAMerger.step` 保留了一个具体的实现对照：这里 `lse` 存的是对数归一化量，与 18 页的指数和 $\ell$ 不同；`sigmoid`/`logsigmoid` 把局部输出按 LSE 对应权重并入当前输出。`convert_to_f32=True` 使用 fp32 累加以控制数值误差，不保证逐位相等：
 
 ```python
 out = out - sigmoid(block_lse - lse) * (out - block_out)
 lse = lse - logsigmoid(lse - block_lse)
 ```
 
-这就是 ring attention **不需要一次性持有完整 K/V** 的数学关键——用在线 softmax 把"分 $size$ 步、每步一段 K/V"的局部结果正确合并成"全量 K/V"的结果,不需要对 $S\times S$ 做全局 reduce。
+因此 Ring 不需要在一个 rank 上一次性持有完整 K/V：每轮只处理收到的那段，最后得到本地 Q 对全量可见历史的 attention 输出；它也不需要对完整 $S\times S$ 分数矩阵做跨卡归约。
 
 ### 5.3 通信掩盖:下一步传输与当前步计算重叠
 

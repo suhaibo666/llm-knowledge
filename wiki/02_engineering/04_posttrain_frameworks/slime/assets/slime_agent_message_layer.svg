@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="520" viewBox="0 0 1180 520" role="img" aria-labelledby="title desc">
+<title id="title">slime agent 消息层：回放的 assistant 消息决定挂载、改写合并还是分叉</title>
+<desc id="desc">同一两轮会话的三种回放：A 与记录的叶节点字典相等时下探，导出 1 条 Sample；回放成 A′ 且旧叶唯一、已生成、输出 2 个 token 短于阈值 1024 时，旧叶降级为仅路由，导出 1 条只训练 C 的 Sample；阈值取 1 时不合并，消息层分叉，A 与 C 各导出一条，共 2 条。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .tk{font-size:10.5px;fill:#2A313B;font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;marker-end:url(#arrowAux)}
+  .brk{fill:none;stroke:#8A93A0;stroke-width:1.1}
+</style><rect width="1180" height="520" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">消息层（record_turn）：先按 role + 字典相等挂载，assistant 改写再看能否合并</text>
+<text x="24" y="56" class="su" text-anchor="start">turn 1：messages [S, u] → 生成 A = r:call &lt;/ast&gt;（2 token）；turn 2：messages [S, u, A 的回放, t] → 生成 C = r:done &lt;/ast&gt;；fork_threshold 默认 1024</text>
+<rect x="24" y="72" width="1132" height="128" rx="10" class="panel"/>
+<rect x="40" y="84" width="300" height="104" rx="8" class="neutral"/>
+<text x="52" y="104" class="tx" text-anchor="start">① 回放 A 与记录的 A 字典相等</text>
+<text x="52" y="124" class="sm" text-anchor="start">_find_mount_point 下探到生成节点 A</text>
+<text x="52" y="142" class="sm" text-anchor="start">剩余消息 t 挂在 A 下，C 挂在 t 下</text>
+<text x="52" y="178" class="sm" text-anchor="start">同一条链 → 交给 token 层（图 ②）</text>
+<path d="M342 136 L372 136" class="main"/>
+<rect x="380" y="88" width="96" height="34" rx="5" class="neutral"/>
+<text x="428" y="103" class="tk" text-anchor="middle">system:S</text>
+<text x="428" y="116" class="sm" text-anchor="middle">仅路由</text>
+<rect x="490" y="88" width="96" height="34" rx="5" class="neutral"/>
+<text x="538" y="103" class="tk" text-anchor="middle">user:u</text>
+<text x="538" y="116" class="sm" text-anchor="middle">仅路由</text>
+<rect x="600" y="88" width="96" height="34" rx="5" class="acc1"/>
+<text x="648" y="103" class="tk" text-anchor="middle">r:call</text>
+<text x="648" y="116" class="sm" text-anchor="middle">生成 A</text>
+<rect x="710" y="88" width="96" height="34" rx="5" class="neutral"/>
+<text x="758" y="103" class="tk" text-anchor="middle">tool:t</text>
+<text x="758" y="116" class="sm" text-anchor="middle">仅路由</text>
+<rect x="820" y="88" width="96" height="34" rx="5" class="acc1"/>
+<text x="868" y="103" class="tk" text-anchor="middle">r:done</text>
+<text x="868" y="116" class="sm" text-anchor="middle">生成 C</text>
+<path d="M476 105 L490 105" class="aux"/>
+<path d="M586 105 L600 105" class="aux"/>
+<path d="M696 105 L710 105" class="aux"/>
+<path d="M806 105 L820 105" class="aux"/>
+<path d="M920 136 L936 136" class="main"/>
+<rect x="940" y="84" width="206" height="104" rx="8" class="neutral"/>
+<text x="950" y="104" class="tx" text-anchor="start">get_trajectory 导出 1 条 Sample</text>
+<text x="950" y="124" class="sm" text-anchor="start">#1：15 token，response 8，训练 A、C</text>
+<text x="950" y="178" class="sm" text-anchor="start">训练 token 共 4</text>
+<rect x="24" y="210" width="1132" height="128" rx="10" class="panel"/>
+<rect x="40" y="222" width="300" height="104" rx="8" class="neutral"/>
+<text x="52" y="242" class="tx" text-anchor="start">② 回放成 A′（"call␣"）≠ A</text>
+<text x="52" y="262" class="sm" text-anchor="start">唯一 assistant 子节点，是叶且已生成</text>
+<text x="52" y="280" class="sm" text-anchor="start">旧叶输出 2 &lt; 1024 → 改写合并</text>
+<text x="52" y="316" class="sm" text-anchor="start">merged_rewrite：abandoned_turn_index=1</text>
+<path d="M342 274 L372 274" class="main"/>
+<rect x="380" y="226" width="96" height="34" rx="5" class="neutral"/>
+<text x="428" y="241" class="tk" text-anchor="middle">system:S</text>
+<text x="428" y="254" class="sm" text-anchor="middle">仅路由</text>
+<rect x="490" y="226" width="96" height="34" rx="5" class="neutral"/>
+<text x="538" y="241" class="tk" text-anchor="middle">user:u</text>
+<text x="538" y="254" class="sm" text-anchor="middle">仅路由</text>
+<rect x="600" y="226" width="96" height="34" rx="5" class="acc2"/>
+<text x="648" y="241" class="tk" text-anchor="middle">r:call␣</text>
+<text x="648" y="254" class="sm" text-anchor="middle">A 降级为 A′</text>
+<rect x="710" y="226" width="96" height="34" rx="5" class="neutral"/>
+<text x="758" y="241" class="tk" text-anchor="middle">tool:t</text>
+<text x="758" y="254" class="sm" text-anchor="middle">仅路由</text>
+<rect x="820" y="226" width="96" height="34" rx="5" class="acc1"/>
+<text x="868" y="241" class="tk" text-anchor="middle">r:done</text>
+<text x="868" y="254" class="sm" text-anchor="middle">生成 C</text>
+<path d="M476 243 L490 243" class="aux"/>
+<path d="M586 243 L600 243" class="aux"/>
+<path d="M696 243 L710 243" class="aux"/>
+<path d="M806 243 L820 243" class="aux"/>
+<path d="M920 274 L936 274" class="main"/>
+<rect x="940" y="222" width="206" height="104" rx="8" class="neutral"/>
+<text x="950" y="242" class="tx" text-anchor="start">get_trajectory 导出 1 条 Sample</text>
+<text x="950" y="262" class="sm" text-anchor="start">#1：15 token，response 2，训练 C</text>
+<text x="950" y="316" class="sm" text-anchor="start">训练 token 共 2</text>
+<rect x="24" y="348" width="1132" height="128" rx="10" class="panel"/>
+<rect x="40" y="360" width="300" height="104" rx="8" class="neutral"/>
+<text x="52" y="380" class="tx" text-anchor="start">③ 同样回放 A′，但 fork_threshold = 1</text>
+<text x="52" y="400" class="sm" text-anchor="start">输出 2 ≥ 1 → 不合并</text>
+<text x="52" y="418" class="sm" text-anchor="start">A′ 作为仅路由兄弟节点挂出，消息层分叉</text>
+<text x="52" y="454" class="sm" text-anchor="start">两个叶 → 两条 Sample</text>
+<path d="M342 412 L372 412" class="main"/>
+<rect x="380" y="364" width="96" height="34" rx="5" class="neutral"/>
+<text x="428" y="379" class="tk" text-anchor="middle">system:S</text>
+<text x="428" y="392" class="sm" text-anchor="middle">仅路由</text>
+<rect x="490" y="364" width="96" height="34" rx="5" class="neutral"/>
+<text x="538" y="379" class="tk" text-anchor="middle">user:u</text>
+<text x="538" y="392" class="sm" text-anchor="middle">仅路由</text>
+<rect x="600" y="364" width="96" height="34" rx="5" class="acc1"/>
+<text x="648" y="379" class="tk" text-anchor="middle">r:call</text>
+<text x="648" y="392" class="sm" text-anchor="middle">生成 A</text>
+<rect x="600" y="414" width="96" height="34" rx="5" class="neutral"/>
+<text x="648" y="429" class="tk" text-anchor="middle">r:call␣</text>
+<text x="648" y="442" class="sm" text-anchor="middle">仅路由 A′</text>
+<rect x="710" y="414" width="96" height="34" rx="5" class="neutral"/>
+<text x="758" y="429" class="tk" text-anchor="middle">tool:t</text>
+<text x="758" y="442" class="sm" text-anchor="middle">仅路由</text>
+<rect x="820" y="414" width="96" height="34" rx="5" class="acc1"/>
+<text x="868" y="429" class="tk" text-anchor="middle">r:done</text>
+<text x="868" y="442" class="sm" text-anchor="middle">生成 C</text>
+<path d="M476 381 L490 381" class="aux"/>
+<path d="M586 381 L600 381" class="aux"/>
+<path d="M538 398 L538 431 L600 431" class="aux"/>
+<path d="M696 431 L710 431" class="aux"/>
+<path d="M806 431 L820 431" class="aux"/>
+<path d="M920 412 L936 412" class="main"/>
+<rect x="940" y="360" width="206" height="104" rx="8" class="neutral"/>
+<text x="950" y="380" class="tx" text-anchor="start">get_trajectory 导出 2 条 Sample</text>
+<text x="950" y="400" class="sm" text-anchor="start">#1：9 token，response 2，训练 A</text>
+<text x="950" y="420" class="sm" text-anchor="start">#2：15 token，response 2，训练 C</text>
+<text x="950" y="454" class="sm" text-anchor="start">训练 token 共 4</text>
+<text x="24" y="504" class="cap" text-anchor="start">阅读顺序：消息层只看消息字典，不看 token；合并与分叉都在 record_turn 当场决定，linearize 时 A′ 只作 prompt 上下文。</text>
+</svg>

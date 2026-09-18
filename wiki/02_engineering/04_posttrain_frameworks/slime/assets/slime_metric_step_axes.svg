@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="668" viewBox="0 0 1180 668" role="img" aria-labelledby="title desc">
+<title id="title">slime 指标的三个 step 键：同一批 rollout 落在哪一步，以及 sync 与 async 下 step 值的含义</title>
+<desc id="desc">上半部分用每批 32 条 rollout、global batch size 16 与 24 两种配置，列出 rollout_id 0 到 3 的 train/step、默认 rollout/step 与开启 --wandb-always-use-train-step 后折算的 rollout/step；整除时折算值等于该批第一个训练步，不整除时出现错位。下半部分复现 train.py 与 train_async.py 的调用顺序：生成每批数据的权重已包含哪些训练批次、async 生成与哪次训练并行、每一步上 update_weights 计时来自哪次调用。</desc>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4}
+</style><rect width="1180" height="668" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">同一批 rollout 落在哪一步：三个 step 键、x 轴折算，以及 sync / async 下 step 值的含义</text>
+<text x="24" y="56" class="su" text-anchor="start">示例：--rollout-batch-size 4 × --n-samples-per-prompt 8 = 32 条 rollout / 批；--global-batch-size 16（每批 2 个优化步）与 24（每批 1 步，尾部 8 条丢弃）</text>
+<rect x="24" y="72" width="1132" height="284" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① step 值：train/step 按优化步计，rollout/step 与 eval/step 按 rollout_id；开 --wandb-always-use-train-step 后折算</text>
+<text x="40" y="124" class="sm" text-anchor="start">rollout_id</text>
+<text x="521" y="124" class="pt" text-anchor="middle">0</text>
+<text x="691" y="124" class="pt" text-anchor="middle">1</text>
+<text x="861" y="124" class="pt" text-anchor="middle">2</text>
+<text x="1031" y="124" class="pt" text-anchor="middle">3</text>
+<text x="40" y="154" class="tx" text-anchor="start">train/step（gbs 16：每批 2 步）</text>
+<rect x="440" y="138" width="162" height="24" rx="4" class="neutral"/>
+<text x="521" y="154" class="tx" text-anchor="middle">0、1</text>
+<rect x="610" y="138" width="162" height="24" rx="4" class="neutral"/>
+<text x="691" y="154" class="tx" text-anchor="middle">2、3</text>
+<rect x="780" y="138" width="162" height="24" rx="4" class="neutral"/>
+<text x="861" y="154" class="tx" text-anchor="middle">4、5</text>
+<rect x="950" y="138" width="162" height="24" rx="4" class="neutral"/>
+<text x="1031" y="154" class="tx" text-anchor="middle">6、7</text>
+<text x="40" y="186" class="tx" text-anchor="start">rollout/step 默认（eval/step 同式）</text>
+<rect x="440" y="170" width="162" height="24" rx="4" class="neutral"/>
+<text x="521" y="186" class="tx" text-anchor="middle">0</text>
+<rect x="610" y="170" width="162" height="24" rx="4" class="neutral"/>
+<text x="691" y="186" class="tx" text-anchor="middle">1</text>
+<rect x="780" y="170" width="162" height="24" rx="4" class="neutral"/>
+<text x="861" y="186" class="tx" text-anchor="middle">2</text>
+<rect x="950" y="170" width="162" height="24" rx="4" class="neutral"/>
+<text x="1031" y="186" class="tx" text-anchor="middle">3</text>
+<text x="40" y="218" class="tx" text-anchor="start">rollout/step 折算（gbs 16）</text>
+<rect x="440" y="202" width="162" height="24" rx="4" class="acc1"/>
+<text x="521" y="218" class="tx" text-anchor="middle">0</text>
+<rect x="610" y="202" width="162" height="24" rx="4" class="acc1"/>
+<text x="691" y="218" class="tx" text-anchor="middle">2</text>
+<rect x="780" y="202" width="162" height="24" rx="4" class="acc1"/>
+<text x="861" y="218" class="tx" text-anchor="middle">4</text>
+<rect x="950" y="202" width="162" height="24" rx="4" class="acc1"/>
+<text x="1031" y="218" class="tx" text-anchor="middle">6</text>
+<text x="40" y="250" class="tx" text-anchor="start">train/step（gbs 24：每批 1 步）</text>
+<rect x="440" y="234" width="162" height="24" rx="4" class="ghost"/>
+<text x="521" y="250" class="tx" text-anchor="middle">0</text>
+<rect x="610" y="234" width="162" height="24" rx="4" class="ghost"/>
+<text x="691" y="250" class="tx" text-anchor="middle">1</text>
+<rect x="780" y="234" width="162" height="24" rx="4" class="ghost"/>
+<text x="861" y="250" class="tx" text-anchor="middle">2</text>
+<rect x="950" y="234" width="162" height="24" rx="4" class="ghost"/>
+<text x="1031" y="250" class="tx" text-anchor="middle">3</text>
+<text x="40" y="282" class="tx" text-anchor="start">rollout/step 折算（gbs 24）</text>
+<rect x="440" y="266" width="162" height="24" rx="4" class="ghost"/>
+<text x="521" y="282" class="tx" text-anchor="middle">0</text>
+<rect x="610" y="266" width="162" height="24" rx="4" class="ghost"/>
+<text x="691" y="282" class="tx" text-anchor="middle">1</text>
+<rect x="780" y="266" width="162" height="24" rx="4" class="ghost"/>
+<text x="861" y="282" class="tx" text-anchor="middle">2</text>
+<rect x="950" y="266" width="162" height="24" rx="4" class="acc2"/>
+<text x="1031" y="282" class="tx" text-anchor="middle">4</text>
+<text x="40" y="320" class="sm" text-anchor="start">train/step = rollout_id × 每批步数 + step_id；每批步数 = 32 // gbs（build_dp_schedule 按 rollout 切步，尾部不足一步的丢弃）</text>
+<text x="40" y="338" class="sm" text-anchor="start">折算 rollout/step = rollout_id × 4 × 8 // gbs（compute_rollout_step）：gbs 整除 32 时等于该批第一个 train/step；gbs 24 时 rollout 3 折算成 4，train/step 却是 3</text>
+<rect x="24" y="370" width="1132" height="252" rx="10" class="panel"/>
+<text x="40" y="394" class="pt" text-anchor="start">② 同一个 rollout_id：生成它的权重已训到哪一批、async 生成与哪次训练并行、该步 perf 计时来自哪次调用</text>
+<text x="40" y="422" class="sm" text-anchor="start">rollout_id</text>
+<text x="521" y="422" class="pt" text-anchor="middle">0</text>
+<text x="691" y="422" class="pt" text-anchor="middle">1</text>
+<text x="861" y="422" class="pt" text-anchor="middle">2</text>
+<text x="1031" y="422" class="pt" text-anchor="middle">3</text>
+<text x="40" y="452" class="tx" text-anchor="start">sync（train.py）：生成该批的权重已训</text>
+<rect x="440" y="436" width="162" height="24" rx="4" class="neutral"/>
+<text x="521" y="452" class="tx" text-anchor="middle">无（初始权重）</text>
+<rect x="610" y="436" width="162" height="24" rx="4" class="neutral"/>
+<text x="691" y="452" class="tx" text-anchor="middle">批 0</text>
+<rect x="780" y="436" width="162" height="24" rx="4" class="neutral"/>
+<text x="861" y="452" class="tx" text-anchor="middle">批 0–1</text>
+<rect x="950" y="436" width="162" height="24" rx="4" class="neutral"/>
+<text x="1031" y="452" class="tx" text-anchor="middle">批 0–2</text>
+<text x="40" y="484" class="tx" text-anchor="start">async，interval 1（train_async.py）：同上</text>
+<rect x="440" y="468" width="162" height="24" rx="4" class="neutral"/>
+<text x="521" y="484" class="tx" text-anchor="middle">无（初始权重）</text>
+<rect x="610" y="468" width="162" height="24" rx="4" class="acc2"/>
+<text x="691" y="484" class="tx" text-anchor="middle">无（初始权重）</text>
+<rect x="780" y="468" width="162" height="24" rx="4" class="acc2"/>
+<text x="861" y="484" class="tx" text-anchor="middle">批 0</text>
+<rect x="950" y="468" width="162" height="24" rx="4" class="acc2"/>
+<text x="1031" y="484" class="tx" text-anchor="middle">批 0–1</text>
+<text x="40" y="516" class="tx" text-anchor="start">async：generate 运行时 trainer 在做</text>
+<rect x="440" y="500" width="162" height="24" rx="4" class="ghost"/>
+<text x="521" y="516" class="tx" text-anchor="middle">空闲（循环前提交）</text>
+<rect x="610" y="500" width="162" height="24" rx="4" class="acc2"/>
+<text x="691" y="516" class="tx" text-anchor="middle">train 0</text>
+<rect x="780" y="500" width="162" height="24" rx="4" class="acc2"/>
+<text x="861" y="516" class="tx" text-anchor="middle">train 1</text>
+<rect x="950" y="500" width="162" height="24" rx="4" class="acc2"/>
+<text x="1031" y="516" class="tx" text-anchor="middle">train 2</text>
+<text x="40" y="548" class="tx" text-anchor="start">两种入口：该步 perf/update_weights_time 来自</text>
+<rect x="440" y="532" width="162" height="24" rx="4" class="ghost"/>
+<text x="521" y="548" class="tx" text-anchor="middle">初始推送</text>
+<rect x="610" y="532" width="162" height="24" rx="4" class="ghost"/>
+<text x="691" y="548" class="tx" text-anchor="middle">train 0 之后</text>
+<rect x="780" y="532" width="162" height="24" rx="4" class="ghost"/>
+<text x="861" y="548" class="tx" text-anchor="middle">train 1 之后</text>
+<rect x="950" y="532" width="162" height="24" rx="4" class="ghost"/>
+<text x="1031" y="548" class="tx" text-anchor="middle">train 2 之后</text>
+<text x="40" y="586" class="sm" text-anchor="start">sync 的 generate(k) 在 train k−1 与 update_weights 之后才开始；async 的 generate(k) 在 train k−1 之前提交，权重少一个已训批次，manager 侧 rollout/* 与 trainer 侧 train/* 交错到达</text>
+<text x="40" y="604" class="sm" text-anchor="start">log_perf_data 在 train_actor 末尾取走并清零本进程 Timer：之后发生的 save_model、update_weights、sleep 计时记到下一个 rollout_id</text>
+<text x="24" y="650" class="cap" text-anchor="start">阅读顺序：① step 值只由 rollout_id 与批次配置决定 → ② 同一个 step 值在 sync 与 async 下对应不同的生成权重；x 轴是数据批次轴，不是策略版本轴。</text>
+</svg>

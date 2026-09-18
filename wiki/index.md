@@ -4,7 +4,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-09-14
+> 最后更新: 2026-09-17
 
 ---
 
@@ -29,10 +29,10 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
 | 后训练对齐 | [[01_theory/04_posttraining/index]] | 22 | 活跃 |
-| 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
+| 推理基础原理 | [[01_theory/05_inference/index]] | 30 | 29 篇正文已完成 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM，2026-09-10 重算模型与 DeepSeek**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算，2026-09-08 重算推理框架与 vLLM，2026-09-10 重算模型与 DeepSeek，2026-09-17 重算推理基础原理为 30 页**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
 
 ### 02 工程实现
 
@@ -49,7 +49,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index|推理框架目录]] | 35 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index|vLLM知识地图]] | 27 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 52 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 53 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 17 | 活跃 |
 | └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 24 | 活跃 |
 | GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
@@ -57,7 +57,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 同上，**2026-09-04 全表机械复算，2026-09-08 再次重算推理框架与 vLLM**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
+> 同上，**2026-09-04 全表机械复算，2026-09-08 再次重算推理框架与 vLLM**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。后训练框架 2026-09-17 重算为 53。
 
 ### courses 课程入口
 
@@ -99,7 +99,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | RL 训练框架 (verl/HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |
-| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[slime/index]], [[01_slime_architecture_overview_analysis]], [[30_slime_rollout_optimization_analysis]], [[17_slime_train_inference_consistency_analysis]], [[31_slime_posttraining_stability_analysis]], [[25_vime_vllm_backend_support_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
+| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识地图]], [[01_slime_architecture_overview_analysis]], [[30_slime_rollout_optimization_analysis]], [[17_slime_train_inference_consistency_analysis]], [[15_slime_loss_parallelism_analysis]], [[31_slime_posttraining_stability_analysis]], [[25_vime_vllm_backend_support_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[10_determinism_and_numerical_reliability_analysis]], [[11_fault_tolerance_and_recovery_analysis]], [[12_training_dynamics_stability_analysis]] |
 
 ### 按原始来源

@@ -1,0 +1,248 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1000" viewBox="0 0 1180 1000" role="img" aria-labelledby="title desc">
+<title id="title">slime 权重布局规则二：PP/EP 全局命名、HF 黑盒 GDN 的 CP 两段重组与反向梯度账</title>
+<desc id="desc">面板四：4 层、4 个 expert，PP=2、EP=2 的四个 rank 各自把本地层号 0 到 1、expert 下标 0 到 1 加上 PP 与 EP offset，元数据交换后每个 rank 都看到同一份 16 个 expert fc1 名；MTP 层号不加 offset。面板五：CP=2 时两条 packed 序列按 zigzag 切给两个 rank，HF 包装层 all-gather 后按前段 rank 顺序、后段 rank 逆序拼回原序，GDN 之后按 chunk 取回各 rank 的两段。面板六：用前缀和代替 GDN 的因果依赖，比较 SP 与 CP 两条 all-gather 反向取本片与 reduce-scatter 的梯度，CP 取本片会丢掉其他 rank 输出对本片输入的梯度项。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .cl{font-size:11px;fill:#1F2430}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .h1{fill:#DCE7FB;stroke:#7DA2E8;stroke-width:1}
+  .h2{fill:#F7E3CF;stroke:#D79A62;stroke-width:1}
+  .h3{fill:#E6E9EE;stroke:#AEB6C2;stroke-width:1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+</style><rect width="1180" height="1000" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">身份与序列的两条布局规则：权重名按 PP/EP 恢复全局编号，黑盒模块在 CP 下先拼回整条序列</text>
+<text x="24" y="56" class="su" text-anchor="start">玩具模型：4 层、4 个 expert，PP=2、EP=2；packed batch：a 序列 8 个 token、b 序列 4 个，CP=2、TP=1、pad 倍数 128</text>
+<rect x="24" y="72" width="1132" height="262" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">④ named_params_and_buffers：decoder 层号加 PP offset，expert 下标加 EP offset；导入与导出共用这份全局名</text>
+<rect x="40" y="114" width="300" height="78" rx="6" class="neutral"/>
+<text x="50" y="132" class="sm" text-anchor="start">PP stage 0 · EP rank 0（offset 层 +0，expert +0）</text>
+<text x="50" y="154" class="tx" text-anchor="start">本地 layers.0–1 · weight0–1</text>
+<text x="50" y="176" class="tx" text-anchor="start">全局 layers.0–1 · weight0–1</text>
+<rect x="354" y="114" width="300" height="78" rx="6" class="neutral"/>
+<text x="364" y="132" class="sm" text-anchor="start">PP stage 0 · EP rank 1（offset 层 +0，expert +2）</text>
+<text x="364" y="154" class="tx" text-anchor="start">本地 layers.0–1 · weight0–1</text>
+<text x="364" y="176" class="tx" text-anchor="start">全局 layers.0–1 · weight2–3</text>
+<rect x="40" y="204" width="300" height="78" rx="6" class="neutral"/>
+<text x="50" y="222" class="sm" text-anchor="start">PP stage 1 · EP rank 0（offset 层 +2，expert +0）</text>
+<text x="50" y="244" class="tx" text-anchor="start">本地 layers.0–1 · weight0–1</text>
+<text x="50" y="266" class="tx" text-anchor="start">全局 layers.2–3 · weight0–1</text>
+<rect x="354" y="204" width="300" height="78" rx="6" class="neutral"/>
+<text x="364" y="222" class="sm" text-anchor="start">PP stage 1 · EP rank 1（offset 层 +2，expert +2）</text>
+<text x="364" y="244" class="tx" text-anchor="start">本地 layers.0–1 · weight0–1</text>
+<text x="364" y="266" class="tx" text-anchor="start">全局 layers.2–3 · weight2–3</text>
+<path d="M670 202 L700 202" class="main"/>
+<rect x="708" y="114" width="432" height="178" rx="6" class="acc1"/>
+<text x="720" y="136" class="tx" text-anchor="start">_get_megatron_local_param_infos</text>
+<text x="720" y="158" class="sm" text-anchor="start">PP 与 EP 两轮交换元数据后排序：每个 rank 都是同一份 16 个 expert fc1 名</text>
+<text x="720" y="178" class="sm" text-anchor="start">再逐项校验 name / shape / dtype 一致</text>
+<text x="720" y="200" class="sm" text-anchor="start">例：PP1·EP1 的本地 layers.1 · weight1</text>
+<text x="720" y="218" class="sm" text-anchor="start">→ layers.3.mlp.experts.linear_fc1.weight3</text>
+<text x="720" y="236" class="sm" text-anchor="start">→ model.layers.3.mlp.experts.3.gate_proj / up_proj</text>
+<text x="720" y="260" class="sm" text-anchor="start">导入同样按全局名去读 HF 的 experts.{全局下标}</text>
+<text x="720" y="280" class="sm" text-anchor="start">不在本 rank 的 expert 由 EP 组广播补齐</text>
+<rect x="40" y="304" width="482" height="22" rx="4" class="acc2"/>
+<text x="48" y="319" class="sm" text-anchor="start">MTP：EP rank 1 的 mtp.layers.0 … weight1 → weight3，层号仍为 0（不加 PP offset）</text>
+<rect x="24" y="346" width="1132" height="318" rx="10" class="panel"/>
+<text x="40" y="370" class="pt" text-anchor="start">⑤ HuggingfaceAttention.forward：CP&gt;1 时先 all-gather，再按“前段 rank 顺序、后段 rank 逆序”拼回原序列交给 GDN</text>
+<text x="40" y="408" class="tx" text-anchor="start">全局 packed 序列</text>
+<rect x="250" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="407" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="407" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="407" class="cl" text-anchor="middle">a2</text>
+<rect x="361" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="407" class="cl" text-anchor="middle">a3</text>
+<rect x="398" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="415" y="407" class="cl" text-anchor="middle">a4</text>
+<rect x="435" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="452" y="407" class="cl" text-anchor="middle">a5</text>
+<rect x="472" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="489" y="407" class="cl" text-anchor="middle">a6</text>
+<rect x="509" y="392" width="34" height="22" rx="3" class="h1"/>
+<text x="526" y="407" class="cl" text-anchor="middle">a7</text>
+<rect x="557" y="392" width="34" height="22" rx="3" class="h2"/>
+<text x="574" y="407" class="cl" text-anchor="middle">b0</text>
+<rect x="594" y="392" width="34" height="22" rx="3" class="h2"/>
+<text x="611" y="407" class="cl" text-anchor="middle">b1</text>
+<rect x="631" y="392" width="34" height="22" rx="3" class="h2"/>
+<text x="648" y="407" class="cl" text-anchor="middle">b2</text>
+<rect x="668" y="392" width="34" height="22" rx="3" class="h2"/>
+<text x="685" y="407" class="cl" text-anchor="middle">b3</text>
+<text x="716" y="408" class="sm" text-anchor="start">slice_with_cp：每条补到 2·CP 的倍数，rank r 取第 r 与 2·CP−1−r 段</text>
+<text x="40" y="446" class="tx" text-anchor="start">rank0 本地</text>
+<rect x="250" y="430" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="445" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="430" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="445" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="430" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="445" class="cl" text-anchor="middle">a6</text>
+<rect x="361" y="430" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="445" class="cl" text-anchor="middle">a7</text>
+<rect x="398" y="430" width="34" height="22" rx="3" class="h2"/>
+<text x="415" y="445" class="cl" text-anchor="middle">b0</text>
+<rect x="435" y="430" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="445" class="cl" text-anchor="middle">b3</text>
+<rect x="479" y="430" width="85" height="22" rx="4" class="ghost"/>
+<text x="487" y="445" class="sm" text-anchor="start">pad 本地 122</text>
+<text x="40" y="476" class="tx" text-anchor="start">rank1 本地</text>
+<rect x="250" y="460" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="475" class="cl" text-anchor="middle">a2</text>
+<rect x="287" y="460" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="475" class="cl" text-anchor="middle">a3</text>
+<rect x="324" y="460" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="475" class="cl" text-anchor="middle">a4</text>
+<rect x="361" y="460" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="475" class="cl" text-anchor="middle">a5</text>
+<rect x="398" y="460" width="34" height="22" rx="3" class="h2"/>
+<text x="415" y="475" class="cl" text-anchor="middle">b1</text>
+<rect x="435" y="460" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="475" class="cl" text-anchor="middle">b2</text>
+<rect x="479" y="460" width="85" height="22" rx="4" class="ghost"/>
+<text x="487" y="475" class="sm" text-anchor="start">pad 本地 122</text>
+<text x="660" y="446" class="sm" text-anchor="start">cu_seqlens = [0, 8, 12, 256]（本地 [0, 4, 6, 128] × CP）</text>
+<text x="660" y="476" class="sm" text-anchor="start">a 段 chunk_size 2、b 段 1：seqlen // 2 // CP</text>
+<text x="40" y="522" class="tx" text-anchor="start">拼回原序</text>
+<rect x="250" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="521" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="521" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="521" class="cl" text-anchor="middle">a2</text>
+<rect x="361" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="521" class="cl" text-anchor="middle">a3</text>
+<rect x="398" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="415" y="521" class="cl" text-anchor="middle">a4</text>
+<rect x="435" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="452" y="521" class="cl" text-anchor="middle">a5</text>
+<rect x="472" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="489" y="521" class="cl" text-anchor="middle">a6</text>
+<rect x="509" y="506" width="34" height="22" rx="3" class="h1"/>
+<text x="526" y="521" class="cl" text-anchor="middle">a7</text>
+<rect x="546" y="506" width="34" height="22" rx="3" class="h2"/>
+<text x="563" y="521" class="cl" text-anchor="middle">b0</text>
+<rect x="583" y="506" width="34" height="22" rx="3" class="h2"/>
+<text x="600" y="521" class="cl" text-anchor="middle">b1</text>
+<rect x="620" y="506" width="34" height="22" rx="3" class="h2"/>
+<text x="637" y="521" class="cl" text-anchor="middle">b2</text>
+<rect x="657" y="506" width="34" height="22" rx="3" class="h2"/>
+<text x="674" y="521" class="cl" text-anchor="middle">b3</text>
+<rect x="701" y="506" width="85" height="22" rx="4" class="ghost"/>
+<text x="709" y="521" class="sm" text-anchor="start">pad 全局 244</text>
+<rect x="800" y="506" width="233" height="22" rx="4" class="acc1"/>
+<text x="808" y="521" class="sm" text-anchor="start">GDN 按 cu_seqlens 逐序列递推，不跨 a、b</text>
+<text x="40" y="574" class="tx" text-anchor="start">输出取回</text>
+<text x="250" y="553" class="sm" text-anchor="start">rank0</text>
+<rect x="250" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="267" y="573" class="cl" text-anchor="middle">a0</text>
+<rect x="287" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="304" y="573" class="cl" text-anchor="middle">a1</text>
+<rect x="324" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="341" y="573" class="cl" text-anchor="middle">a6</text>
+<rect x="361" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="378" y="573" class="cl" text-anchor="middle">a7</text>
+<rect x="398" y="558" width="34" height="22" rx="3" class="h2"/>
+<text x="415" y="573" class="cl" text-anchor="middle">b0</text>
+<rect x="435" y="558" width="34" height="22" rx="3" class="h2"/>
+<text x="452" y="573" class="cl" text-anchor="middle">b3</text>
+<text x="495" y="553" class="sm" text-anchor="start">rank1</text>
+<rect x="495" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="512" y="573" class="cl" text-anchor="middle">a2</text>
+<rect x="532" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="549" y="573" class="cl" text-anchor="middle">a3</text>
+<rect x="569" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="586" y="573" class="cl" text-anchor="middle">a4</text>
+<rect x="606" y="558" width="34" height="22" rx="3" class="h1"/>
+<text x="623" y="573" class="cl" text-anchor="middle">a5</text>
+<rect x="643" y="558" width="34" height="22" rx="3" class="h2"/>
+<text x="660" y="573" class="cl" text-anchor="middle">b1</text>
+<rect x="680" y="558" width="34" height="22" rx="3" class="h2"/>
+<text x="697" y="573" class="cl" text-anchor="middle">b2</text>
+<rect x="740" y="558" width="267" height="22" rx="4" class="acc1"/>
+<text x="748" y="573" class="sm" text-anchor="start">每条序列 chunk(2·CP)，取第 r 与 2·CP−1−r 段</text>
+<text x="40" y="608" class="sm" text-anchor="start">代价：每个 CP rank 都对全局全部位置（含 pad）跑一遍 GDN；SP 下先按 TP 组 gather、输出再 scatter，模块内部没有 TP 切分</text>
+<text x="40" y="628" class="sm" text-anchor="start">假设：每条序列本地长度是 2 的倍数、全局长度可被 2·CP 整除（由 slice_with_cp 的补齐保证），wrapper 自身不校验</text>
+<text x="40" y="648" class="sm" text-anchor="start">allgather-CP（DSA 模式）是另一种连续等分布局，只允许 DSA 架构；本面板是默认 zigzag 布局</text>
+<rect x="24" y="676" width="1132" height="304" rx="10" class="panel"/>
+<text x="40" y="700" class="pt" text-anchor="start">⑥ 反向：两条 all-gather 都“只取本片梯度”；SP 成立，CP 下会丢掉其他 rank 输出对本片输入的梯度（分析判断）</text>
+<text x="40" y="722" class="sm" text-anchor="start">分析模型：用前缀和 y_q = Σ_{p≤q} x_p 代替 GDN 的因果依赖、损失 L = Σ_q y_q，只看 a 序列；未在 slime 的 GPU 训练中验证</text>
+<text x="40" y="752" class="tx" text-anchor="start">输入 token</text>
+<text x="520" y="752" class="tx" text-anchor="middle">a0</text>
+<text x="580" y="752" class="tx" text-anchor="middle">a1</text>
+<text x="640" y="752" class="tx" text-anchor="middle">a2</text>
+<text x="700" y="752" class="tx" text-anchor="middle">a3</text>
+<text x="760" y="752" class="tx" text-anchor="middle">a4</text>
+<text x="820" y="752" class="tx" text-anchor="middle">a5</text>
+<text x="880" y="752" class="tx" text-anchor="middle">a6</text>
+<text x="940" y="752" class="tx" text-anchor="middle">a7</text>
+<text x="1010" y="752" class="tx" text-anchor="middle">合计</text>
+<rect x="34" y="766" width="1112" height="28" rx="4" class="ghost"/>
+<text x="44" y="785" class="tx" text-anchor="start">真实 ∂L/∂x</text>
+<text x="520" y="785" class="tx" text-anchor="middle">8</text>
+<text x="580" y="785" class="tx" text-anchor="middle">7</text>
+<text x="640" y="785" class="tx" text-anchor="middle">6</text>
+<text x="700" y="785" class="tx" text-anchor="middle">5</text>
+<text x="760" y="785" class="tx" text-anchor="middle">4</text>
+<text x="820" y="785" class="tx" text-anchor="middle">3</text>
+<text x="880" y="785" class="tx" text-anchor="middle">2</text>
+<text x="940" y="785" class="tx" text-anchor="middle">1</text>
+<text x="1010" y="785" class="tx" text-anchor="middle">36</text>
+<rect x="34" y="800" width="1112" height="28" rx="4" class="acc1"/>
+<text x="44" y="819" class="tx" text-anchor="start">SP（TP=2）：scatter 反向 all-gather，各 rank 输出梯度相同 → 取本片</text>
+<text x="520" y="819" class="tx" text-anchor="middle">8</text>
+<text x="580" y="819" class="tx" text-anchor="middle">7</text>
+<text x="640" y="819" class="tx" text-anchor="middle">6</text>
+<text x="700" y="819" class="tx" text-anchor="middle">5</text>
+<text x="760" y="819" class="tx" text-anchor="middle">4</text>
+<text x="820" y="819" class="tx" text-anchor="middle">3</text>
+<text x="880" y="819" class="tx" text-anchor="middle">2</text>
+<text x="940" y="819" class="tx" text-anchor="middle">1</text>
+<text x="1010" y="819" class="tx" text-anchor="middle">36</text>
+<rect x="34" y="834" width="1112" height="28" rx="4" class="ghost"/>
+<text x="44" y="853" class="tx" text-anchor="start">SP（TP=2）：若改用 reduce-scatter 求和</text>
+<text x="520" y="853" class="tx" text-anchor="middle">16</text>
+<text x="580" y="853" class="tx" text-anchor="middle">14</text>
+<text x="640" y="853" class="tx" text-anchor="middle">12</text>
+<text x="700" y="853" class="tx" text-anchor="middle">10</text>
+<text x="760" y="853" class="tx" text-anchor="middle">8</text>
+<text x="820" y="853" class="tx" text-anchor="middle">6</text>
+<text x="880" y="853" class="tx" text-anchor="middle">4</text>
+<text x="940" y="853" class="tx" text-anchor="middle">2</text>
+<text x="1010" y="853" class="tx" text-anchor="middle">72</text>
+<rect x="34" y="868" width="1112" height="28" rx="4" class="acc2"/>
+<text x="44" y="887" class="tx" text-anchor="start">CP（CP=2）：输出只按段切片，各 rank 输出梯度不同 → 取本片</text>
+<text x="520" y="887" class="tx" text-anchor="middle">4</text>
+<text x="580" y="887" class="tx" text-anchor="middle">3</text>
+<text x="640" y="887" class="tx" text-anchor="middle">4</text>
+<text x="700" y="887" class="tx" text-anchor="middle">3</text>
+<text x="760" y="887" class="tx" text-anchor="middle">2</text>
+<text x="820" y="887" class="tx" text-anchor="middle">1</text>
+<text x="880" y="887" class="tx" text-anchor="middle">2</text>
+<text x="940" y="887" class="tx" text-anchor="middle">1</text>
+<text x="1010" y="887" class="tx" text-anchor="middle">20</text>
+<rect x="34" y="902" width="1112" height="28" rx="4" class="ghost"/>
+<text x="44" y="921" class="tx" text-anchor="start">CP（CP=2）：若改用 reduce-scatter 求和</text>
+<text x="520" y="921" class="tx" text-anchor="middle">8</text>
+<text x="580" y="921" class="tx" text-anchor="middle">7</text>
+<text x="640" y="921" class="tx" text-anchor="middle">6</text>
+<text x="700" y="921" class="tx" text-anchor="middle">5</text>
+<text x="760" y="921" class="tx" text-anchor="middle">4</text>
+<text x="820" y="921" class="tx" text-anchor="middle">3</text>
+<text x="880" y="921" class="tx" text-anchor="middle">2</text>
+<text x="940" y="921" class="tx" text-anchor="middle">1</text>
+<text x="1010" y="921" class="tx" text-anchor="middle">36</text>
+<text x="40" y="948" class="sm" text-anchor="start">rank0 持有 a0 a1 a6 a7；rank1 持有 a2 a3 a4 a5。例：rank1 上 a2–a5 的损失对 a0 的梯度（4）在 rank1 算出后被丢弃</text>
+<text x="40" y="968" class="sm" text-anchor="start">源码注释的前提是“重复计算 → 梯度相同”；它对 SP 成立（输出 scatter 的反向是 all-gather），对 CP 的输出切片不成立</text>
+</svg>

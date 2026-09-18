@@ -6,7 +6,7 @@ title: "后训练框架 — 目录索引"
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、TitanRL 异步 GRPO/DAPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-09-16（新增 DORA 多版本 rollout 论文分析页）
+> 最后更新: 2026-09-17（slime 基线 `4c193f1f`；系统覆盖表按 `find` 复算，消除 vime 重复计数）
 
 ---
 
@@ -28,20 +28,24 @@ title: "后训练框架 — 目录索引"
 
 | 系统 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
-| **slime** | THUDM，SGLang-native + Megatron-native；本域**覆盖最全**的框架，从配置、端到端主链到容错、低精度、Agent workflow 逐项展开 | 23 篇内容页 + index（**系统性源码覆盖**） | `THUDM/slime@681b3adc` |
+| **slime** | THUDM，SGLang-native + Megatron-native；本域**覆盖最全**的框架，从配置、端到端主链到容错、低精度、Agent workflow 逐项展开 | 22 篇内容页（**系统性源码覆盖**）；`slime/` 目录另含下面 vime 行的 1 篇与 index，共 24 个文件 | `THUDM/slime@4c193f1f` |
 | **verl** | 字节 **HybridFlow** 开源版；当前默认 V1 以 TransferQueue 解耦控制/数据，共享 Agent/Reward、Worker/Engine、rollout、权重发布与训练恢复能力 | 16 篇 + index（**系统性源码覆盖**） | `volcengine/verl@254a23ed` |
 | **AReaL** | Fully Async 与 Agentic 架构的代表：微服务化、Hermes、policy lag 的显式管理 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **ROLL** | 多后端 Strategy 抽象 + AutoDeviceMapping；异构与 **Ascend** 侧的代表 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **DORA**（美团 LongCat） | 多版本流式 rollout 与 rollout 池内动态编排的代表；论文专题，**无公开实现** | 1 篇（**论文机制分析，非源码**） | arXiv:2604.26256v2 |
-| **vime** | vLLM backend 的衍生实现；用于审计 slime 的 rollout backend 扩展点 | 1 篇（在 `slime/` 下） | `vllm-project/vime@8144096e` |
+| **vime** | vLLM backend 的衍生实现；用于审计 slime 的 rollout backend 扩展点 | 1 篇（位于 `slime/` 目录，已计入该目录 24 个文件，不另计） | `vllm-project/vime@8144096e` |
 | **TRL / NeMo-RL / Tinker / KDFlow / OpenRLHF** | 仅在 OPD 支持度对照表里做**选型定位**，本库**没有**源码级深挖 | 0 篇（仅出现在对照表） | — |
-| **Sandbox / RL Infra 效率 / OPD 系统侧** | **技术专题而非产品**：跨框架的公开资料综述（RollArt、ProRL Agent、Kimi K3、Claude 4 访谈等） | 5 篇 | 公开资料，见各页头 |
+| **TitanRL** | TorchTitan 的异步 RL 运行时：版本窗口、全局 token 归一化与 GRPO/DAPO | 1 篇（**源码专题**） | 见页头 |
+| **Sandbox / RL Infra 效率 / OPD 系统侧** | **技术专题而非产品**：跨框架的公开资料综述（RollArt、ProRL Agent、Kimi K3、Claude 4 访谈等） | 4 篇 | 公开资料，见各页头 |
+| **跨框架机制与对照** | 三平面机制总览（D05）、工业框架对比（D06）、CUDA–Ascend 栈对照（D11） | 3 篇 | 见各页头 |
+
+> 计数（2026-09-17 按 `find` 复算）：本目录共 53 个 Markdown 文件 = 根目录 11 篇内容页 + index、`verl/` 17 个、`slime/` 24 个；上表各行合计与之一致。
 
 > 引用注意：能力清单里的源码锚点主要落在 **verl 与 slime**。AReaL 与 ROLL 只有架构专题一篇，不足以支撑"这类框架都如何如何"的断言；跨框架的横向结论请以 [[30_rl_framework_comparison]] 的证据分级为准，那页对每条能力标了四级支持证据。
 
 ### 本域提供的能力
 
-下表按**三平面**组织；"样本与锚点"列说明本库是拿谁的实现讲的。源码锚点按侧车 checkout `verl@254a23ed`、`slime@681b3adc` 核对路径存在：
+下表按**三平面**组织；"样本与锚点"列说明本库是拿谁的实现讲的。源码锚点按侧车 checkout `verl@254a23ed`、`slime@4c193f1f` 核对路径存在：
 
 | 平面 | 能力 | 具体提供什么 | 样本与源码锚点 | 详见 |
 |---|---|---|---|---|
@@ -82,7 +86,7 @@ title: "后训练框架 — 目录索引"
 | 目录 | 核心主题 |
 |------|---------|
 | [[02_engineering/04_posttrain_frameworks/verl/index|verl]] | 字节 **HybridFlow** 开源版 RL 后训练编排框架；16 篇内容页按共享能力与动态生命周期组织，覆盖 V1 sync、两类 async、V0、Agent/Reward、TransferQueue、Engine、rollout、权重发布与训练恢复；当前基线 `main@254a23ed` |
-| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
+| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 1 篇 vime 衍生实现审计；slime 基线 `4c193f1f` |
 
 ---
 
@@ -100,7 +104,7 @@ title: "后训练框架 — 目录索引"
 | 1 | [[11_rl_sandbox_design_analysis]] | Coding RL Sandbox 架构设计 |
 | 1 | [[12_rl_infra_efficiency_analysis]] | RL Infra 效率优化机制 |
 | 1 | [[13_opd_infra_mechanism_analysis]] | OPD 基础设施机制:带宽账与八项工程工作 W1-W8 |
-| 2 | [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 1 篇 vime 衍生实现审计；slime 基线 `4c193f1f` |
 | 2 | [[21_areal_async_architecture_analysis]] | AReaL 框架架构专题 |
 | 2 | [[22_roll_strategy_and_ascend_analysis]] | ROLL 框架架构专题 |
 | 2 | [[23_dora_multi_version_rollout_analysis]] | 美团 DORA：多版本流式 rollout、DP group 按版本重分区、同版本 KV cache 直传；与 verl GPU 出借的坐标对照 |
@@ -112,7 +116,7 @@ title: "后训练框架 — 目录索引"
 
 ### TitanRL 异步运行时与 RL 算法实现（kb-reorg P5 归位）
 
-> `20_batch_invariance_guide` 已迁至 [[07_training_reliability/index]]（训练批次不变性属确定性/可靠性问题域，非框架源码分析）。
+> `20_batch_invariance_guide` 已迁至 [[02_engineering/07_training_reliability/index|训练可靠性]]（训练批次不变性属确定性/可靠性问题域，非框架源码分析）。
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
@@ -133,7 +137,7 @@ title: "后训练框架 — 目录索引"
 |------|---------|
 | [[01_posttraining_infra_mechanism_analysis]] | 后训练 Infra 核心机制(原 D05):control/data/weight 三平面模型、五种执行结构、backpressure 接口定义、weight publish 协议、checkpoint 与故障域 |
 | [[30_rl_framework_comparison]] | 工业后训练框架对比(原 D06):verl/slime/AReaL/ROLL 统一机制矩阵、四级支持证据、控制面可修改性、async 语义对照 |
-| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 vime 衍生实现；slime 基线 `681b3adc` |
+| [[02_engineering/04_posttrain_frameworks/slime/index|slime]] | SGLang 与 Megatron 原生后训练编排；23 篇内容页覆盖配置、主链、数据、训练、权重、扩展与诊断，包含多模态、评估、SFT 及 1 篇 vime 衍生实现审计；slime 基线 `4c193f1f` |
 | [[21_areal_async_architecture_analysis]] | AReaL Fully Async 与 Agentic 架构:微服务、Hermes、policy lag、agent trajectory |
 | [[22_roll_strategy_and_ascend_analysis]] | ROLL Strategy、异构与 Ascend:多后端 Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
 | [[23_dora_multi_version_rollout_analysis]] | 美团 DORA 论文（arXiv:2604.26256v2，无公开实现）:长尾困境的 max-max 结构、多版本流式训练与滑动窗口、编排器三触发三动作、零重 prefill KV 迁移、收益与失败边界、与 verl GPU lending / fully async dynamic schedule / RLBoost 的资源流动坐标 |
@@ -155,7 +159,7 @@ title: "后训练框架 — 目录索引"
 ## 关联域
 
 - [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
-- [[../../01_theory/04_posttraining/index]] — 后训练算法理论
-- [[07_training_reliability/index]] — 训练可靠性(`20_batch_invariance_guide` 现居此处)
-- [[../02_train_frameworks/index]] — 训练框架
-- [[../03_infer_frameworks/index]] — 推理框架
+- [[01_theory/04_posttraining/index|后训练理论]] — 后训练算法理论
+- [[02_engineering/07_training_reliability/index|训练可靠性]] — 训练可靠性(`20_batch_invariance_guide` 现居此处)
+- [[02_engineering/02_train_frameworks/index|训练框架]] — 训练框架
+- [[02_engineering/03_infer_frameworks/index|推理框架]] — 推理框架

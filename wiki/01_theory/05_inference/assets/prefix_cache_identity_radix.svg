@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="835" viewBox="0 0 1180 835">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans CJK SC","Microsoft YaHei",sans-serif}.small{font-size:12px;fill:#475569}</style>
+<rect x="12" y="12" width="1156" height="58" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+<text x="32" y="40" font-size="19" text-anchor="start" font-weight="700" fill="#172033">三条请求的教学输入：相同身份 I，按到达顺序查树</text>
+<text x="32" y="65" font-size="13" text-anchor="start" font-weight="400" fill="#475569">蓝：已命中前缀；橙：本请求须新计算的 token。没有假定页大小或物理块编号。</text>
+<rect x="24" y="82" width="1135" height="49" rx="8" fill="#ffffff" stroke="#94a3b8" /><text x="42" y="103" font-size="15" text-anchor="start" font-weight="700" fill="#172033">请求 A</text><text x="42" y="121" font-size="12" text-anchor="start" font-weight="400" fill="#475569">命中 0；新算 10</text><rect x="162" y="91" width="170" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" /><text x="247" y="111" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">S0 S1 S2 S3</text><rect x="340" y="91" width="170" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" /><text x="425" y="111" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">H0 H1 H2 H3</text><rect x="518" y="91" width="105" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" /><text x="570.5" y="111" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">A0 A1</text>
+<rect x="24" y="138" width="1135" height="49" rx="8" fill="#ffffff" stroke="#94a3b8" /><text x="42" y="159" font-size="15" text-anchor="start" font-weight="700" fill="#172033">请求 B</text><text x="42" y="177" font-size="12" text-anchor="start" font-weight="400" fill="#475569">命中 8；新算 1</text><rect x="162" y="147" width="170" height="30" rx="5" fill="#dbeafe" stroke="#2563eb" /><text x="247" y="167" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">S0 S1 S2 S3</text><rect x="340" y="147" width="170" height="30" rx="5" fill="#dbeafe" stroke="#2563eb" /><text x="425" y="167" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">H0 H1 H2 H3</text><rect x="518" y="147" width="78" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" /><text x="557" y="167" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">B0</text>
+<rect x="24" y="194" width="1135" height="49" rx="8" fill="#ffffff" stroke="#94a3b8" /><text x="42" y="215" font-size="15" text-anchor="start" font-weight="700" fill="#172033">请求 C</text><text x="42" y="233" font-size="12" text-anchor="start" font-weight="400" fill="#475569">命中 4；新算 2</text><rect x="162" y="203" width="170" height="30" rx="5" fill="#dbeafe" stroke="#2563eb" /><text x="247" y="223" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">S0 S1 S2 S3</text><rect x="340" y="203" width="105" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" /><text x="392.5" y="223" font-size="13" text-anchor="middle" font-weight="600" fill="#172033">C0 C1</text>
+
+<rect x="12" y="276" width="286" height="251" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+<text x="32" y="305" font-size="18" text-anchor="start" font-weight="700" fill="#172033">身份门（T14）</text>
+<text x="32" y="334" font-size="14" text-anchor="start" font-weight="600" fill="#172033">可比较的输入：</text>
+<text x="43" y="360" font-size="13" text-anchor="start" font-weight="400" fill="#172033">• token ID 前缀及其顺序</text>
+<text x="43" y="385" font-size="13" text-anchor="start" font-weight="400" fill="#172033">• 位置与注意力语义</text>
+<text x="43" y="410" font-size="13" text-anchor="start" font-weight="400" fill="#172033">• 模型 / adapter / 其他上下文</text>
+<rect x="32" y="440" width="242" height="59" rx="8" fill="#dcfce7" stroke="#16a34a" />
+<text x="153" y="464" font-size="15" text-anchor="middle" font-weight="700" fill="#172033">身份 I 一致</text>
+<text x="153" y="485" font-size="12" text-anchor="middle" font-weight="400" fill="#475569">允许查找最长 token 前缀</text>
+<rect x="12" y="544" width="286" height="69" rx="12" fill="#fff7ed" stroke="#ea580c" />
+<text x="32" y="572" font-size="15" text-anchor="start" font-weight="700" fill="#ea580c">任一身份条件改变</text>
+<text x="32" y="595" font-size="12" text-anchor="start" font-weight="400" fill="#475569">→ 隔离命名空间或 miss 后重算</text>
+
+<rect x="329" y="276" width="500" height="337" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+<text x="350" y="305" font-size="18" text-anchor="start" font-weight="700" fill="#172033">前缀树：索引内容身份与最长前缀（T14）</text>
+<rect x="521" y="326" width="116" height="36" rx="8" fill="#ffffff" stroke="#94a3b8" /><text x="579" y="349" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">根：身份 I</text>
+<rect x="499" y="398" width="160" height="39" rx="8" fill="#dbeafe" stroke="#2563eb" /><text x="579" y="422" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">S0…S3（长度 4）</text>
+<rect x="485" y="474" width="188" height="39" rx="8" fill="#dbeafe" stroke="#2563eb" /><text x="579" y="498" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">H0…H3（长度 8）</text>
+<rect x="391" y="551" width="103" height="37" rx="8" fill="#ffedd5" stroke="#ea580c" /><text x="442" y="574" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">A0 A1</text>
+<rect x="529" y="551" width="102" height="37" rx="8" fill="#ffedd5" stroke="#ea580c" /><text x="580" y="574" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">B0</text>
+<rect x="665" y="551" width="103" height="37" rx="8" fill="#ffedd5" stroke="#ea580c" /><text x="716" y="574" font-size="14" text-anchor="middle" font-weight="700" fill="#172033">C0 C1</text>
+<path d="M 579 362 L 579 398" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 579 437 L 579 474" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 579 513 L 442 551" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 579 513 L 580 551" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 579 437 L 716 551" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/>
+<text x="579" y="606" font-size="12" text-anchor="middle" font-weight="400" fill="#475569">A、B 在长度 8 分叉；C 在长度 4 分叉</text>
+
+<rect x="860" y="276" width="308" height="337" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+<text x="881" y="305" font-size="18" text-anchor="start" font-weight="700" fill="#172033">命中结果与物理层边界</text>
+<rect x="882" y="332" width="263" height="74" rx="9" fill="#ffffff" stroke="#2563eb" />
+<text x="1014" y="358" font-size="15" text-anchor="middle" font-weight="700" fill="#172033">查找输出（T14）</text>
+<text x="1014" y="382" font-size="13" text-anchor="middle" font-weight="400" fill="#475569">匹配节点 + 命中长度 m</text>
+<rect x="882" y="438" width="263" height="105" rx="9" fill="#ffffff" stroke="#94a3b8" />
+<text x="1014" y="466" font-size="15" text-anchor="middle" font-weight="700" fill="#172033">交给 T13 的物理映射层</text>
+<text x="1014" y="490" font-size="12" text-anchor="middle" font-weight="400" fill="#475569">取得并保护对应 KV；续写时</text>
+<text x="1014" y="512" font-size="12" text-anchor="middle" font-weight="400" fill="#475569">按其块表、引用与 CoW 规则处理</text>
+<text x="1014" y="578" font-size="12" text-anchor="middle" font-weight="400" fill="#475569">本图不画物理块、引用计数或迁移</text>
+<path d="M 298 469 L 499 418" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 829 418 L 882 369" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/><path d="M 1014 406 L 1014 438" fill="none" stroke="#94a3b8" stroke-width="2"  marker-end="url(#arrow)"/>
+
+<rect x="12" y="649" width="1156" height="163" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+<text x="32" y="679" font-size="18" text-anchor="start" font-weight="700" fill="#172033">按图中到达顺序复算</text>
+<text x="32" y="711" font-size="15" text-anchor="start" font-weight="400" fill="#172033">A：m=0，新算 10；插入 S→H→A。</text>
+<text x="32" y="740" font-size="15" text-anchor="start" font-weight="400" fill="#172033">B：m=8，新算 1；复用 S→H 并写入 B 分支。</text>
+<text x="32" y="769" font-size="15" text-anchor="start" font-weight="400" fill="#172033">C：m=4，新算 2；复用 S 并写入 C 分支。总长度 25，新算 13，命中位置合计 12。</text>
+<text x="32" y="796" font-size="12" text-anchor="start" font-weight="400" fill="#475569">这是 token 位置计数，忽略 kernel、批处理、读带宽、淘汰与跨层传输成本。</text>
+</svg>

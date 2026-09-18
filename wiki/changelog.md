@@ -12,6 +12,40 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-18：slime 域按 2026-09-16 独立审查全量修复，基线整体升到 `4c193f1f`
+
+- 按 `docs/research/2026-09-16-slime-domain-review.md` §13 的修复路由，修完 23 篇正文与 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识地图]]，并把全域源码基线从 `681b3adc` 升到 `THUDM/slime@4c193f1f`（`main`，2026-09-03，含 v0.3.2），逐页完成漂移对账：`slime/observability/` 与 `sglang_utils/` 拆分后的锚点迁移、删除的 `--profile-target` 与 grad-coalesce 补丁、`4c1ab402` 的请求级 abort 与流式 external、`a0d6d26a` 的 eval-only 资源、`045310b2` 的 raw KL、`1da1bb19` 的 teacher 温度、`2fa9a442`/`08160d3f`/`876cd89b` 的 UE8M0 与 ROCm INT4。
+- 五条 P0 全部改正：`--kl-coef` 只对 ppo 与两种 REINFORCE++ 整形 reward，默认 grpo 不进 returns（[[15_slime_loss_parallelism_analysis|Loss 与并行归一化]] 新增 §2.2.8，14、31 同步）；支持集重放按 `top_p≠1` 与 `top_p=1` 两种情形重写（[[17_slime_train_inference_consistency_analysis|训推一致性]]）；MTP CI 测试只证明梯度不出 MTP 层，隔离来自 `megatron.patch`（[[21_slime_speculative_decoding_mtp_analysis|投机解码与 MTP]]）；「先写出再 `record_turn`」只对流式成立（[[24_slime_agent_workflow_examples_analysis|Agent 工作流]]）；性能决策矩阵改用已存在的 `perf/*` 计时键（[[30_slime_rollout_optimization_analysis|Rollout 优化]]）。
+- 补齐审查列出的缺口：02 增加异步/SFT/eval-only 命令、解析期结构性校验总表、多节点网络变量、checkpoint 导入导出路线与官方 FAQ 对账；18 新增「指标落点与 x 轴」与前缀索引（22 个日志落点 flag）；13 增加规则打分器语义表与 ABORTED 回队可达条件；19 固化「新后端必须承接的适配面」唯一清单与 buffer 插件配置和失败边界；27 点名 9 个 `--eval-*`；14 补参数冻结与优化器状态重置；23 补模型支持矩阵与 `--qwen-gdn-backend`。
+- 旧模板页补原理图与成本账：10、13、20、21、22、23、24、26、28、30 新增或重做数据驱动 SVG 与 `node:test`（生成器算数、正文引用同一批数字、文字入框与越界检查），全域 9 张图扩为 20 张；10、02、19–25、30、31 的逐句行号永久链接收敛为集中的源码阅读路线，全域不再有 `blob/681b3adc` 链接与裸文件名锚点。
+- 跨域接线：23 篇正文对 slime 以外的出链从 1 条增加到覆盖 Megatron-LM、推理框架、后训练理论与框架对照、训练可靠性各域，并补回链（verl agent loop、投机解码索引、训练动力学、GLM-5 三页的「论文 vs 开源基线」注记）；更正 `30_rl_framework_comparison` 的 checkpoint 队列、版本比对与 fully-async 轨迹内换权重，`13_opd_infra_mechanism_analysis` 的 k1/k3 归属，`32_opd_framework_support_comparison` 的 teacher server 与异步支持度，`31_cuda_ascend_posttraining_stack_comparison` 的 `npu_patch` 版本矩阵；课程页改为六层一致性并新增 D08c 导读；slime index 术语改为只指向 owner 页并新增 Knowledge Gaps（无 owner 能力与明确排除项）；后训练框架目录消除 vime 重复计数，总索引该域计数复算为 53。
+- 质量控制：每页由未参与写作的评审者按 `page-review-rubric` 与画像复审，10、13、18、23、30 与 `30_rl_framework_comparison` 六处 REJECT 返工后复审通过，其余为 PASS 或 PASS(P2) 并已修完 P2。评审者独立复算了图中的数值、重放了 mask 与 mRoPE 规则，并按页渲染 SVG 目视检查。
+- 顺带在源码中发现并写入相应页面的问题（均为静态阅读或 CPU 复算，未在 GPU 上运行）：MTP loss mask 因补丁重复 roll 早一位（`27df7815` 起）；CP>1 时 HF 线性注意力反向丢跨 rank 梯度项（`478b8070` 起，逐层叠加）；PPO 配 CP>1 的 reward 落点越界；Qwen3.5-VL 在 CP=1 拒绝奇数长度 packed 序列；SGLang teacher 的输入 logprob 不随温度缩放；两个 FP8 recipe 的 `source` 路径错误；异步入口保存游标领先一批。
+- 跨页 `#小节` 链接统一改指 h2/h3：`tools/mkdocs_site/inventory.py` 只登记 1–3 级标题，指向四级标题的锚点会让站点构建直接报 `missing target anchor`；本轮把 23 处四级锚点改到所属的三级小节（表格内的 `\|` 别名分隔符同时改回 `|`，与 `wiki/index.md` 既有写法一致），并同步更新页面 10 的图测试断言。
+- 机械门禁：`check_links --strict` 482 页五项为 0；`python -m tools.mkdocs_site.cli build --changed` 73 条路由，broken_links / missing_anchors / missing_assets / missing_legacy_routes 均为 0；改动文件的 `check_math`、`check_markdown`、`check_assets` 均 0 错误 0 警告；`check_locators --dir <slime>` 在修好 watchlist 检出路径后 errors=0、warnings=0、env=0；slime 全部图测试 103 项通过；课程页契约测试 21 项通过。`docs/radar/watchlist.yaml` 修正 slime 检出路径、新增 vime 条目并把 `kb_baseline` 升到 `4c193f1f`。
+- 未做：涉及页面归属的六项（PD 分离 owner、部署栈与补丁页、GLM-5 DSA 页、25 的目录归属、01 与 02 的重复收敛、`docs/coverage/slime.yaml`）按 `planning-codebase-analysis` 的批准门禁留为待批蓝图，未建页、未移动文件。本轮没有暂存、提交或推送。
+
+## 2026-09-17：推理基础原理全域完成 29 篇正文
+
+- 继续完成导论 01、专题 20–35 和方法页 40–41 共 19 篇，连同先前 10–19 的 10 篇核心正文，本域现有 29 篇正文与 1 个 index。[[01_theory/05_inference/index|推理基础原理目录]]、理论索引和总索引已接入全部入口，旧 Agent/ReAct、CoT/RAG 线索保留为后续范围。
+- 按论文固定版本或官方文档版本/访问快照补齐量化、KV 压缩与迁移、投机解码、多 LoRA、P/D 分离、PCP/DCP/CPP、MoE、约束生成、多模态、混合状态、执行优化与评测来源；新增来源索引已列入 `raw/README.md`。各页的教学算例、公式和图均经非作者审阅，版本、定位与边界见 `docs/research/2026-09-17-inference-principles-source-ledger.md`。
+- 严格链接检查覆盖 482 页，断链等五项均为 0；改动文件的数学、Markdown、资源检查均为 0 错误和 0 警告。为避开工作区其他任务的未完成改动，另在当前 Git 基线加本域变更的隔离副本完成站点构建（482 页，broken links/missing anchors/assets/orphans 均为 0）；29 篇正文的 1191 条公式与 21 个 Mermaid 图块通过浏览器运行时检查。此为文档与静态证据核验，未运行模型、GPU 或性能压测。
+- 现有工作区其他任务的 slime 页面锚点会阻断直接 `build --changed`；未修改该域。没有暂存、提交、推送、合并或发布。
+
+## 2026-09-17：推理基础原理 A 批完成 10 篇核心正文
+
+- [[01_theory/05_inference/index|推理基础原理目录]]现有 10–19 共 10 篇核心页及本级 index，29 篇正文规划中尚有 19 篇待建设。10 篇已按原始来源、教学算例、图形和边界完成非作者交叉审阅；来源版本、定位、复核记录与剩余范围见 `docs/research/2026-09-17-inference-principles-source-ledger.md`。
+- 本批补齐成本模型、分页 KV、跨请求前缀复用、连续批处理、分块预填充、采样与 beam、高效 attention、推理量化，与先前的 Prefill/Decode、KV Cache 两页组成核心链。原理图使用仓库 Mermaid 运行时或带生成源的 SVG，关键数字均按教学输入独立复算，不作 GPU 性能实测宣称。
+- 新增或补齐 Roofline、Orca、Sarathi、SGLang、FlashAttention/FA2/Flash-Decoding、Holtzman、Jacob、LLM.int8、TensorRT 与官方生成/指标文档的 `raw/01_theory/05_inference/` 来源索引；已将新增源材料列入 `raw/README.md`。论文取固定版本，动态官方文档标访问快照。
+- 更新本级目录、理论索引与总索引的推理页数为 11（含 index）。为消除重复，只在 [[01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|Ring Attention 与 Context Parallelism]] §5.2 定点保留 Ring/CP 通信叙述，将通用在线 softmax 数值推导交由 [[18_efficient_attention_analysis|高效 Attention]]。
+- 当前工作区另有未提交任务内容，未清理、暂存、提交、推送、合并或发布；未运行模型、GPU 或吞吐实测。
+
+## 2026-09-17：启动推理基础原理域，完成两篇核心正文草稿
+
+- 依据已确认的 29 篇执行计划重建 [[01_theory/05_inference/index|推理基础原理目录]]：只对已存在的 10、12 页给可点击入口，其余以代码文件名标“待建设”；保留 Agent、ReAct、CoT、RAG 的后续线索，并定点更新理论索引和总索引推理行（实有 3 页，含 index）。
+- 新建 [[10_prefill_decode_analysis|自回归生成与 Prefill / Decode]]：以四输入、三输出教学算例区分本轮输入、已有 KV、由 logits 新采样但尚未形成 KV 的 token；用原理图追踪三个阶段。证据为 Transformer `1706.03762v7` §3.1–3.2.3 与 PagedAttention `2309.06180v1` §2.1–2.3；后者新增 `raw/01_theory/05_inference/PagedAttention-2309.06180.md` 来源索引。
+- 新建 [[12_kv_cache_analysis|KV Cache：复用依据与容量]]：用同一序列对照重算和缓存的状态推进，推导 MHA/GQA/MQA 的理想容量，并标出 DeepSeek-V2 MLA 不能套用普通 KV 头数公式；补 MQA 与 GQA 两篇原论文来源索引。
+- 工作证据与跨页归属登记在 `docs/research/2026-09-17-inference-principles-source-ledger.md`。本轮未改旧工程/并行正文、未运行模型或做性能实测；两篇均待独立内容审阅，后续来源仍待核验。
 
 ## 2026-09-16：终审扫查后修正两处类归属
 

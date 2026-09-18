@@ -44,9 +44,20 @@ repos:
   - name: slime
     repo: THUDM/slime
     branch: main
-    checkout: ../slime
-    kb_baseline: 681b3adca54105d5ecd3fb822fa0dc58a427e0f9
+    checkout: ../../97-llm/slime
+    # 2026-09-18 全域推进：23 篇正文 + index 统一钉 4c193f1f…（main，2026-09-03，含 v0.3.2）。
+    # 父域中仍钉 aaf5c20 的 D01/D05 与 24_agentic 为快照页，各自在页内声明。
+    kb_baseline: 4c193f1f37509cca70f0e88807a9305b70f63f4e
     kb_entry: wiki/02_engineering/04_posttrain_frameworks/slime/index.md
+    category: 后训练框架
+
+  - name: vime
+    repo: vllm-project/vime
+    branch: main
+    checkout: ../../97-llm/vime
+    # slime 的 vLLM 后端衍生实现；与 slime 的 merge-base 为 8ef1fb47（2026-05-09）。
+    kb_baseline: 8144096e3f4fb0fb670c37b8f2d84015f7e92320
+    kb_entry: wiki/02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis.md
     category: 后训练框架
 
   - name: verl

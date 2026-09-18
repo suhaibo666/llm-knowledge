@@ -87,6 +87,7 @@ flowchart LR
 ## 关联域
 
 - [[16_vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
+- [[21_slime_speculative_decoding_mtp_analysis|slime 在线投机解码与 MTP]] —— RL 训练中边训练 MTP 草稿层边用 SGLang 投机解码 rollout：梯度隔离补丁、权重发布与接受率指标
 - [[../index]] —— 推理框架目录
 - [[../../../01_theory/01_models/deepseek/index]] —— DeepSeek 模型族（V3 MTP / V4 底座）
 

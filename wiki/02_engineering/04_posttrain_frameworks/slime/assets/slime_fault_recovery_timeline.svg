@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" role="img" aria-labelledby="title desc">
 <title id="title">slime 故障域局部恢复：一次故障注入的检测与重建时间线，以及续训的共同恢复切点</title>
-<desc id="desc">上半部分按轮画出 CI 故障注入：generate 期间监控线程把坏 engine 整组标死，本轮用剩余 engine 完成，重建与重新推送发生在训练之后的 update_weights，并对比三组健康检查参数的检测上界与 CI 等待时间。下半部分画出保存间隔 2 时的保存点与三种重启情形：两份文件都在、两次写之间崩溃导致 DataSource 游标静默归零、异步保存尚未 finalize。</desc>
+<desc id="desc">上半部分按轮画出 CI 故障注入：generate 期间监控线程把坏 engine 整组标死，本轮用剩余 engine 完成，重建与重新推送发生在训练之后的 update_weights，并对比三组健康检查参数的检测上界与 CI 等待时间。下半部分画出同步入口 train.py 在保存间隔 2 时的保存点与四种重启情形：两份文件都在、两次写之间崩溃导致 DataSource 游标静默归零、人工退回共同切点、异步保存尚未 finalize。</desc>
 <defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
 <style>
   text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
@@ -101,7 +101,7 @@
 <text x="1130" y="438" class="sm" text-anchor="end">20 s</text>
 <text x="812" y="474" class="sm" text-anchor="start">文档与实现不一致，以实现为准；first-wait 默认 0</text>
 <rect x="24" y="516" width="1132" height="344" rx="10" class="panel"/>
-<text x="40" y="540" class="pt" text-anchor="start">② 共同恢复切点：num_rollout 6、--save-interval 2 → 在 rollout 1、3、5 保存；先写 trainer，再写 DataSource</text>
+<text x="40" y="540" class="pt" text-anchor="start">② 共同恢复切点（同步入口 train.py）：num_rollout 6、--save-interval 2 → 在 rollout 1、3、5 保存；先写 trainer，再写 DataSource</text>
 <rect x="110" y="558" width="54" height="26" rx="4" class="ghost"/>
 <text x="137" y="575" class="sm" text-anchor="middle">id 0</text>
 <rect x="172" y="558" width="54" height="26" rx="4" class="acc1"/>
@@ -136,7 +136,7 @@
 <text x="428" y="742" class="tx" text-anchor="start">start_rollout_id = 2，load(1)，游标恢复</text>
 <rect x="40" y="772" width="330" height="44" rx="5" class="neutral"/>
 <text x="52" y="790" class="tx" text-anchor="start">异步保存：DataSource 3 已写、trainer 3 未 finalize</text>
-<text x="52" y="808" class="sm" text-anchor="start">tracker 仍指向 1（依赖侧：finalize 后才更新）</text>
+<text x="52" y="808" class="sm" text-anchor="start">tracker 仍指向 1（finalize 前不写）</text>
 <path d="M372 794 L412 794" class="main"/>
 <rect x="416" y="772" width="724" height="44" rx="5" class="neutral"/>
 <text x="428" y="798" class="tx" text-anchor="start">start_rollout_id = 2，load(1)，两边一致</text>

@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="700" viewBox="0 0 1180 700" role="img" aria-labelledby="title desc">
+<title id="title">slime packed MRoPE：逐样本归零，视觉块之后文本只推进 max(h, w) // merge</title>
+<desc id="desc">上半部分按 build_packed_mrope_position_ids 重放两条 7-token 样本的 T/H/W 三轴坐标，样本边界处 current_position 归零，视觉块后的文本从 3 继续。下半部分解释推进量：视觉块在 H、W 轴上只占 max(h', w') 个坐标，方图与 1×4×6 非方图分别续接 3 与 4；被拒绝的按 token 数推进会得到 5 与 7；SGLang 上游 get_rope_index 的上一段最大值加一与 decode 的 delta 续算给出同一位置。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .cell{font-size:12px;fill:#2A313B;font-weight:600}
+  .idx{font-size:9.5px;fill:#8A919C}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cut{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:6 4}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4}
+</style><rect width="1180" height="700" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">packed MRoPE：每条样本从 0 计数，视觉块之后文本只推进 max(h, w) // merge</text>
+<text x="24" y="56" class="su" text-anchor="start">输入取自 test_packed_mrope_resets_positions_for_each_sample：两条 7-token 样本各含 1 张 1×4×4 的图，merge 2；99 = vision_start，10 = image token，其余按文本处理</text>
+<rect x="24" y="72" width="1132" height="300" rx="10" class="panel"/>
+<text x="40" y="96" class="pt" text-anchor="start">① build_packed_mrope_position_ids：cu_seqlens = [0, 7, 14]，每段 current_position 从 0 开始</text>
+<text x="40" y="150" class="tx" text-anchor="start">input_ids</text>
+<text x="156" y="122" class="idx" text-anchor="middle">#0</text>
+<rect x="132" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="156" y="150" class="cell" text-anchor="middle">99</text>
+<text x="208" y="122" class="idx" text-anchor="middle">#1</text>
+<rect x="184" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="208" y="150" class="cell" text-anchor="middle">10</text>
+<text x="260" y="122" class="idx" text-anchor="middle">#2</text>
+<rect x="236" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="260" y="150" class="cell" text-anchor="middle">10</text>
+<text x="312" y="122" class="idx" text-anchor="middle">#3</text>
+<rect x="288" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="312" y="150" class="cell" text-anchor="middle">10</text>
+<text x="364" y="122" class="idx" text-anchor="middle">#4</text>
+<rect x="340" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="364" y="150" class="cell" text-anchor="middle">10</text>
+<text x="416" y="122" class="idx" text-anchor="middle">#5</text>
+<rect x="392" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="416" y="150" class="cell" text-anchor="middle">98</text>
+<text x="468" y="122" class="idx" text-anchor="middle">#6</text>
+<rect x="444" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="468" y="150" class="cell" text-anchor="middle">7</text>
+<text x="520" y="122" class="idx" text-anchor="middle">#7</text>
+<rect x="496" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="520" y="150" class="cell" text-anchor="middle">99</text>
+<text x="572" y="122" class="idx" text-anchor="middle">#8</text>
+<rect x="548" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="572" y="150" class="cell" text-anchor="middle">10</text>
+<text x="624" y="122" class="idx" text-anchor="middle">#9</text>
+<rect x="600" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="624" y="150" class="cell" text-anchor="middle">10</text>
+<text x="676" y="122" class="idx" text-anchor="middle">#10</text>
+<rect x="652" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="676" y="150" class="cell" text-anchor="middle">10</text>
+<text x="728" y="122" class="idx" text-anchor="middle">#11</text>
+<rect x="704" y="130" width="48" height="30" rx="4" class="acc1"/>
+<text x="728" y="150" class="cell" text-anchor="middle">10</text>
+<text x="780" y="122" class="idx" text-anchor="middle">#12</text>
+<rect x="756" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="780" y="150" class="cell" text-anchor="middle">98</text>
+<text x="832" y="122" class="idx" text-anchor="middle">#13</text>
+<rect x="808" y="130" width="48" height="30" rx="4" class="neutral"/>
+<text x="832" y="150" class="cell" text-anchor="middle">8</text>
+<text x="40" y="196" class="tx" text-anchor="start">T（时间）</text>
+<rect x="132" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="156" y="196" class="cell" text-anchor="middle">0</text>
+<rect x="184" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="208" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="236" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="260" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="288" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="312" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="340" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="364" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="392" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="416" y="196" class="cell" text-anchor="middle">3</text>
+<rect x="444" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="468" y="196" class="cell" text-anchor="middle">4</text>
+<rect x="496" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="520" y="196" class="cell" text-anchor="middle">0</text>
+<rect x="548" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="572" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="600" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="624" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="652" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="676" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="704" y="176" width="48" height="30" rx="4" class="acc1"/>
+<text x="728" y="196" class="cell" text-anchor="middle">1</text>
+<rect x="756" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="780" y="196" class="cell" text-anchor="middle">3</text>
+<rect x="808" y="176" width="48" height="30" rx="4" class="ghost"/>
+<text x="832" y="196" class="cell" text-anchor="middle">4</text>
+<text x="40" y="232" class="tx" text-anchor="start">H（高）</text>
+<rect x="132" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="156" y="232" class="cell" text-anchor="middle">0</text>
+<rect x="184" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="208" y="232" class="cell" text-anchor="middle">1</text>
+<rect x="236" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="260" y="232" class="cell" text-anchor="middle">1</text>
+<rect x="288" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="312" y="232" class="cell" text-anchor="middle">2</text>
+<rect x="340" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="364" y="232" class="cell" text-anchor="middle">2</text>
+<rect x="392" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="416" y="232" class="cell" text-anchor="middle">3</text>
+<rect x="444" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="468" y="232" class="cell" text-anchor="middle">4</text>
+<rect x="496" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="520" y="232" class="cell" text-anchor="middle">0</text>
+<rect x="548" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="572" y="232" class="cell" text-anchor="middle">1</text>
+<rect x="600" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="624" y="232" class="cell" text-anchor="middle">1</text>
+<rect x="652" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="676" y="232" class="cell" text-anchor="middle">2</text>
+<rect x="704" y="212" width="48" height="30" rx="4" class="acc1"/>
+<text x="728" y="232" class="cell" text-anchor="middle">2</text>
+<rect x="756" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="780" y="232" class="cell" text-anchor="middle">3</text>
+<rect x="808" y="212" width="48" height="30" rx="4" class="ghost"/>
+<text x="832" y="232" class="cell" text-anchor="middle">4</text>
+<text x="40" y="268" class="tx" text-anchor="start">W（宽）</text>
+<rect x="132" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="156" y="268" class="cell" text-anchor="middle">0</text>
+<rect x="184" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="208" y="268" class="cell" text-anchor="middle">1</text>
+<rect x="236" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="260" y="268" class="cell" text-anchor="middle">2</text>
+<rect x="288" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="312" y="268" class="cell" text-anchor="middle">1</text>
+<rect x="340" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="364" y="268" class="cell" text-anchor="middle">2</text>
+<rect x="392" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="416" y="268" class="cell" text-anchor="middle">3</text>
+<rect x="444" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="468" y="268" class="cell" text-anchor="middle">4</text>
+<rect x="496" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="520" y="268" class="cell" text-anchor="middle">0</text>
+<rect x="548" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="572" y="268" class="cell" text-anchor="middle">1</text>
+<rect x="600" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="624" y="268" class="cell" text-anchor="middle">2</text>
+<rect x="652" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="676" y="268" class="cell" text-anchor="middle">1</text>
+<rect x="704" y="248" width="48" height="30" rx="4" class="acc1"/>
+<text x="728" y="268" class="cell" text-anchor="middle">2</text>
+<rect x="756" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="780" y="268" class="cell" text-anchor="middle">3</text>
+<rect x="808" y="248" width="48" height="30" rx="4" class="ghost"/>
+<text x="832" y="268" class="cell" text-anchor="middle">4</text>
+<path d="M494 126 L494 312" class="cut"/>
+<rect x="132" y="290" width="48" height="22" rx="4" class="ghost"/>
+<text x="156" y="305" class="sm" text-anchor="middle">文本</text>
+<rect x="184" y="290" width="204" height="22" rx="4" class="acc1"/>
+<text x="286" y="305" class="sm" text-anchor="middle">视觉块 start = 1</text>
+<rect x="392" y="290" width="100" height="22" rx="4" class="acc1"/>
+<text x="442" y="305" class="sm" text-anchor="middle">文本续接 3</text>
+<rect x="496" y="290" width="360" height="22" rx="4" class="ghost"/>
+<text x="676" y="305" class="sm" text-anchor="middle">样本 B：边界处归零，三轴与 A 相同</text>
+<text x="40" y="305" class="sm" text-anchor="start">样本 A 分段</text>
+<rect x="872" y="130" width="268" height="182" rx="6" class="neutral"/>
+<text x="884" y="152" class="tx" text-anchor="start">样本 A 逐段（cursor / current_position）</text>
+<text x="884" y="177" class="sm" text-anchor="start">#0 文本 99 → 位置 0，current = 1</text>
+<text x="884" y="202" class="sm" text-anchor="start">#1–#4 视觉 4 个 token，start = 1</text>
+<text x="884" y="227" class="sm" text-anchor="start">T 1 1 1 1｜H 1 1 2 2｜W 1 2 1 2</text>
+<text x="884" y="252" class="sm" text-anchor="start">推进 max(4, 4) // 2 = 2 → current = 3</text>
+<text x="884" y="277" class="sm" text-anchor="start">#5–#6 文本 98、7 → 位置 3、4</text>
+<text x="884" y="302" class="sm" text-anchor="start">#7 cu_seqlens 边界 → current = 0</text>
+<text x="40" y="340" class="tx" text-anchor="start">推进语句：current_position += max(int(grid[1]), int(grid[2])) // spatial_merge_size</text>
+<text x="40" y="362" class="tx" text-anchor="start">样本 A：1 + max(4, 4) // 2 = 3，视觉块后的 98 从 3 继续；若按视觉 token 数推进则是 1 + 4 = 5</text>
+<rect x="24" y="386" width="560" height="276" rx="10" class="panel"/>
+<text x="40" y="410" class="pt" text-anchor="start">② 视觉块在 H、W 轴上只占 max(h', w') 个坐标</text>
+<text x="48" y="442" class="tx" text-anchor="start">方图 grid 1×4×4</text>
+<rect x="82" y="450" width="36" height="36" rx="3" class="acc1"/>
+<text x="100" y="472" class="sm" text-anchor="middle">1,1</text>
+<rect x="122" y="450" width="36" height="36" rx="3" class="acc1"/>
+<text x="140" y="472" class="sm" text-anchor="middle">1,2</text>
+<rect x="82" y="490" width="36" height="36" rx="3" class="acc1"/>
+<text x="100" y="512" class="sm" text-anchor="middle">2,1</text>
+<rect x="122" y="490" width="36" height="36" rx="3" class="acc1"/>
+<text x="140" y="512" class="sm" text-anchor="middle">2,2</text>
+<text x="74" y="472" class="idx" text-anchor="end">H 1</text>
+<text x="74" y="512" class="idx" text-anchor="end">H 2</text>
+<text x="100" y="542" class="idx" text-anchor="middle">W 1</text>
+<text x="140" y="542" class="idx" text-anchor="middle">W 2</text>
+<text x="48" y="560" class="sm" text-anchor="start">4 个 token，最大坐标 2</text>
+<text x="48" y="576" class="sm" text-anchor="start">文本续接 1 + 2 = 3</text>
+<text x="292" y="442" class="tx" text-anchor="start">非方图 grid 1×4×6</text>
+<rect x="326" y="450" width="36" height="36" rx="3" class="acc1"/>
+<text x="344" y="472" class="sm" text-anchor="middle">1,1</text>
+<rect x="366" y="450" width="36" height="36" rx="3" class="acc1"/>
+<text x="384" y="472" class="sm" text-anchor="middle">1,2</text>
+<rect x="406" y="450" width="36" height="36" rx="3" class="acc1"/>
+<text x="424" y="472" class="sm" text-anchor="middle">1,3</text>
+<rect x="326" y="490" width="36" height="36" rx="3" class="acc1"/>
+<text x="344" y="512" class="sm" text-anchor="middle">2,1</text>
+<rect x="366" y="490" width="36" height="36" rx="3" class="acc1"/>
+<text x="384" y="512" class="sm" text-anchor="middle">2,2</text>
+<rect x="406" y="490" width="36" height="36" rx="3" class="acc1"/>
+<text x="424" y="512" class="sm" text-anchor="middle">2,3</text>
+<text x="318" y="472" class="idx" text-anchor="end">H 1</text>
+<text x="318" y="512" class="idx" text-anchor="end">H 2</text>
+<text x="344" y="542" class="idx" text-anchor="middle">W 1</text>
+<text x="384" y="542" class="idx" text-anchor="middle">W 2</text>
+<text x="424" y="542" class="idx" text-anchor="middle">W 3</text>
+<text x="292" y="560" class="sm" text-anchor="start">6 个 token，最大坐标 3</text>
+<text x="292" y="576" class="sm" text-anchor="start">文本续接 1 + 3 = 4</text>
+<text x="40" y="614" class="sm" text-anchor="start">规则等价于“文本从视觉块用过的最大坐标 + 1 开始”：推进量随图的长边增长，</text>
+<text x="40" y="632" class="sm" text-anchor="start">不随面积增长；grid_t = 1（图像，视频先按帧拆成 t = 1）时 T 轴不影响最大值。</text>
+<rect x="596" y="386" width="560" height="276" rx="10" class="panel"/>
+<text x="612" y="410" class="pt" text-anchor="start">③ 同一输入下三种续接位置</text>
+<rect x="612" y="428" width="528" height="48" rx="5" class="acc1"/>
+<text x="624" y="447" class="tx" text-anchor="start">slime：+ max(h, w) // merge</text>
+<text x="624" y="466" class="sm" text-anchor="start">方图 3，非方图 4</text>
+<rect x="612" y="486" width="528" height="48" rx="5" class="acc2"/>
+<text x="624" y="505" class="tx" text-anchor="start">按 token 数推进（被拒绝）</text>
+<text x="624" y="524" class="sm" text-anchor="start">方图 5，非方图 7：空出坐标，与推理侧不一致</text>
+<rect x="612" y="544" width="528" height="48" rx="5" class="dep"/>
+<text x="624" y="563" class="tx" text-anchor="start">SGLang 纯图像分支 / 回退 get_rope_index（依赖侧源码）</text>
+<text x="624" y="582" class="sm" text-anchor="start">next_pos += max(t, h', w')，或上一段 max() + 1：方图 3，非方图 4</text>
+<rect x="612" y="602" width="528" height="48" rx="5" class="dep"/>
+<text x="624" y="621" class="tx" text-anchor="start">decode 续算（依赖侧）：delta = max + 1 − len = -2</text>
+<text x="624" y="640" class="sm" text-anchor="start">第一个生成 token 下标 7：训练侧 3 + (7 − 5) = 5，SGLang 7 + (-2) = 5</text>
+<text x="24" y="688" class="cap" text-anchor="start">阅读顺序：① 逐样本归零与三轴坐标 → ② 推进量为什么是长边 → ③ 与被拒绝规则、SGLang 上游和 decode 续算对账。</text>
+</svg>

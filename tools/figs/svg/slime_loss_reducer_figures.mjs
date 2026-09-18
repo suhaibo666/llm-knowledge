@@ -1,20 +1,22 @@
 // 图：slime loss 归约器怎样让"估计什么"不随 DP / CP / micro-batch 的物理切分改写。
 // 复用 slime_megatron_train_step_figures.mjs 的同一批样本与调度：4 个逻辑 rollout、5 条训练样本
 // （rollout 2 是 compact 扇出的两个片段，s0 含一个工具 token）。
-// 源码基线：THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9。
+// 源码基线：THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e；Megatron 侧缩放按镜像钉的 NVIDIA/Megatron-LM@1dcf0dafa884。
 //
 // ---- spec（先写 spec 再画，见 skills/drawing-wiki-figures/SKILL.md §4）----
 // 要讲清楚：
 //  1. token 均值、sample 均值、rollout 均值是三个不同的估计量，同一批数据给出三个不同的数。
 //  2. prompt 分组只定义 reward 的相对基线；样本数 ≠ n × rollout_batch_size 时回落成一个大组。
+//     KL 的 reward 侧入口也按估计器分派：同一条 KL 向量在 grpo/gspo/cispo 下完全不进 returns，
+//     只有 reinforce_plus_plus_baseline、ppo、reinforce_plus_plus 三个分支用 kl_coef 改写 token 级信号。
 //  3. 每个 micro-batch、每个 CP rank 只算自己的分子，分母是切分前算好的整 rollout mask 和；
 //     loss × M/G × world → Megatron ÷ M → DDP 在 dp·cp 组平均，最终恰好是 Σ_g L_g / G。
 //     若用局部分母，程序照常运行但数值变成另一个目标。
 //  4. rejection 只改分子的 mask，分母仍是原始 rollout_mask_sums；报告指标用改后 reducer，
 //     mismatch 指标用原 reducer。
 //
-// 布局：四个面板。P1 三种估计量；P2 reward → advantage 的分组回落；P3 DP×CP×mb 归约账本与缩放链；
-// P4 rejection 的分子/分母分离与 per-token 模式的报告分母。acc1 标承重结果，acc2 标错误口径与代价。
+// 布局：五个面板。P1 三种估计量；P2 reward 分组回落与按估计器分派的 KL 入口；P3 DP×CP×mb 归约账本与缩放链；
+// P4 rejection 的分子/分母分离；P5 序列统计量的 CP 重建与 PPO reward 落点。acc1 标承重结果，acc2 标错误口径与代价。
 //
 // 用法：node tools/figs/svg/slime_loss_reducer_figures.mjs [output-directory]
 
@@ -86,6 +88,42 @@ export function rewardPostProcess(raw = RAW_REWARDS, { n = CFG.nSamplesPerPrompt
   });
   return { groupSize, fallback: groupSize !== n, groups, rewards: out };
 }
+
+// ---------------- KL 的 reward 侧入口：loss.py::compute_advantages_and_returns 的估计器分支 ----------------
+// 本例本身 kl_coef=0；这里取反事实 kl_coef=0.1 与 s3（response 2，mask [1,1]）的 KL=[0.2,0.4]（示意值）。
+// r 是该估计器自己的 reward 后处理结果（grpo 类减组均值除 std，r++baseline 只减组均值，ppo 与 r++ 用原始 reward），
+// 所以每个 token 的值写成 a·r + c，只比较 KL 怎样进入。
+export const KL_DEMO = Object.freeze({ sample: 's3', kl: [0.2, 0.4], klCoef: 0.1, gamma: 1 });
+const aff = (r, c) => ({ r, c });
+export function klEntry({ kl, klCoef, gamma, sample } = KL_DEMO) {
+  const mask = SAMPLES.find((s) => s.name === sample).lossMask;
+  // grpo / gspo / cispo：ppo_utils.py::get_grpo_returns → torch.ones_like(kl[i]) * rewards[i]，kl 只提供形状
+  const grpo = kl.map(() => aff(1, 0));
+  // reinforce_plus_plus_baseline：ppo_utils.py::get_reinforce_plus_plus_baseline_advantages → ones_like(kl)·reward − kl_coef·kl
+  const rppBaseline = kl.map((k) => aff(1, -klCoef * k));
+  // ppo：token_level_rewards = kl × (−kl_coef)；cp_rank 0 上本地末位 += reward；随后 GAE（需 critic values）
+  const ppoRewards = kl.map((k, i) => aff(i === kl.length - 1 ? 1 : 0, -klCoef * k));
+  // reinforce_plus_plus：ppo_utils.py::get_reinforce_plus_plus_returns → −kl_coef·(kl·mask)，最后一个有效 token += reward，再按 gamma 折扣累加
+  const rppRewards = kl.map((k, i) => aff(0, -klCoef * k * mask[i]));
+  const lastValid = mask.lastIndexOf(1);
+  rppRewards[lastValid] = aff(rppRewards[lastValid].r + 1, rppRewards[lastValid].c);
+  const rppReturns = new Array(kl.length);
+  let run = aff(0, 0);
+  for (let t = kl.length - 1; t >= 0; t -= 1) {
+    run = aff(rppRewards[t].r + gamma * run.r, rppRewards[t].c + gamma * run.c);
+    rppReturns[t] = run;
+  }
+  return { kl, klCoef, gamma, mask, grpo, rppBaseline, ppoRewards, rppReturns };
+}
+// 把 a·r + c 写成 "r-0.02" / "-0.02" / "r"
+export function fmtAff(v, d = 3) {
+  const c = Number(v.c.toFixed(d));
+  const head = v.r === 0 ? '' : v.r === 1 ? 'r' : `${v.r}r`;
+  if (c === 0) return head || '0';
+  if (!head) return String(c);
+  return `${head}${c < 0 ? '-' : '+'}${Math.abs(c)}`;
+}
+export const fmtAffVec = (vs) => `[${vs.map((v) => fmtAff(v)).join(', ')}]`;
 
 // ---------------- 账本：DP × CP × micro-batch 的分子与缩放链 ----------------
 export function ledger(cfg = CFG) {
@@ -170,7 +208,7 @@ export function ppoRewardSlot(totalLen, responseLen, cpSize = CFG.cpSize) {
 
 export function model(cfg = CFG) {
   const ppoSlots = [...SAMPLES.map((smp) => ({ name: smp.name, ...ppoRewardSlot(smp.totalLen, smp.responseLen, cfg.cpSize) })), { name: 'T10/R8', ...ppoRewardSlot(10, 8, cfg.cpSize) }];
-  return { cfg, samples: SAMPLES, loss: LOSS, rolloutMaskSums: ROLLOUT_MASK_SUMS, means: threeMeans(), rewards: rewardPostProcess(), rewardsPerPrompt: rewardPostProcess([1, 0, 1, 0]), ledger: ledger(cfg), rejection: rejection(), gspo: gspoReplay(cfg), ppoSlots };
+  return { cfg, samples: SAMPLES, loss: LOSS, rolloutMaskSums: ROLLOUT_MASK_SUMS, means: threeMeans(), rewards: rewardPostProcess(), rewardsPerPrompt: rewardPostProcess([1, 0, 1, 0]), klEntry: klEntry(), klEntryZero: klEntry({ ...KL_DEMO, klCoef: 0 }), ledger: ledger(cfg), rejection: rejection(), gspo: gspoReplay(cfg), ppoSlots };
 }
 
 // ---------------- 渲染 ----------------
@@ -199,7 +237,7 @@ const STYLE = `
 `;
 
 function render(m) {
-  const W = 1180; const H = 1280;
+  const W = 1180; const H = 1322;
   const o = [];
   const rect = (x, y, w, h, cls = 'neutral', r = 7) => o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" class="${cls}"/>`);
   const text = (x, y, s, cls = 'tx', anchor = 'start') => o.push(`<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${esc(s)}</text>`);
@@ -208,7 +246,7 @@ function render(m) {
 
   o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="title desc">`);
   o.push('<title id="title">slime loss 归约账本：同一批样本在 token、sample、rollout 三种口径下的值，以及 DP×CP×micro-batch 切分后如何还原 rollout 均值</title>');
-  o.push('<desc id="desc">面板 1 用五条样本算出 token 均值、sample 均值与 rollout 均值三个不同的数；面板 2 展示 reward 分组归一化在样本数不等于 n × rollout_batch_size 时回落成一个大组；面板 3 按 DP rank、CP rank、micro-batch 列出每个局部分子与整 rollout 分母，串起 loss 预缩放、Megatron 除 micro-batch 数与 DDP 平均，最终还原 Σ_g L_g / G，并对照局部分母的错误值与 per-token 报告分母；面板 4 展示 rejection 只改分子 mask 而分母不变；面板 5 回放 s0 的 GSPO 序列 ratio 如何先经 CP all-reduce 重建再展开回本地 token，并列出 PPO 在 gather 之前把 reward 加到 cp0 本地末位时各样本的落点。</desc>');
+  o.push('<desc id="desc">面板 1 用五条样本算出 token 均值、sample 均值与 rollout 均值三个不同的数；面板 2 展示 reward 分组归一化在样本数不等于 n × rollout_batch_size 时回落成一个大组，并用同一条 KL 向量对照四类估计器分支：grpo/gspo/cispo 不使用 KL 数值，只有 reinforce_plus_plus_baseline、ppo、reinforce_plus_plus 用 kl_coef 改写 token 级信号；面板 3 按 DP rank、CP rank、micro-batch 列出每个局部分子与整 rollout 分母，串起 loss 预缩放、Megatron 除 micro-batch 数与 DDP 平均，最终还原 Σ_g L_g / G，并对照局部分母的错误值与 per-token 报告分母；面板 4 展示 rejection 只改分子 mask 而分母不变；面板 5 回放 s0 的 GSPO 序列 ratio 如何先经 CP all-reduce 重建再展开回本地 token，并列出 PPO 在 gather 之前把 reward 加到 cp0 本地末位时各样本的落点。</desc>');
   o.push(`<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>`);
   o.push(`<style>${STYLE}</style><rect width="${W}" height="${H}" fill="white"/>`);
 
@@ -216,15 +254,15 @@ function render(m) {
   text(24, 56, `与训练后端页同一实例：${T.G} 个逻辑 rollout、${T.I} 条样本（r2 = s2a + s2b 扇出，s0 下标 3 为工具 token）· dp=${c.dpSize} cp=${c.cpSize} · 每 rank M=${L.M} 个 micro-batch · G=${L.G}`, 'su');
 
   // ---- P1：三种估计量 ----
-  const y1 = 74; const h1 = 264;
+  const y1 = 74; const h1 = 306;
   rect(24, y1, 700, h1, 'panel', 10);
   text(40, y1 + 24, '1  三种均值是三个估计量：token、sample、rollout', 'pt');
-  const tx0 = 40; const ty = y1 + 40; const cols = [64, 250, 60, 60, 60, 80];
+  const tx0 = 40; const ty = y1 + 40; const cols = [64, 250, 60, 60, 60, 80]; const rowStep = 30;
   const heads = ['样本', '逐 token ℓ（灰=mask 0）', 'N_i', 'D_i', 'D_g', 'N_i / D_g'];
   let cx = tx0;
   heads.forEach((h, i) => { text(cx + cols[i] / 2, ty + 12, h, 'sm', 'middle'); cx += cols[i]; });
   m.samples.forEach((s, r) => {
-    const yy = ty + 20 + r * 24; let x = tx0;
+    const yy = ty + 20 + r * rowStep; let x = tx0;
     const cells = [s.name, null, T.N[r], T.D[r], m.rolloutMaskSums[r], f(T.N[r] / m.rolloutMaskSums[r])];
     cells.forEach((v, i) => {
       if (i === 1) {
@@ -236,28 +274,41 @@ function render(m) {
       x += cols[i];
     });
   });
-  const fy = ty + 20 + m.samples.length * 24 + 12;
-  rect(40, fy, 670, 60, 'ghost', 8);
-  text(52, fy + 18, `L_token = ΣN / Σmax(D_i,1) = ${T.sumN} / ${T.sumD} = ${f(T.token)}     L_sample = (1/I) Σ N_i/max(D_i,1) = ${f(T.sample)}`, 'mono');
-  text(52, fy + 36, `L_rollout = (1/G) Σ_g ΣN_i / max(D_g,1) = (${T.rolloutMeans.map((v) => f(v)).join(' + ')}) / ${T.G} = ${f(T.rollout)}  ← live 默认`, 'mono');
-  text(52, fy + 52, 'sample 均值给 r2 两票；token 均值让长 response 权重大；rollout 均值先在 r2 内按 token 加权再等权。', 'cap');
+  const fy = ty + 20 + m.samples.length * rowStep + 14;
+  rect(40, fy, 670, 70, 'ghost', 8);
+  text(52, fy + 20, `L_token = ΣN / Σmax(D_i,1) = ${T.sumN} / ${T.sumD} = ${f(T.token)}     L_sample = (1/I) Σ N_i/max(D_i,1) = ${f(T.sample)}`, 'mono');
+  text(52, fy + 40, `L_rollout = (1/G) Σ_g ΣN_i / max(D_g,1) = (${T.rolloutMeans.map((v) => f(v)).join(' + ')}) / ${T.G} = ${f(T.rollout)}  ← live 默认`, 'mono');
+  text(52, fy + 58, 'sample 均值给 r2 两票；token 均值让长 response 权重大；rollout 均值先在 r2 内按 token 加权再等权。', 'cap');
 
-  // ---- P2：reward 分组 ----
+  // ---- P2：reward 分组与 KL 入口 ----
   const x2 = 736; const w2 = 1156 - x2;
   rect(x2, y1, w2, h1, 'panel', 10);
-  text(x2 + 16, y1 + 24, '2  prompt 分组只定义 reward 基线', 'pt');
-  const R = m.rewards; const RP = m.rewardsPerPrompt;
+  text(x2 + 16, y1 + 24, '2  reward 基线与 KL 入口都按估计器分派', 'pt');
+  const R = m.rewards; const RP = m.rewardsPerPrompt; const K = m.klEntry;
   text(x2 + 16, y1 + 46, `raw_reward = [${RAW_REWARDS.join(', ')}]（${RAW_REWARDS.length} 条）`, 'mono');
   text(x2 + 16, y1 + 64, `${RAW_REWARDS.length} ≠ n × rollout_batch_size = ${c.nSamplesPerPrompt} × ${c.rolloutBatchSize} → view(-1, ${R.groupSize})：一个大组`, 'tx');
   rect(x2 + 16, y1 + 74, w2 - 32, 44, 'acc2', 6);
   text(x2 + 26, y1 + 92, `减组均值、除无偏 std+1e-6 → [${R.rewards.map((v) => f(v, 2)).join(', ')}]`, 'mono2');
   text(x2 + 26, y1 + 110, '扇出让 P1 的两个 rollout 和 P0 混成一组，基线不再是同一 prompt', 'sm');
   text(x2 + 16, y1 + 138, `对照：4 条无扇出 [1,0,1,0] → 按 n=${c.nSamplesPerPrompt} 分两组 → [${RP.rewards.map((v) => f(v, 2)).join(', ')}]`, 'tx');
-  text(x2 + 16, y1 + 158, 'grpo/gspo/cispo：returns = ones_like(kl) × reward，逐 token 广播；', 'tx');
-  text(x2 + 16, y1 + 176, 'kl_coef=0 时 kl 全零。ppo 在 cp0 本地末位加 reward 再做 GAE，', 'tx');
-  text(x2 + 16, y1 + 194, '末 token 不在 cp0 本地时会抛错或错位（面板 5）。', 'tx');
-  text(x2 + 16, y1 + 218, '不规则扇出要保持按 prompt 分组，须用自定义 reward 后处理', 'cap');
-  text(x2 + 16, y1 + 234, '或自定义 converter 显式恢复；reducer 不会事后修正基线。', 'cap');
+  text(x2 + 16, y1 + 162, `KL 入口（反事实，cp=1）：kl_coef=${K.klCoef}，${KL_DEMO.sample} 的 KL=[${K.kl.join(', ')}]，γ=${K.gamma}`, 'tx');
+  const klCols = [112, 184, 92];
+  const klRows = [
+    ['grpo/gspo/cispo', `returns ${fmtAffVec(K.grpo)}`, '不读 KL 值', 'acc1'],
+    ['r++ baseline', `adv ${fmtAffVec(K.rppBaseline)}`, '逐 token 减', 'cell'],
+    ['ppo', `reward ${fmtAffVec(K.ppoRewards)}`, '末位加 r 后 GAE', 'cell'],
+    ['reinforce++', `returns ${fmtAffVec(K.rppReturns)}`, '折扣累加', 'cell'],
+  ];
+  klRows.forEach((row, r) => {
+    const yy = y1 + 172 + r * 24; let x = x2 + 16;
+    row.slice(0, 3).forEach((v, i) => {
+      rect(x, yy, klCols[i] - 4, 20, i === 1 ? row[3] : 'cell', 3);
+      text(x + (klCols[i] - 4) / 2, yy + 14, v, i === 2 ? 'sm' : 'mono2', 'middle');
+      x += klCols[i];
+    });
+  });
+  text(x2 + 16, y1 + 282, 'r = 各估计器自己的 reward 后处理值。默认 grpo 下 kl_coef≠0', 'cap');
+  text(x2 + 16, y1 + 298, '只多 ref 前向、关 logprob 复用、记 rollout/kl，不进 returns。', 'cap');
 
   // ---- P3：账本 ----
   const y3 = y1 + h1 + 12; const h3 = 490;
@@ -353,7 +404,7 @@ function render(m) {
   text(40, y5 + 176, `GSPO 用 ${f(G5.seqKl)} 展开回 cp0 的 ${G5.expandedCounts[0]} 个、cp1 的 ${G5.expandedCounts[1]} 个本地 token；各 rank 只看本地片会得到 ${G5.ranks.map((r) => f(r.localMean)).join(' 与 ')} 两个不同的 log-ratio。`, 'cap');
   text(40, y5 + 194, 's2b 在 cp0 本地为空，仍以全零向量参加同一次 all-reduce；反向时可微 all-reduce 的梯度再在 CP 组上 all-reduce 一次。', 'cap');
   const tx5 = 720; const cws5 = [56, 56, 70, 110, 120];
-  const heads5 = ['样本', 'T/R', 'chunk·pad', 'cp0 本地下标', 'k[-1] 落点'];
+  const heads5 = ['样本', 'T/R', 'chunk·pad', 'cp0 本地下标', '本地末位 += reward'];
   let hx = tx5;
   heads5.forEach((h, i) => { text(hx + cws5[i] / 2, y5 + 44, h, 'sm', 'middle'); hx += cws5[i]; });
   m.ppoSlots.forEach((p, r) => {
@@ -365,9 +416,9 @@ function render(m) {
       x += cws5[i];
     });
   });
-  text(tx5, y5 + 194, '尾段覆盖最后一个 response logit ⇔ chunk ≥ pad + 2（total ≥ 3）', 'cap');
+  text(tx5, y5 + 199, 'cp=2、total ≥ 3 时：尾段覆盖末 logit ⇔ chunk ≥ pad + 2；total=2 落点正确', 'cap');
 
-  text(24, H - 12, '源码基线：THUDM/slime@681b3adca541 · 复现 get_sum_of_sample_mean / loss_function 缩放 / reduce_train_step_metrics / _post_process_rewards / policy_loss_function 的 mask 重建', 'su');
+  text(24, H - 12, '源码基线：THUDM/slime@4c193f1f3750 · 缩放依赖侧 NVIDIA/Megatron-LM@1dcf0dafa884 · 复现 get_sum_of_sample_mean / loss_function / compute_advantages_and_returns / policy_loss_function', 'su');
   o.push('</svg>');
   return o.join('\n');
 }

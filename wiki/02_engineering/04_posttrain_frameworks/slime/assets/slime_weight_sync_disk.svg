@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="660" viewBox="0 0 1180 660" role="img" aria-labelledby="title desc">
+<title id="title">slime 权重同步：整份磁盘与增量磁盘两条数据面</title>
+<desc id="desc">上半部分是整份磁盘：actor 写版本目录与 hook，RayTrainGroup 可选地让 engine 经补丁端点 pull 到本地，再在暂停窗口里 reload 并在 CI 下读回版本；下半部分是增量磁盘：同一段 bf16 字节的 xor 与 overwrite 编码、主机侧 pull 的版本链与首次、重启两个失败边界。</desc>
+<defs><marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker><marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#AEB6C2"/></marker></defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;fill:#2A313B}
+  .ti{font-size:19px;font-weight:700;fill:#1F2430}
+  .su{font-size:12px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#5B6470}
+  .mono{font-size:11px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;fill:#38414D}
+  .cap{font-size:11.5px;fill:#5B6470}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dep{fill:#F5F7FA;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:5 4}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .cell{fill:#fff;stroke:#AEB6C2;stroke-width:1.1}
+  .cellu{fill:#EEF1F5;stroke:#AEB6C2;stroke-width:1.1}
+  .win{fill:#EAF1FD;stroke:none}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.3;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+</style><rect width="1180" height="660" fill="white"/>
+<text x="24" y="34" class="ti" text-anchor="start">磁盘数据面：写盘与主机侧 pull 在暂停之前，暂停窗口只覆盖 reload</text>
+<text x="24" y="56" class="su" text-anchor="start">④ 整份：版本 1 写 weight_v000001/ · ⑤ 增量：gate_proj 前 4 个 bf16 元素 1、0.5、-2、0.25 → 1、0.5078125、-2、0.251953125</text>
+<rect x="24" y="70" width="1132" height="192" rx="10" class="panel"/>
+<text x="40" y="94" class="pt" text-anchor="start">④ 整份磁盘：actor 写完整 HF checkpoint，RayTrainGroup 在暂停窗口里 reload</text>
+<rect x="40" y="108" width="176" height="64" rx="5" class="neutral"/>
+<text x="48" y="126" class="tx" text-anchor="start">weight_v000001/</text>
+<text x="48" y="144" class="sm" text-anchor="start">rank 0 先 rmtree</text>
+<text x="48" y="160" class="sm" text-anchor="start">各 rank 自己 mkdir</text>
+<path d="M216 140 L226 140" class="main"/>
+<rect x="226" y="108" width="176" height="64" rx="5" class="neutral"/>
+<text x="234" y="126" class="tx" text-anchor="start">HfWeightIteratorDirect</text>
+<text x="234" y="144" class="sm" text-anchor="start">每节点 writer rank</text>
+<text x="234" y="160" class="sm" text-anchor="start">转换并写 safetensors</text>
+<path d="M402 140 L412 140" class="main"/>
+<rect x="412" y="108" width="176" height="64" rx="5" class="neutral"/>
+<text x="420" y="126" class="tx" text-anchor="start">Gloo barrier ×2</text>
+<text x="420" y="144" class="sm" text-anchor="start">两次之间跑</text>
+<text x="420" y="160" class="sm" text-anchor="start">post-write hook</text>
+<path d="M588 140 L598 140" class="main"/>
+<rect x="598" y="108" width="176" height="64" rx="5" class="dep"/>
+<text x="606" y="126" class="tx" text-anchor="start">pull_weights(1)*</text>
+<text x="606" y="144" class="sm" text-anchor="start">拉到主机本地盘</text>
+<text x="606" y="160" class="sm" text-anchor="start">sglang-pull_weights.patch</text>
+<path d="M774 140 L784 140" class="main"/>
+<rect x="784" y="108" width="176" height="64" rx="5" class="acc1"/>
+<text x="792" y="126" class="tx" text-anchor="start">pause→flush→reload</text>
+<text x="792" y="144" class="sm" text-anchor="start">update_weights_from_disk</text>
+<text x="792" y="160" class="sm" text-anchor="start">(path, "1")</text>
+<path d="M960 140 L970 140" class="main"/>
+<rect x="970" y="108" width="176" height="64" rx="5" class="dep"/>
+<text x="978" y="126" class="tx" text-anchor="start">CI：读回须为 "1"</text>
+<text x="978" y="144" class="sm" text-anchor="start">/get_weight_version</text>
+<text x="978" y="160" class="sm" text-anchor="start">由 sglang.patch 改写</text>
+<text x="40" y="194" class="sm" text-anchor="start">actor 的 weight_version 与 RayTrainGroup._disk_weight_version 是两个计数器，create 时回写 update_weight_start_version</text>
+<rect x="632.3636363636363" y="212" width="418.65363636363645" height="44" rx="4" class="win"/>
+<text x="635.3636363636363" y="223" class="sm" text-anchor="start">服务暂停窗口</text>
+<rect x="40" y="228" width="94.07272727272726" height="22" rx="4" class="neutral"/>
+<text x="87.03636363636363" y="243" class="sm" text-anchor="middle">version+1</text>
+<rect x="138.07272727272726" y="228" width="116.75272727272727" height="22" rx="4" class="neutral"/>
+<text x="196.4490909090909" y="243" class="sm" text-anchor="middle">rmtree、mkdir</text>
+<rect x="258.82545454545453" y="228" width="126.62272727272727" height="22" rx="4" class="neutral"/>
+<text x="322.13681818181817" y="243" class="sm" text-anchor="middle">重组→写 HF 分片</text>
+<rect x="389.4481818181818" y="228" width="130.61272727272728" height="22" rx="4" class="neutral"/>
+<text x="454.75454545454545" y="243" class="sm" text-anchor="middle">post-write hook</text>
+<rect x="524.060909090909" y="228" width="107.30272727272728" height="22" rx="4" class="neutral"/>
+<text x="577.7122727272726" y="243" class="sm" text-anchor="middle">pull 到本地*</text>
+<rect x="635.3636363636363" y="228" width="69.71272727272726" height="22" rx="4" class="neutral"/>
+<text x="670.2199999999999" y="243" class="sm" text-anchor="middle">pause</text>
+<rect x="709.0763636363636" y="228" width="69.71272727272726" height="22" rx="4" class="neutral"/>
+<text x="743.9327272727272" y="243" class="sm" text-anchor="middle">flush</text>
+<rect x="782.7890909090909" y="228" width="75.80272727272727" height="22" rx="4" class="neutral"/>
+<text x="820.6904545454545" y="243" class="sm" text-anchor="middle">reload</text>
+<rect x="862.5918181818181" y="228" width="105.62272727272727" height="22" rx="4" class="neutral"/>
+<text x="915.4031818181818" y="243" class="sm" text-anchor="middle">CI 版本核对*</text>
+<rect x="972.2145454545454" y="228" width="75.80272727272727" height="22" rx="4" class="neutral"/>
+<text x="1010.115909090909" y="243" class="sm" text-anchor="middle">rmtree</text>
+<rect x="1052.0172727272727" y="228" width="87.98272727272726" height="22" rx="4" class="neutral"/>
+<text x="1096.0086363636362" y="243" class="sm" text-anchor="middle">continue</text>
+<rect x="24" y="274" width="1132" height="332" rx="10" class="panel"/>
+<text x="40" y="298" class="pt" text-anchor="start">⑤ 增量磁盘：与上一版字节做差，发布压缩差分，主机在本地 checkpoint 上原位应用</text>
+<text x="40" y="320" class="sm" text-anchor="start">按小端字节：</text>
+<text x="40" y="344" class="sm" text-anchor="start">旧</text>
+<rect x="72" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="88" y="344" class="mono" text-anchor="middle">80</text>
+<rect x="108" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="124" y="344" class="mono" text-anchor="middle">3F</text>
+<rect x="144" y="330" width="32" height="20" rx="3" class="acc1"/>
+<text x="160" y="344" class="mono" text-anchor="middle">00</text>
+<rect x="180" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="196" y="344" class="mono" text-anchor="middle">3F</text>
+<rect x="216" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="232" y="344" class="mono" text-anchor="middle">00</text>
+<rect x="252" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="268" y="344" class="mono" text-anchor="middle">C0</text>
+<rect x="288" y="330" width="32" height="20" rx="3" class="acc1"/>
+<text x="304" y="344" class="mono" text-anchor="middle">80</text>
+<rect x="324" y="330" width="32" height="20" rx="3" class="cell"/>
+<text x="340" y="344" class="mono" text-anchor="middle">3E</text>
+<text x="40" y="370" class="sm" text-anchor="start">新</text>
+<rect x="72" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="88" y="370" class="mono" text-anchor="middle">80</text>
+<rect x="108" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="124" y="370" class="mono" text-anchor="middle">3F</text>
+<rect x="144" y="356" width="32" height="20" rx="3" class="acc1"/>
+<text x="160" y="370" class="mono" text-anchor="middle">02</text>
+<rect x="180" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="196" y="370" class="mono" text-anchor="middle">3F</text>
+<rect x="216" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="232" y="370" class="mono" text-anchor="middle">00</text>
+<rect x="252" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="268" y="370" class="mono" text-anchor="middle">C0</text>
+<rect x="288" y="356" width="32" height="20" rx="3" class="acc1"/>
+<text x="304" y="370" class="mono" text-anchor="middle">81</text>
+<rect x="324" y="356" width="32" height="20" rx="3" class="cell"/>
+<text x="340" y="370" class="mono" text-anchor="middle">3E</text>
+<text x="40" y="396" class="sm" text-anchor="start">xor</text>
+<rect x="72" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="88" y="396" class="mono" text-anchor="middle">00</text>
+<rect x="108" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="124" y="396" class="mono" text-anchor="middle">00</text>
+<rect x="144" y="382" width="32" height="20" rx="3" class="acc1"/>
+<text x="160" y="396" class="mono" text-anchor="middle">02</text>
+<rect x="180" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="196" y="396" class="mono" text-anchor="middle">00</text>
+<rect x="216" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="232" y="396" class="mono" text-anchor="middle">00</text>
+<rect x="252" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="268" y="396" class="mono" text-anchor="middle">00</text>
+<rect x="288" y="382" width="32" height="20" rx="3" class="acc1"/>
+<text x="304" y="396" class="mono" text-anchor="middle">01</text>
+<rect x="324" y="382" width="32" height="20" rx="3" class="ghost"/>
+<text x="340" y="396" class="mono" text-anchor="middle">00</text>
+<text x="400" y="344" class="tx" text-anchor="start">变化 2/8 字节</text>
+<text x="400" y="364" class="tx" text-anchor="start">perf/update_weights_density = 25%</text>
+<text x="400" y="384" class="sm" text-anchor="start">整张量没有变化就不写入分片</text>
+<rect x="40" y="418" width="370" height="40" rx="5" class="neutral"/>
+<text x="50" y="434" class="sm" text-anchor="start">xor：差分 8 字节（压缩前），未变字节为 0</text>
+<text x="50" y="450" class="sm" text-anchor="start">对合：在已应用状态上再应用一次会还原成旧值</text>
+<rect x="420" y="418" width="370" height="40" rx="5" class="neutral"/>
+<text x="430" y="434" class="sm" text-anchor="start">overwrite：4 + 2×4 + 2 = 14 字节</text>
+<text x="430" y="450" class="sm" text-anchor="start">计数、位置、新值；更大，但重复应用幂等</text>
+<rect x="800" y="314" width="342" height="180" rx="8" class="dep"/>
+<text x="812" y="332" class="sm" text-anchor="start">主机侧 pull（sglang-pull_weights.patch）</text>
+<text x="812" y="352" class="tx" text-anchor="start">v0 = model_path（缺省即 --hf-checkpoint）</text>
+<text x="812" y="370" class="tx" text-anchor="start">v1 base 0；v2 base 1</text>
+<text x="812" y="390" class="sm" text-anchor="start">新主机 pull(2)：reset base → apply v1 → apply v2</text>
+<text x="812" y="408" class="sm" text-anchor="start">本地已在 1：apply v2</text>
+<text x="812" y="426" class="sm" text-anchor="start">逐张量解压 → 原位 xor 或覆写 → 校验 checksum</text>
+<text x="812" y="444" class="sm" text-anchor="start">base 不符抛 out-of-order；checksum 不符抛错</text>
+<text x="812" y="462" class="sm" text-anchor="start">host flock 合并同机多 rank</text>
+<text x="812" y="480" class="sm" text-anchor="start">TP 组内所有 host 都成功才返回成功</text>
+<rect x="40" y="504" width="1102" height="40" rx="5" class="acc2"/>
+<text x="50" y="520" class="sm" text-anchor="start">首次 update 只捕获快照并 pull_weights(0)、不发布：第一轮 rollout 用的是 --hf-checkpoint，而不是 --load 装入的 actor</text>
+<text x="50" y="536" class="sm" text-anchor="start">重启复用本地目录：残留标记 57 让 pull(1) 什么也不做，reload 的仍是上次运行的 v57，版本号却写成 "1"</text>
+<rect x="743.6433333333334" y="554" width="294.6100000000001" height="44" rx="4" class="win"/>
+<text x="746.6433333333334" y="565" class="sm" text-anchor="start">服务暂停窗口</text>
+<rect x="40" y="570" width="106.83666666666667" height="22" rx="4" class="neutral"/>
+<text x="93.41833333333334" y="585" class="sm" text-anchor="middle">version+1</text>
+<rect x="150.83666666666667" y="570" width="170.88666666666668" height="22" rx="4" class="neutral"/>
+<text x="236.28000000000003" y="585" class="sm" text-anchor="middle">重组→按字节做差→zstd</text>
+<rect x="325.72333333333336" y="570" width="130.5666666666667" height="22" rx="4" class="neutral"/>
+<text x="391.0066666666667" y="585" class="sm" text-anchor="middle">写分片与 index</text>
+<rect x="460.2900000000001" y="570" width="143.3766666666667" height="22" rx="4" class="neutral"/>
+<text x="531.9783333333335" y="585" class="sm" text-anchor="middle">post-write hook</text>
+<rect x="607.6666666666667" y="570" width="134.9766666666667" height="22" rx="4" class="neutral"/>
+<text x="675.1550000000001" y="585" class="sm" text-anchor="middle">pull：应用+校验</text>
+<rect x="746.6433333333334" y="570" width="82.47666666666667" height="22" rx="4" class="neutral"/>
+<text x="787.8816666666668" y="585" class="sm" text-anchor="middle">pause</text>
+<rect x="833.1200000000001" y="570" width="82.47666666666667" height="22" rx="4" class="neutral"/>
+<text x="874.3583333333335" y="585" class="sm" text-anchor="middle">flush</text>
+<rect x="919.5966666666668" y="570" width="115.65666666666667" height="22" rx="4" class="neutral"/>
+<text x="977.4250000000002" y="585" class="sm" text-anchor="middle">reload 本地</text>
+<rect x="1039.2533333333336" y="570" width="100.74666666666667" height="22" rx="4" class="neutral"/>
+<text x="1089.626666666667" y="585" class="sm" text-anchor="middle">continue</text>
+<text x="24" y="628" class="cap" text-anchor="start">* 为条件步骤（设了本地目录、开 --ci-test）。浅蓝底 = 服务暂停窗口；虚线框 = 依赖侧（端点来自镜像补丁）。复现 _encode_delta / overwrite_encode / local_checkpoint.pull。</text>
+<text x="24" y="648" class="su" text-anchor="start">源码基线：THUDM/slime@4c193f1f3750 · 上游 sgl-project/sglang@0b3bb0cbe318（v0.5.15.post1）+ slime 的 docker/patch/latest/*.patch</text>
+</svg>

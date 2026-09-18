@@ -7,7 +7,7 @@ title: "D05 后训练 Infra 核心机制"
 > **阶段**：S01
 > **文档编号**：D05
 > **快照日期**：2026-07-28
-> **证据基线**：四框架 S00 commit、Async/Freshness 固定论文版本与 Kimi K3 Technical Report `0797decb`，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
+> **证据基线**：四框架 S00 commit、Async/Freshness 固定论文版本与 Kimi K3 Technical Report `0797decb`，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`；§6 的 slime 权重传输路径按 `THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）复核
 > **结论先行**：工业 RL infra 的最小完整模型不是 actor/rollout 两个进程，而是 control、data、weight 三个平面，加上一组跨平面的版本提交与恢复不变量。
 > **阅读导航**：[[25_on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[30_rl_framework_comparison|下一篇 D06]]
 
@@ -154,7 +154,7 @@ RETIRE
 - failed shard 与 retry；
 - old/new version 同时驻留时间。
 
-slime 展示 full NCCL、tensor、disk 和 disk delta 的多 transport；AReaL v2 把 training/inference pair 和 version 交给 weight-update gateway；ROLL 用 `ModelUpdateGroup` 连接 source/target cluster；verl stable path 则由 trainer 调 worker/rollout update。
+slime 展示 full NCCL、共卡 tensor、full disk 和 delta disk 四条权重传输路径，由 `slime/backends/megatron_utils/update_weight/__init__.py::create_weight_updater` 按 `--update-weight-mode`、`--update-weight-transport` 与 `--colocate` 选择，各路径的数据面与提交边界见 [[16_slime_weight_sync_analysis|slime 权重同步]]；AReaL v2 把 training/inference pair 和 version 交给 weight-update gateway；ROLL 用 `ModelUpdateGroup` 连接 source/target cluster；verl stable path 则由 trainer 调 worker/rollout update。
 
 > [!note] 三方分工 本节是三平面机制视角下的 weight publish 协议（阶段划分与跨框架不变量，框架无关）。Megatron 训练侧的 refit / 训推一致性实现见 [[30_megatron_rl_posttraining_consistency_analysis]]；verl 当前 full / `delta_sharded` 发布机制与历史 Gather-Broadcast-Load 演进见 [[21_verl_weight_publication_analysis]]；verl 自身的 rollout runtime 见 [[14_verl_rollout_runtime_analysis]]。
 

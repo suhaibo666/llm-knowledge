@@ -7,7 +7,7 @@ title: "D11 CUDA–Ascend 后训练栈对照"
 > **阶段**：S04
 > **文档编号**：D11
 > **快照日期**：2026-07-28
-> **证据基线**：四框架 S00 commit、2026-07-27 官方 Ascend/PyTorch/vLLM/SGLang 文档快照与 Kimi K3 Technical Report `0797decb`
+> **证据基线**：四框架 S00 commit、2026-07-27 官方 Ascend/PyTorch/vLLM/SGLang 文档快照与 Kimi K3 Technical Report `0797decb`；slime `docker/npu_patch` 按 `THUDM/slime@4c193f1f37509cca70f0e88807a9305b70f63f4e`（`main`，2026-09-03）核对
 > **结论先行**：Ascend 已不是“只能训练、不能 rollout”的早期状态：torch_npu、HCCL、MindSpeed、vLLM-Ascend、SGLang NPU 和后训练框架都有可达路径；但迁移单位必须是整套版本矩阵与正确性闭环，不能只替换 `cuda` 字符串。
 > **阅读导航**：[[22_roll_strategy_and_ascend_analysis|上一篇 D10]] · [[24_kimi_k3_posttraining_case_study_analysis|下一篇 D12]]
 
@@ -83,6 +83,10 @@ model weight dtype and quantization
 ```
 
 只给 `torch_npu==x` 不足以复现。
+
+slime 仓内的 Ascend 路径是这类矩阵的实例。`docker/npu_patch/README.md` 把组件版本写成一张表：slime `v0.2.2`（从 `ascend-slime/slime` 检出）、SGLang `dce8b060`、sgl-kernel-npu `2026.02.01`、Megatron-Bridge `35b4ebfc`、Megatron-LM `3714d81d`、MindSpeed `fc63de5c`、HDK 25.3.RC1 与 CANN 8.5.0，另要求 Python 3.11 与 `torch-npu==2.8.0`。安装时先打 slime 自带的 `docker/patch/v0.5.7/sglang.patch` 与 `docker/patch/v0.5.7/megatron.patch`，再叠加 `docker/npu_patch/` 下分别针对 slime、SGLang、Megatron-LM、Megatron-Bridge 和 MindSpeed 的五个补丁。
+
+这套补丁只对钉定的旧版 slime 成立：`docker/npu_patch/slime.patch` 修改的 `slime/backends/fsdp_utils/`，以及 README 引用的 `examples/geo3k_vlm_multi_turn/run_grpo_npu.sh`，在 `4c193f1f` 主线中都已不存在；主线 `slime/utils/accelerator/__init__.py::_register_builtin_backends` 也只注册 CUDA 与 MUSA。主线前进后 NPU 补丁不会自动跟随，迁移单位只能是整套版本矩阵（分析判断）。slime 的平台覆盖缺口登记在 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]]。
 
 ## 4. PyTorch 与 Device
 
@@ -169,6 +173,8 @@ TP EP layout conversion
 - [SGLang 官方仓库](https://github.com/sgl-project/sglang) 已把 Ascend NPU 列为硬件 backend；
 - [2026 Q1 Ascend roadmap](https://github.com/sgl-project/sglang/issues/13664) 覆盖 EP、CP、NPUGraph、quantization、cache 与 RL；
 - [sgl-kernel-npu](https://github.com/sgl-project/sgl-kernel-npu) 提供 DeepEP-Ascend 与 NPU kernels。
+
+框架侧接通 SGLang NPU 往往还要补丁：slime 旧版 NPU 路径（§3）选的是 SGLang 而非 vLLM-Ascend，其 `docker/npu_patch/sglang.patch` 改动了 `python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py`、`python/sglang/srt/hardware_backend/npu/graph_runner/npu_graph_runner.py` 与若干模型文件。
 
 不过框架适配仍可能只支持 vLLM-Ascend。例如 AReaL 固定主分支的 NPU guide 仍要求其 Ascend branch 使用 vLLM，不能因为 SGLang upstream 支持 NPU 就推断 AReaL weight adapter 已接通。
 
@@ -331,3 +337,4 @@ Ascend 路径已具备工业深挖价值，尤其是：
 - [[10_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[courses/posttraining_frontier|LLM 后训练前沿阅读课程]] — 阅读路线与六级能力门槛(原 D00)
 - [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识域]] — §3 的 `docker/npu_patch` 版本矩阵实例；slime 主线平台缺口登记在其 Knowledge Gaps
