@@ -90,7 +90,7 @@ K3 报告 §5.3.2 把它描述为支撑 agentic RL 的 microVM 沙箱层，并�
 
 - **Attention-Residuals**（3,412 stars）：论文仓，**只有 README 和 PDF，没有 `.py` 实现**；唯一可执行描述是 `README.md:52-91` 的伪代码。想复现 AttnRes 必须自己写。见 [[22_kimi_k3_architecture_deepdive]] §4。
 - **checkpoint-engine**（984 stars，最后推送 2026-07-04）：推理引擎权重更新中间件，对应 RL 闭环里的 weight-sync 环节。K3 报告没有点名它，把它绑到 K3 的 RL trainer 属于 [推断]。
-- **Mooncake**：K3 官方 API 的分离式推理底座，机制见 [[mooncake_analysis]]，K3 落点见 [[23_kimi_k3_infra_deepdive]] §3.1。
+- **Mooncake**：K3 官方 API 的分离式推理底座，机制见 [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]]，K3 落点见 [[23_kimi_k3_infra_deepdive]] §3.1。
 
 ---
 
@@ -180,6 +180,6 @@ flowchart TB
 - [[23_kimi_k3_infra_deepdive]] — 训推基础设施；§3.3 FlashKDA 机制、§5 事实边界表
 - [[25_kimi_k3_stability_analysis]] — K3 的训练稳定性栈
 - [[24_kimi_k3_posttraining_case_study_analysis]] — D12：后训练与 1M Agentic RL 闭环（AgentENV 的上游语境）
-- [[mooncake_analysis]] — Mooncake 分离式推理
+- [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]] — Mooncake 开源仓的分层与源码级机制入口
 - [[21_gdn_kda_kernel_implementation_analysis]] — GDN/KDA 训推 kernel 的实现拆解
 - [[moonshot_kimi/index]] — Kimi/Moonshot 技术路线总览

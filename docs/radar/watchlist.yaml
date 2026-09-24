@@ -36,9 +36,11 @@ repos:
   - name: Mooncake
     repo: kvcache-ai/Mooncake
     branch: main
-    checkout: null
-    kb_baseline: null
-    kb_entry: wiki/02_engineering/03_infer_frameworks/mooncake_analysis.md
+    checkout: ../../97-llm/Mooncake
+    # 2026-09-24 新建 mooncake/ 子域：6 篇正文 + index 统一钉 7d3a94e9（main）；
+    # 20 页另钉 vLLM@199cb9b9。取代原论文页 mooncake_analysis。
+    kb_baseline: 7d3a94e9d8c30abf02fcd64df218c16c1abc70df
+    kb_entry: wiki/02_engineering/03_infer_frameworks/mooncake/index.md
     category: 推理框架
 
   - name: slime

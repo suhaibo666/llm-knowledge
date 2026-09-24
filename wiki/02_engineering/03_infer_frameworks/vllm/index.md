@@ -15,7 +15,7 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 | 尚无 owner 的主题 | 哪些页面在登记它 |
 |---|---|
 | “调用 API / 使用特性”这一步的使用说明归属 | **无页面登记**（03 §6 登记的是输入路径缺口，不是这一条） |
-| P/D 实例之间的 proxy/router 路由（`examples/disaggregated/`） | 22 §2、§14.4 |
+| P/D 实例之间的 proxy/router 路由（`examples/disaggregated/`） | 22 §2、§14.4；其中 Mooncake 示例 proxy 已由 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §9.1 拥有 |
 | 配置解析总链 | **无页面登记**；各页只登记自己消费的字段 |
 | Ray / external launcher 的监督拓扑与 Ray DP actor 生命周期（`CoreEngineActorManager`、`EngineCoreActor`，DP+MoE 时为 `DPMoEEngineCoreActor`） | 23 §6.2、13 §4.2 |
 | tool / reasoning parser | **无页面登记**（03 只在行文中提到 parser，未登记缺口） |
@@ -84,4 +84,4 @@ title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 - [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]] — 比较不同推理系统的能力边界。
 - [[02_engineering/03_infer_frameworks/sglang/index|SGLang推理框架]] — 对照另一条编译实现路线。
 - [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] — 跨引擎理解draft/verify算法族。
-- [[02_engineering/03_infer_frameworks/mooncake_analysis|Mooncake分离式推理]] — 对照论文层面的KV数据平面设计。
+- [[02_engineering/03_infer_frameworks/mooncake/index|Mooncake源码地图]] — 两个 Mooncake connector 越过边界后，Transfer Engine 与 Store 内部如何执行。

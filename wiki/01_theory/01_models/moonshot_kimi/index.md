@@ -233,7 +233,7 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 
 | 论文 | arXiv | Wiki 页面 |
 |------|-------|----------|
-| Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[02_engineering/03_infer_frameworks/mooncake_analysis]] |
+| Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]] |
 | MoBA: Mixture of Block Attention | 2502.13189 | [[10_moba_analysis]] |
 | Kimi k1.5: Scaling RL with LLMs | 2501.12599 | [[01_theory/04_posttraining/29_kimi_k1_5_analysis]] |
 | Kimi VL Technical Report | 2504.07491 | 待摄入 |

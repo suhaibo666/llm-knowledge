@@ -12,6 +12,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-24：新建 Mooncake 源码子域，取代论文页并补齐与 vLLM 的联动
+
+- 新建 [[02_engineering/03_infer_frameworks/mooncake/index|Mooncake 源码地图]]：6 篇正文统一钉 `kvcache-ai/Mooncake@7d3a94e9`（`main`，2026-09-24），20 页另钉 `vllm-project/vllm@199cb9b9`，与 vLLM 域一致。规划、覆盖矩阵与决定记在本地规划文件；检出放在 `../../97-llm/`。
+- [[01_mooncake_architecture_overview_analysis|01 架构总览]]取代并删除原论文页 `mooncake_analysis`：开源仓是数据面工具箱（Transfer Engine、Store master/client、Python 绑定），论文控制面（P/D 选择与 TTFT 估算、SLO 早拒、热点复制、CPP、逐层 prefill）不在仓内；`mooncake-conductor/` 只是未接线的 C++ 前缀索引库，设计文档描述的 Go 服务与 HTTP 接口从未合入。旧页的 CPP、逐层 prefill、早拒与预测、评测数字经 FAST'25 与 arXiv v1/v3 逐项复核后吸收，并更正旧页把 v1 实验阈值"P90=10×/5×"写成 SLO、KV 池画成独立存储节点等错误。
+- [[10_mooncake_transfer_engine_analysis|10 Transfer Engine]]：64 KiB 切片与尾片合并、本地网卡按请求选定且（#4259 起）同 MR 复用、对端网卡在每次 flush 重选、slice 级重试与 rail 暂停、Python 同步包装的忙轮询与整批重试；经典 `init` 丢弃 `protocol` 参数，PyPI wheel 均未开 TENT。
+- [[11_mooncake_store_object_lifecycle_analysis|11 Store 对象生命周期]]：PutStart/PutEnd 两阶段可见性、Get/Exist 授读租约而 ProbeKey 不授、租约截止时间兼作近似 LRU、两遍淘汰与 group 全有或全无、PutStart 不为内存副本内联淘汰而直接返回 -200、客户端 ACTIVE→SUSPECTED→OFFLINE。
+- [[12_mooncake_store_tiering_offload_analysis|12 Store 分层与卸载]]：master 派单、属主 client 落盘、`LOCAL_DISK` 副本经属主 RPC 读取、命中提升、bucket 后端凑桶门槛与 DFS 分配器。
+- [[13_mooncake_store_ha_recovery_analysis|13 Store 高可用与恢复]]：etcd/redis/k8s 选主、OpLog 热备与快照；不开 OpLog 时新 leader 元数据为空；恢复校验失败会退出进程而非重试；DFS 与任何 HA 模式互斥。
+- [[20_mooncake_vllm_integration_analysis|20 vLLM 集成]]：15 个跨边界调用逐一映射到 Mooncake 内部；MultiConnector 下进程内有两个 TE；每次 `batch_is_exist` 都续 10 s 读租约；`mooncake_protocol` 在标准 wheel 上不选择传输；-200 的来源与 vLLM 暂停保存；Mooncake 示例 proxy 归本页；列出 vLLM 基线之后的 Mooncake connector 修复（#50984、#56855 等）。
+- 每页经独立审阅（base rubric，01 加架构画像、20 加特性画像）：六页首轮均 REJECT，逐条修复后复核 PASS。首轮打回的核心问题包括 13 页把致命恢复错误画成重试、12 页算例在默认 bucket 后端上根本落不了盘、01 页丢失旧页的 CPP/早拒内容、20 页漏掉 EFA wheel。25 张 Mermaid 图经 mermaid@11 实际解析渲染通过。
+- 独立枚举轴：新建 `docs/coverage/mooncake.md`，master 102 个 gflags 与 Transfer Engine `loadGlobalConfig` 56 个 `MC_*` 变量逐项归属 owner 页或写明排除理由，无未归属项；vLLM 调用面 15 项全部归 20 页。
+- 同步：[[22_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] §6.4、§7 指向 20 页，更正 `mooncake_protocol` 的含义与 Mooncake reset ACK 只表示未抛异常，proxy 缺口注明 Mooncake 示例已有 owner；vLLM 索引、推理框架目录、推理技术栈、`pin_memory`、Kimi 10/23/26 与 Kimi 索引、slime 三页的入链改指新页；[[23_kimi_k3_infra_deepdive|Kimi K3 训推基础设施]] §3.1 补注 README 的 75% 与 FAST'25 的 115%/107% 口径差异；`docs/radar/watchlist.yaml` 的 Mooncake 条目填入检出路径与 `kb_baseline`。
+- 证据边界：全部为静态源码与测试核验，未实跑 RDMA、多机、SSD 或 HA 集群；README 的 87/190 GB/s 在仓内无可复现配置。仍无 owner：TENT 内部、各厂商 transport、SGLang/LMCache/TRT-LLM 集成、EP/PG/P2P Store/reshard，已登记在子域索引。
+
 ## 2026-09-18：slime 域按 2026-09-16 独立审查全量修复，基线整体升到 `4c193f1f`
 
 - 按 `docs/research/2026-09-16-slime-domain-review.md` §13 的修复路由，修完 23 篇正文与 [[02_engineering/04_posttrain_frameworks/slime/index|slime 知识地图]]，并把全域源码基线从 `681b3adc` 升到 `THUDM/slime@4c193f1f`（`main`，2026-09-03，含 v0.3.2），逐页完成漂移对账：`slime/observability/` 与 `sglang_utils/` 拆分后的锚点迁移、删除的 `--profile-target` 与 grad-coalesce 补丁、`4c1ab402` 的请求级 abort 与流式 external、`a0d6d26a` 的 eval-only 资源、`045310b2` 的 raw KL、`1da1bb19` 的 teacher 温度、`2fa9a442`/`08160d3f`/`876cd89b` 的 UE8M0 与 ROCm INT4。

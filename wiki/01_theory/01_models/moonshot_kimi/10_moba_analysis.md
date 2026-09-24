@@ -208,4 +208,4 @@ Kimi 长上下文技术栈:
 
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
-- [[02_engineering/03_infer_frameworks/mooncake_analysis]]
+- [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]]

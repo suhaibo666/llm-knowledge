@@ -7,7 +7,7 @@ title: "vLLM 分离式 KV Serving：用跨 Engine 协议交接可计算状态"
 > **源码基线**：`vllm-project/vllm@199cb9b964822e59ab9b58d88e7be31eb419a2ae`（`main` 快照，2026-09-07 UTC）
 > **主题**：同一请求的 KV 如何跨 Engine 交接、取得可计算性，并解除源和目标的持有。
 > **适用范围**：V1 KV connector 的 Scheduler/worker 合同，NIXL pull/push、MoRIIO、Mooncake 直连与 Mooncake store 的不同实现，以及 `MultiConnector` 的组合语义；源码与测试静态核验，未实跑多机或外部传输服务。
-> **最近更新**：2026-09-16。补清 NIXL HMA 失败仍被报告为接收完成的缺口，并保留匹配、地址映射、提交、释放与错误边界。
+> **最近更新**：2026-09-24。按 Mooncake 源码更正 `mooncake_protocol` 与 Mooncake reset ACK 的语义，并在 §6.4、§7 指向 Mooncake 侧的联动页。
 
 ## 1. 十二个 prompt token，搬完三个 block 为什么还要再算一个 token
 
@@ -46,7 +46,7 @@ $$
 
 factory 通过注册名延迟导入类；配置了 `kv_connector_module_path` 时，外部模块优先于内建注册表，并要求类接受第三个构造参数 `kv_cache_config`。空模块路径会被拒绝，单纯把类名改成一个未注册名字也不能接入。冻结基线有 16 个注册名、15 个不同类，其中 `NixlConnector` 是 pull 的兼容别名；完整注册名、demo、offload 与第三方接入边界见 §14.5，字段默认值见 §11。
 
-选中家族后仍有下一层选择。MoRIIO 的 `read_mode` 决定 READ/WRITE，Mooncake store 的 `_select_store_layout` 决定 rank-local 或两种 TP-sharded payload；这会改变匹配返回值、等待点或地址分段，不能从 `kv_connector` 一个字符串推导全部行为。EC connector 由独立的 `ec_transfer_config` 选择，见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]；本地 CPU offload 见 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。实例发现与“把请求送到 `transfer_mode` 匹配的 P/D 实例”这段路由，**本域目前没有 owner**：`examples/disaggregated/` 下的 proxy/router 参考实现在基线下没有任何页面展开，该缺口已提交 `planning-codebase-analysis` 裁决（§14.4 末行同样登记）。[[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有的是 **DP 副本内**的负载反馈与路由，不是 P/D 之间的路由。
+选中家族后仍有下一层选择。MoRIIO 的 `read_mode` 决定 READ/WRITE，Mooncake store 的 `_select_store_layout` 决定 rank-local 或两种 TP-sharded payload；这会改变匹配返回值、等待点或地址分段，不能从 `kv_connector` 一个字符串推导全部行为。EC connector 由独立的 `ec_transfer_config` 选择，见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_multimodal_execution_analysis|多模态执行]]；本地 CPU offload 见 [[02_engineering/03_infer_frameworks/vllm/08_vllm_kv_cache_management_analysis|KV Cache 管理]]。实例发现与“把请求送到 `transfer_mode` 匹配的 P/D 实例”这段路由，**本域目前没有 owner**：`examples/disaggregated/` 下的 proxy/router 参考实现在基线下只有 Mooncake 示例一处被展开（见 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §9.1），其余仍无页面，该缺口已提交 `planning-codebase-analysis` 裁决（§14.4 末行同样登记）。[[02_engineering/03_infer_frameworks/vllm/13_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有的是 **DP 副本内**的负载反馈与路由，不是 P/D 之间的路由。
 
 ## 3. 身份相同、协议兼容、布局可变换是三种检查
 
@@ -517,9 +517,11 @@ sequenceDiagram
 
 失败响应不会通过正常完成计数来释放 D 的等待。 `send_kv_to_decode` 对非零 WRITE 返回码把本批相关请求放进 `err_reqs`，不增加它们的 `sent`；D 的 `process_pulling_result` 只对 `ok_reqs` 减计数，`err_reqs` 只日志。`receive_kv_from_single_worker` 遇 ERROR、超时或异常也记录失败后返回，没有填目标 invalid blocks 或 `finished_recving`。因此默认通用失败策略不等于此实现已完成自动恢复：某些字节可能已写，P 最终可经自己的过期分支回收，D 本路径缺少失败收尾信号；不能把 ZMQ 任务结束当成 R 退出远端等待。
 
-Mooncake 引擎内部的 segment 选择与 RDMA 实现属于第三方库边界。本仓库证据止于 `batch_transfer_sync_write` 的返回码与随后的响应顺序；前面的会合、计数与释放解释的是 vLLM 如何使用这些结果。
+Mooncake 引擎内部的 segment 选择与 RDMA 实现属于第三方库边界。本仓库证据止于 `batch_transfer_sync_write` 的返回码与随后的响应顺序；前面的会合、计数与释放解释的是 vLLM 如何使用这些结果。越过 Python 绑定之后 Transfer Engine 怎样切片、选卡与整批重试，`mooncake_protocol` 为何在标准 wheel 上不选择传输，以及返回 -1 后仍可能有 WRITE 在途，见 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §2.2 与 §3。
 
 ## 7. Mooncake store：远端内容留存，GPU 源引用按 save job 归还
+
+本节只讲 vLLM 一侧的协议。这些 store 调用在 Mooncake 内部的效果——lookup 与写前去重都会续 10 s 读租约、-200 从哪里来、`remove_all` 的返回码没有被检查——见 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §4–§6；对象的租约与淘汰规则本身见 [[11_mooncake_store_object_lifecycle_analysis|Store 对象生命周期]]。
 
 ### 7.1 把 R 变成三个内容键，再由未来的 D 恢复
 
@@ -707,7 +709,7 @@ worker 以 `max(old_expiry, now + lease_extension)` 续期。**TTL 重定位不�
 
 `Scheduler.reset_connector_cache` 只把显式 `False` 视为失败；基类 `KVConnectorBase_V1.reset_cache` 不实现清理时返回 `None`，仍会被 Scheduler 视为成功。`EngineCore._reset_caches` 又未消费 `reset_prefix_cache` 的 bool。因此 pause 完成或通用 reset 返回不能证明任意外部 KV 存储已经清空。
 
-Mooncake 是显式实现的例子：`MooncakeStoreConnector.reset_cache` 转到 `MooncakeStoreScheduler.reset_store`，经 rank 0 admin 通道请求 `remove_all(force=True)`，等待 ACK/NACK。它要求调用者事先消除在途 lookup/transfer，并阻止新 put；否则 reset 与旧写入/查询交错仍可重引入陈旧状态。这是该 connector 的实现边界，不是外部 store 的普遍保证。
+Mooncake 是显式实现的例子：`MooncakeStoreConnector.reset_cache` 转到 `MooncakeStoreScheduler.reset_store`，经 rank 0 admin 通道请求 `remove_all(force=True)`，等待 ACK/NACK。rank 0 的 `LookupKeyServer` 丢弃 `remove_all` 的返回码（Mooncake 以负错误码而不是异常报告失败），只有 Python 异常才回 NACK，所以 ACK 只说明调用没有抛异常，不证明 store 已经清空；它先排空的也只是 rank 0 的发送队列，调用方的暂停仍然必要（见 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §4.5）。它要求调用者事先消除在途 lookup/transfer，并阻止新 put；否则 reset 与旧写入/查询交错仍可重引入陈旧状态。这是该 connector 的实现边界，不是外部 store 的普遍保证。
 
 最后，HTTP 请求集合为空也不能让后台债务停摆。`KVConnectorBase_V1.has_pending_push_work` 的 TODO 是改为更通用的 keep-alive hook；当前 push 依赖它推进收尾，Mooncake store 则在 `_pinned_saves` 非空时返回 true，以便 worker completion 在后续 step 返回 Scheduler。源码并未承诺未来统一全部 completion 驱动。异步 load 的容量预留和 0-token hooks 都属于同一个要求：**等待 I/O 的状态仍需要被执行系统推进**。
 
@@ -786,7 +788,7 @@ extra 键决定的是前文已经展开的机制：NIXL 用 lease、反向复用
 | 键 | 默认 | 读取点 | 语义 |
 |---|---|---|---|
 | `num_workers` | `10` | `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py::MooncakeConnectorWorker.__init__` | P 侧发送线程数；任务数取其 2 倍 |
-| `mooncake_protocol` | `"rdma"` | 同上 | Mooncake 传输引擎协议 |
+| `mooncake_protocol` | `"rdma"` | 同上 | 传给 `TransferEngine.initialize`。标准 wheel 上不选择传输（由硬件自动发现与 `MC_FORCE_TCP` 等环境变量决定），非法值只会让初始化失败；EFA wheel 上 `"efa"` 装 EFA、其余值只装 TCP。详见 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §2.2 |
 | `device_name` | `""` | 同上 | 传输设备名 |
 
 **Mooncake store（12 键，读法 b 与 c）**
@@ -1022,7 +1024,7 @@ P/D 分离能否改善端到端表现，要看被隔离掉的排队干扰是否�
 | `kv_transfer_params` | 它的键集合、谁产生、拒绝后怎样清理 | 请求语义层怎样携带与回传它 → **03** |
 | forward 上下文内的绑定与收取 | 协议：三个挂点与 spec 时的延后 finalize | 两代 Runner 各自的批组装与设备执行 → **11 / 12** |
 | **EPD/encoder-only 的部署拓扑整体** | 无（只登记） | `mm_processor_device="auto"` 的角色解析、EC connector 工厂角色划分——**本域仍无 owner**，与 `15:§9.4` 的空白登记互指 |
-| **`examples/disaggregated/` 的 proxy/router 参考实现** | 无（只登记） | **本域暂无 owner**，已提交 `planning-codebase-analysis`；候选归属 13，但基线下 13 未展开，§2 与 §14 的措辞与此一致 |
+| **`examples/disaggregated/` 的 proxy/router 参考实现** | 无（只登记） | **本域暂无 owner**，已提交 `planning-codebase-analysis`；候选归属 13，但基线下 13 未展开，§2 与 §14 的措辞与此一致。其中 Mooncake 示例 proxy（`examples/disaggregated/mooncake_connector/`）已由 [[20_mooncake_vllm_integration_analysis|Mooncake 的 vLLM 集成]] §9.1 展开 |
 
 ### 14.5 注册名与扩展入口
 

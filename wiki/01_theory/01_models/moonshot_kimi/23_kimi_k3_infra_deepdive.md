@@ -7,7 +7,7 @@ title: "Kimi K3 训推基础设施深析：结构、训练与推理如何共同�
 > **来源基线**：
 > - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页）与本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`。
 > - K2 训练基础设施基线：arXiv 2507.20534（本库 `raw/01_theory/01_models/moonshot_kimi/Kimi_K2-2507.20534.md`，见 [[11_kimi_k2_analysis]]）；K2 Thinking INT4：Hugging Face 上的 `moonshotai/Kimi-K2-Thinking` 模型卡。
-> - Mooncake：`kvcache-ai/Mooncake` README（FAST'25 Best Paper，见 [[mooncake_analysis]]）；vLLM：issue #26201 与 PR #27654、#42406、#44539、#44848、#43833（通过 GitHub API 核实合入状态）；FlashKDA：`MoonshotAI/FlashKDA@d2ff19a` 与 MarkTechPost 2026-04-30 报道。
+> - Mooncake：`kvcache-ai/Mooncake` README（FAST'25 Best Paper，见 [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]]）；vLLM：issue #26201 与 PR #27654、#42406、#44539、#44848、#43833（通过 GitHub API 核实合入状态）；FlashKDA：`MoonshotAI/FlashKDA@d2ff19a` 与 MarkTechPost 2026-04-30 报道。
 > - OCP MX 格式：OCP Microscaling Formats v1.0 规范（经解读页逐条核对）。
 > **标记**：`[官方]` 表示第一手材料，`[三方]` 表示第三方来源，`[推断]` 表示基于已核实事实的推理。
 > **更新**：2026-07-28，回填正式技术报告中的 Per-Head Muon、MoonEP、全后训练 QAT、KDA Context Parallelism 与统一 cache layout；§四保留为报告发布前的敏感性分析档案，不再作为 K3 容量规划依据。
@@ -74,8 +74,8 @@ K3 的“约 2.5×”来自正式报告 Figure 7 的 held-out OOD validation los
 
 ![Mooncake 分离式推理示意：KVCache 感知调度器按缓存位置分派请求；Prefill 集群负责算力密集的上下文处理，Decode 集群负责带宽密集的逐 token 解码，两者经 Transfer Engine 迁移缓存；Mooncake Store 将 CPU、DRAM 和 SSD 池化为多级缓存。K3 官方 API 在 coding 负载下的缓存命中率超过 90%。](assets/kimi_k3_fig_mooncake.png)
 
-- **定位。** Mooncake 官方将其定义为“以 KVCache 为中心的分离式 LLM Serving 架构”，并明确说明 Mooncake 是 Kimi 的 serving platform。相关论文获得 FAST'25 Best Paper，机制详见 [[mooncake_analysis]]。
-- **机制。** Prefill 与 Decode 使用不同集群；闲置 CPU、DRAM 和 SSD 被池化为分离式 KVCache；Transfer Engine 负责跨层级、跨节点迁移缓存。Mooncake README 报告，真实负载下在相同 SLO 约束内可多承载 75% 请求，并曾支持 128 × H200 的 Prefill/Decode 分离部署。
+- **定位。** Mooncake 官方将其定义为“以 KVCache 为中心的分离式 LLM Serving 架构”，并明确说明 Mooncake 是 Kimi 的 serving platform。相关论文获得 FAST'25 Best Paper，机制详见 [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]]。
+- **机制。** Prefill 与 Decode 使用不同集群；闲置 CPU、DRAM 和 SSD 被池化为分离式 KVCache；Transfer Engine 负责跨层级、跨节点迁移缓存。Mooncake README 报告，真实负载下在相同 SLO 约束内可多承载 75% 请求，并曾支持 128 × H200 的 Prefill/Decode 分离部署。75% 出自 arXiv v1 的重放实验；FAST'25 版改报 Kimi 生产统计，A800 集群多处理 115%、H800 集群多处理 107% 请求，两组数字的条件见 [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]] §4.3。
 - **K3 的落点。** 官方博客称，Mooncake 支撑的 Kimi API 在 coding 负载下缓存命中率超过 90%（博客 `:223-227`）。按恰好 90% 命中估算：
 
 $$
@@ -286,7 +286,7 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 - [[26_kimi_k3_open_source_stack_analysis]] — K3 开源栈全景与各仓证据等级
 - [[25_kimi_k3_stability_analysis]] — 七条失稳轴的横切(Per-Head Muon、QB、SiTU、QAT 在其中的位置)
 - [[24_kimi_k3_posttraining_case_study_analysis]] — D12：K3 后训练与 1M Agentic RL 统一案例
-- [[mooncake_analysis]] — Mooncake 论文级分析(FAST'25)
+- [[01_mooncake_architecture_overview_analysis|Mooncake 架构总览]] — Mooncake 开源实现的分层架构，以及论文设计哪些进入了开源代码
 - [[11_kimi_k2_analysis]] — K2 的 MuonClip 与训练系统基线
 - [[13_kimi_k2_5_analysis]] — K2.5(INT4 沿用、Agent Swarm)
 - [[12_kimi_linear_analysis]] — KDA 的效率证据与 vLLM day-0 集成
