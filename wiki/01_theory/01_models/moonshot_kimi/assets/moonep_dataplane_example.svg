@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="960" viewBox="0 0 1120 960"><title>MoonEP 数据面与权重面算例</title><desc>沿用 planning 算例：每对 rank 的条目数、rank 0 八行的来源与到达方式，以及专家权重的前向推送与梯度回收。</desc><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#2A313B;font-size:18px}.neutral{fill:#fff;stroke:#C7CCD3}.ghost{fill:#F7F6F3;stroke:#DDD9D2}.acc1{fill:#EAF1FD;stroke:#2563EB}.acc2{fill:#FCF1E6;stroke:#C3651F}.cap{font-size:17px;fill:#6B7280}.heading{font-size:22px;font-weight:600}.title{font-size:25px;font-weight:600}.t1{fill:#2563EB;font-weight:600}.t2{fill:#C3651F;font-weight:600}.mono{font-family:Menlo,Consolas,monospace;font-size:17px}.fwd{stroke:#2563EB;stroke-width:2.5;fill:none}.bwd{stroke:#C3651F;stroke-width:2;fill:none;stroke-dasharray:6 4}</style><defs><marker id="a1" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9" fill="#2563EB"/></marker><marker id="a2" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9" fill="#C3651F"/></marker></defs><rect width="1120" height="960" fill="white"/>
+<text x="30" y="38" class="title" text-anchor="start">同一算例的数据面：token 行与专家权重怎样在 4 个 rank 之间移动</text>
+<text x="30" y="84" class="heading" text-anchor="start">① 每对 rank 的条目数（含重复）</text>
+<rect x="110" y="104" width="78" height="42" class="ghost"/>
+<text x="149" y="132" class="" text-anchor="middle">→ r0</text>
+<rect x="188" y="104" width="78" height="42" class="ghost"/>
+<text x="227" y="132" class="" text-anchor="middle">→ r1</text>
+<rect x="266" y="104" width="78" height="42" class="ghost"/>
+<text x="305" y="132" class="" text-anchor="middle">→ r2</text>
+<rect x="344" y="104" width="78" height="42" class="ghost"/>
+<text x="383" y="132" class="" text-anchor="middle">→ r3</text>
+<rect x="422" y="104" width="78" height="42" class="ghost"/>
+<text x="461" y="132" class="" text-anchor="middle">发出</text>
+<text x="30" y="174" class="" text-anchor="start">src0</text>
+<rect x="110" y="146" width="78" height="42" class="ghost"/>
+<text x="149" y="174" class="" text-anchor="middle">5</text>
+<rect x="188" y="146" width="78" height="42" class="neutral"/>
+<text x="227" y="174" class="" text-anchor="middle">3</text>
+<rect x="266" y="146" width="78" height="42" class="neutral"/>
+<text x="305" y="174" class="" text-anchor="middle">0</text>
+<rect x="344" y="146" width="78" height="42" class="neutral"/>
+<text x="383" y="174" class="" text-anchor="middle">0</text>
+<rect x="422" y="146" width="78" height="42" class="neutral"/>
+<text x="461" y="174" class="" text-anchor="middle">8</text>
+<text x="30" y="216" class="" text-anchor="start">src1</text>
+<rect x="110" y="188" width="78" height="42" class="neutral"/>
+<text x="149" y="216" class="" text-anchor="middle">2</text>
+<rect x="188" y="188" width="78" height="42" class="ghost"/>
+<text x="227" y="216" class="" text-anchor="middle">2</text>
+<rect x="266" y="188" width="78" height="42" class="neutral"/>
+<text x="305" y="216" class="" text-anchor="middle">2</text>
+<rect x="344" y="188" width="78" height="42" class="neutral"/>
+<text x="383" y="216" class="" text-anchor="middle">2</text>
+<rect x="422" y="188" width="78" height="42" class="neutral"/>
+<text x="461" y="216" class="" text-anchor="middle">8</text>
+<text x="30" y="258" class="" text-anchor="start">src2</text>
+<rect x="110" y="230" width="78" height="42" class="neutral"/>
+<text x="149" y="258" class="" text-anchor="middle">1</text>
+<rect x="188" y="230" width="78" height="42" class="neutral"/>
+<text x="227" y="258" class="" text-anchor="middle">1</text>
+<rect x="266" y="230" width="78" height="42" class="ghost"/>
+<text x="305" y="258" class="" text-anchor="middle">3</text>
+<rect x="344" y="230" width="78" height="42" class="neutral"/>
+<text x="383" y="258" class="" text-anchor="middle">3</text>
+<rect x="422" y="230" width="78" height="42" class="neutral"/>
+<text x="461" y="258" class="" text-anchor="middle">8</text>
+<text x="30" y="300" class="" text-anchor="start">src3</text>
+<rect x="110" y="272" width="78" height="42" class="neutral"/>
+<text x="149" y="300" class="" text-anchor="middle">0</text>
+<rect x="188" y="272" width="78" height="42" class="neutral"/>
+<text x="227" y="300" class="" text-anchor="middle">2</text>
+<rect x="266" y="272" width="78" height="42" class="neutral"/>
+<text x="305" y="300" class="" text-anchor="middle">3</text>
+<rect x="344" y="272" width="78" height="42" class="ghost"/>
+<text x="383" y="300" class="" text-anchor="middle">3</text>
+<rect x="422" y="272" width="78" height="42" class="neutral"/>
+<text x="461" y="300" class="" text-anchor="middle">8</text>
+<text x="30" y="342" class="" text-anchor="start">接收</text>
+<rect x="110" y="314" width="78" height="42" class="acc1"/>
+<text x="149" y="342" class="t1" text-anchor="middle">8</text>
+<rect x="188" y="314" width="78" height="42" class="acc1"/>
+<text x="227" y="342" class="t1" text-anchor="middle">8</text>
+<rect x="266" y="314" width="78" height="42" class="acc1"/>
+<text x="305" y="342" class="t1" text-anchor="middle">8</text>
+<rect x="344" y="314" width="78" height="42" class="acc1"/>
+<text x="383" y="342" class="t1" text-anchor="middle">8</text>
+<text x="30" y="392" class="t1" text-anchor="start">接收合计恒为 S·K=8：接收 buffer 按它的上界一次分配</text>
+<text x="30" y="418" class="t2" text-anchor="start">单元格随路由变化：只存在于 GPU 上的 dst 里，host 不需要</text>
+<text x="30" y="454" class="mono" text-anchor="start">dispatch 写出的 hidden 行 6 / 7 / 8 / 8</text>
+<text x="30" y="480" class="mono" text-anchor="start">其中跨 NVLink 到达   3 / 5 / 5 / 5</text>
+<text x="30" y="506" class="cap" text-anchor="start">灰格是 src = dest 的本地写</text>
+<text x="580" y="84" class="heading" text-anchor="start">② rank 0 的 8 行：谁写、怎样到达</text>
+<rect x="580" y="104" width="110" height="38" class="ghost"/>
+<text x="590" y="130" class="" text-anchor="start">行 0 · e0</text>
+<rect x="690" y="104" width="200" height="38" class="neutral"/>
+<text x="700" y="130" class="" text-anchor="start">src0 token 0（k=0）</text>
+<rect x="890" y="104" width="190" height="38" class="neutral"/>
+<text x="900" y="130" class="" text-anchor="start">本地写</text>
+<rect x="580" y="146" width="110" height="38" class="ghost"/>
+<text x="590" y="172" class="" text-anchor="start">行 1 · e0</text>
+<rect x="690" y="146" width="200" height="38" class="neutral"/>
+<text x="700" y="172" class="" text-anchor="start">src0 token 1（k=0）</text>
+<rect x="890" y="146" width="190" height="38" class="neutral"/>
+<text x="900" y="172" class="" text-anchor="start">本地写</text>
+<rect x="580" y="188" width="110" height="38" class="ghost"/>
+<text x="590" y="214" class="" text-anchor="start">行 2 · e0</text>
+<rect x="690" y="188" width="200" height="38" class="neutral"/>
+<text x="700" y="214" class="" text-anchor="start">src0 token 2（k=0）</text>
+<rect x="890" y="188" width="190" height="38" class="neutral"/>
+<text x="900" y="214" class="" text-anchor="start">本地写</text>
+<rect x="580" y="230" width="110" height="38" class="ghost"/>
+<text x="590" y="256" class="" text-anchor="start">行 3 · e0</text>
+<rect x="690" y="230" width="200" height="38" class="neutral"/>
+<text x="700" y="256" class="" text-anchor="start">src1 token 0（k=0）</text>
+<rect x="890" y="230" width="190" height="38" class="acc1"/>
+<text x="900" y="256" class="t1" text-anchor="start">NVLink 直写</text>
+<rect x="580" y="272" width="110" height="38" class="ghost"/>
+<text x="590" y="298" class="" text-anchor="start">行 4 · e1</text>
+<rect x="690" y="272" width="200" height="38" class="neutral"/>
+<text x="700" y="298" class="" text-anchor="start">src0 token 0（k=1）</text>
+<rect x="890" y="272" width="190" height="38" class="acc2"/>
+<text x="900" y="298" class="t2" text-anchor="start">epilogue 复制行 0</text>
+<rect x="580" y="314" width="110" height="38" class="ghost"/>
+<text x="590" y="340" class="" text-anchor="start">行 5 · e1</text>
+<rect x="690" y="314" width="200" height="38" class="neutral"/>
+<text x="700" y="340" class="" text-anchor="start">src0 token 2（k=1）</text>
+<rect x="890" y="314" width="190" height="38" class="acc2"/>
+<text x="900" y="340" class="t2" text-anchor="start">epilogue 复制行 2</text>
+<rect x="580" y="356" width="110" height="38" class="ghost"/>
+<text x="590" y="382" class="" text-anchor="start">行 6 · e1</text>
+<rect x="690" y="356" width="200" height="38" class="neutral"/>
+<text x="700" y="382" class="" text-anchor="start">src1 token 2（k=0）</text>
+<rect x="890" y="356" width="190" height="38" class="acc1"/>
+<text x="900" y="382" class="t1" text-anchor="start">NVLink 直写</text>
+<rect x="580" y="398" width="110" height="38" class="ghost"/>
+<text x="590" y="424" class="" text-anchor="start">行 7 · e1</text>
+<rect x="690" y="398" width="200" height="38" class="neutral"/>
+<text x="700" y="424" class="" text-anchor="start">src2 token 2（k=0）</text>
+<rect x="890" y="398" width="190" height="38" class="acc1"/>
+<text x="900" y="424" class="t1" text-anchor="start">NVLink 直写</text>
+<text x="580" y="470" class="t2" text-anchor="start">combine 反向：prologue 把行 4 加进行 0、行 5 加进行 2，</text>
+<text x="580" y="496" class="t2" text-anchor="start">再由各 source rank 只读回代表行：</text>
+<text x="580" y="522" class="mono" text-anchor="start">src0 本地读行 0、1、2</text>
+<text x="580" y="546" class="mono" text-anchor="start">src1 远端读行 3、6</text>
+<text x="580" y="570" class="mono" text-anchor="start">src2 远端读行 7</text>
+<text x="30" y="604" class="heading" text-anchor="start">③ 权重面：每 rank 的计算视图是 2·epn = 4 行（本地 g0、g1 + 预取槽 g2、g3）</text>
+<text x="156" y="644" class="cap" text-anchor="middle">g0</text>
+<text x="248" y="644" class="cap" text-anchor="middle">g1</text>
+<text x="340" y="644" class="cap" text-anchor="middle">g2 槽0</text>
+<text x="432" y="644" class="cap" text-anchor="middle">g3 槽1</text>
+<text x="30" y="683" class="" text-anchor="start">rank 0</text>
+<rect x="110" y="656" width="92" height="40" class="neutral"/>
+<text x="156" y="683" class="" text-anchor="middle">e0</text>
+<rect x="202" y="656" width="92" height="40" class="neutral"/>
+<text x="248" y="683" class="" text-anchor="middle">e1</text>
+<rect x="294" y="656" width="92" height="40" class="ghost"/>
+<text x="340" y="683" class="cap" text-anchor="middle">空</text>
+<rect x="386" y="656" width="92" height="40" class="ghost"/>
+<text x="432" y="683" class="cap" text-anchor="middle">空</text>
+<text x="30" y="733" class="" text-anchor="start">rank 1</text>
+<rect x="110" y="706" width="92" height="40" class="neutral"/>
+<text x="156" y="733" class="" text-anchor="middle">e2</text>
+<rect x="202" y="706" width="92" height="40" class="neutral"/>
+<text x="248" y="733" class="" text-anchor="middle">e3</text>
+<rect x="294" y="706" width="92" height="40" class="acc1"/>
+<text x="340" y="733" class="" text-anchor="middle">e1</text>
+<rect x="386" y="706" width="92" height="40" class="ghost"/>
+<text x="432" y="733" class="cap" text-anchor="middle">空</text>
+<text x="30" y="783" class="" text-anchor="start">rank 2</text>
+<rect x="110" y="756" width="92" height="40" class="neutral"/>
+<text x="156" y="783" class="" text-anchor="middle">e4</text>
+<rect x="202" y="756" width="92" height="40" class="neutral"/>
+<text x="248" y="783" class="" text-anchor="middle">e5</text>
+<rect x="294" y="756" width="92" height="40" class="acc1"/>
+<text x="340" y="783" class="" text-anchor="middle">e2</text>
+<rect x="386" y="756" width="92" height="40" class="ghost"/>
+<text x="432" y="783" class="cap" text-anchor="middle">空</text>
+<text x="30" y="833" class="" text-anchor="start">rank 3</text>
+<rect x="110" y="806" width="92" height="40" class="neutral"/>
+<text x="156" y="833" class="" text-anchor="middle">e6</text>
+<rect x="202" y="806" width="92" height="40" class="neutral"/>
+<text x="248" y="833" class="" text-anchor="middle">e7</text>
+<rect x="294" y="806" width="92" height="40" class="acc1"/>
+<text x="340" y="833" class="" text-anchor="middle">e0</text>
+<rect x="386" y="806" width="92" height="40" class="ghost"/>
+<text x="432" y="833" class="cap" text-anchor="middle">空</text>
+<rect x="520" y="660" width="190" height="40" class="neutral"/>
+<text x="530" y="687" class="" text-anchor="start">rank 0 本地 e1（g1）</text>
+<rect x="900" y="660" width="180" height="40" class="acc1"/>
+<text x="910" y="687" class="" text-anchor="start">rank 1 槽 0（g2）</text>
+<path d="M716 674H892" class="fwd" marker-end="url(#a1)"/>
+<path d="M894 690H718" class="bwd" marker-end="url(#a2)"/>
+<rect x="520" y="724" width="190" height="40" class="neutral"/>
+<text x="530" y="751" class="" text-anchor="start">rank 1 本地 e2（g0）</text>
+<rect x="900" y="724" width="180" height="40" class="acc1"/>
+<text x="910" y="751" class="" text-anchor="start">rank 2 槽 0（g2）</text>
+<path d="M716 738H892" class="fwd" marker-end="url(#a1)"/>
+<path d="M894 754H718" class="bwd" marker-end="url(#a2)"/>
+<rect x="520" y="788" width="190" height="40" class="neutral"/>
+<text x="530" y="815" class="" text-anchor="start">rank 0 本地 e0（g0）</text>
+<rect x="900" y="788" width="180" height="40" class="acc1"/>
+<text x="910" y="815" class="" text-anchor="start">rank 3 槽 0（g2）</text>
+<path d="M716 802H892" class="fwd" marker-end="url(#a1)"/>
+<path d="M894 818H718" class="bwd" marker-end="url(#a2)"/>
+<path d="M520 638H560" class="fwd" marker-end="url(#a1)"/>
+<text x="568" y="644" class="t1" text-anchor="start">前向：读 1 次、推送</text>
+<path d="M850 638H810" class="bwd" marker-end="url(#a2)"/>
+<text x="858" y="644" class="t2" text-anchor="start">反向：远端读回槽梯度</text>
+<text x="30" y="886" class="t1" text-anchor="start">前向：所有者按 experts_to_copy 把本地专家推到目标槽，一个 tile 读 1 次、扇出到全部目标；共 3 份</text>
+<text x="30" y="914" class="t2" text-anchor="start">反向：所有者远端读各槽梯度、加进本地参数梯度；barrier 后每个目标 rank 在本地清零自己被读过的槽</text>
+<text x="30" y="946" class="cap" text-anchor="start">每 rank 恰算 8 个 token；不变的是 buffer 与视图形状，变化的只有 dst、cu_seqlens 与 experts_to_copy 的取值</text>
+</svg>

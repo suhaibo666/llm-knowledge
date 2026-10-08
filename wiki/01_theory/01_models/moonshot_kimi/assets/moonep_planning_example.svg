@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="900" viewBox="0 0 1120 900"><title>MoonEP planning 五步算例</title><desc>R=4、epn=2、每 rank 容量 S·K=8：从全局直方图到每 rank 恰好 8 个 token 的 VM 布局与条目落点。</desc><style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#2A313B;font-size:18px}.neutral{fill:#fff;stroke:#C7CCD3}.ghost{fill:#F7F6F3;stroke:#DDD9D2}.acc1{fill:#EAF1FD;stroke:#2563EB}.acc2{fill:#FCF1E6;stroke:#C3651F}.hot{fill:none;stroke:#C3651F;stroke-width:3.5}.sep{stroke:#2A313B;stroke-width:2.5}.cap{font-size:17px;fill:#6B7280}.heading{font-size:22px;font-weight:600}.title{font-size:25px;font-weight:600}.t1{fill:#2563EB;font-weight:600}.t2{fill:#C3651F;font-weight:600}.mono{font-family:Menlo,Consolas,monospace;font-size:17px}.small{font-size:12px}</style><rect width="1120" height="900" fill="white"/>
+<text x="30" y="38" class="title" text-anchor="start">MoonEP planning 算例：R=4、epn=2、E=8，每 rank 容量 CAP = S·K = 8</text>
+<text x="30" y="84" class="heading" text-anchor="start">① Step 1  home group 负载 vs CAP</text>
+<rect x="120" y="150" width="72" height="90" class="acc2"/>
+<rect x="120" y="225" width="72" height="135" class="neutral" fill-opacity="0"/>
+<rect x="120" y="150" width="72" height="75" class="neutral" fill-opacity="0"/>
+<rect x="228" y="210" width="72" height="30" class="acc2"/>
+<rect x="228" y="255" width="72" height="105" class="neutral" fill-opacity="0"/>
+<rect x="228" y="210" width="72" height="45" class="neutral" fill-opacity="0"/>
+<rect x="336" y="240" width="72" height="45" class="ghost" stroke-dasharray="5 4"/>
+<rect x="336" y="315" width="72" height="45" class="neutral" fill-opacity="0"/>
+<rect x="336" y="285" width="72" height="30" class="neutral" fill-opacity="0"/>
+<rect x="444" y="240" width="72" height="75" class="ghost" stroke-dasharray="5 4"/>
+<rect x="444" y="330" width="72" height="30" class="neutral" fill-opacity="0"/>
+<rect x="444" y="315" width="72" height="15" class="neutral" fill-opacity="0"/>
+<line x1="30" y1="240" x2="540" y2="240" stroke="#2563EB" stroke-width="2" stroke-dasharray="8 5"/>
+<text x="156" y="306" class="" text-anchor="middle">e0·9</text>
+<text x="156" y="193.5" class="" text-anchor="middle">e1·5</text>
+<text x="156" y="140" class="t2" text-anchor="middle">+6</text>
+<text x="156" y="386" class="" text-anchor="middle">rank 0</text>
+<text x="156" y="408" class="cap" text-anchor="middle">14</text>
+<text x="264" y="313.5" class="" text-anchor="middle">e2·7</text>
+<text x="264" y="231" class="" text-anchor="middle">e3·3</text>
+<text x="264" y="200" class="t2" text-anchor="middle">+2</text>
+<text x="264" y="386" class="" text-anchor="middle">rank 1</text>
+<text x="264" y="408" class="cap" text-anchor="middle">10</text>
+<text x="372" y="343.5" class="" text-anchor="middle">e4·3</text>
+<text x="372" y="306" class="" text-anchor="middle">e5·2</text>
+<text x="372" y="230" class="t1" text-anchor="middle">-3</text>
+<text x="372" y="386" class="" text-anchor="middle">rank 2</text>
+<text x="372" y="408" class="cap" text-anchor="middle">5</text>
+<text x="480" y="351" class="" text-anchor="middle">e6·2</text>
+<text x="480" y="326.5" class="small" text-anchor="middle">e7·1</text>
+<text x="480" y="230" class="t1" text-anchor="middle">-5</text>
+<text x="480" y="386" class="" text-anchor="middle">rank 3</text>
+<text x="480" y="408" class="cap" text-anchor="middle">3</text>
+<text x="30" y="232" class="t1" text-anchor="start">CAP=8</text>
+<text x="30" y="434" class="cap" text-anchor="start">Σ balance = 0：全局条目数恰为 R·CAP</text>
+<text x="580" y="84" class="heading" text-anchor="start">② Step 2  每轮把最空的 rank 一次填满</text>
+<rect x="580" y="102" width="50" height="38" class="ghost"/>
+<text x="590" y="128" class="" text-anchor="start">轮</text>
+<rect x="630" y="102" width="90" height="38" class="ghost"/>
+<text x="640" y="128" class="" text-anchor="start">h 最满</text>
+<rect x="720" y="102" width="90" height="38" class="ghost"/>
+<text x="730" y="128" class="" text-anchor="start">u 最空</text>
+<rect x="810" y="102" width="70" height="38" class="ghost"/>
+<text x="820" y="128" class="" text-anchor="start">move</text>
+<rect x="880" y="102" width="210" height="38" class="ghost"/>
+<text x="890" y="128" class="" text-anchor="start">balance</text>
+<rect x="580" y="140" width="50" height="40" class="neutral"/>
+<text x="590" y="167" class="" text-anchor="start">初始</text>
+<rect x="630" y="140" width="90" height="40" class="neutral"/>
+<text x="640" y="167" class="" text-anchor="start"></text>
+<rect x="720" y="140" width="90" height="40" class="neutral"/>
+<text x="730" y="167" class="" text-anchor="start"></text>
+<rect x="810" y="140" width="70" height="40" class="neutral"/>
+<text x="820" y="167" class="" text-anchor="start"></text>
+<rect x="880" y="140" width="210" height="40" class="neutral"/>
+<text x="890" y="167" class="mono" text-anchor="start">[6, 2, -3, -5]</text>
+<rect x="580" y="180" width="50" height="40" class="neutral"/>
+<text x="590" y="207" class="" text-anchor="start">1</text>
+<rect x="630" y="180" width="90" height="40" class="neutral"/>
+<text x="640" y="207" class="" text-anchor="start">0</text>
+<rect x="720" y="180" width="90" height="40" class="neutral"/>
+<text x="730" y="207" class="" text-anchor="start">3</text>
+<rect x="810" y="180" width="70" height="40" class="neutral"/>
+<text x="820" y="207" class="" text-anchor="start">5</text>
+<rect x="880" y="180" width="210" height="40" class="neutral"/>
+<text x="890" y="207" class="mono" text-anchor="start">[1, 2, -3, 0]</text>
+<rect x="580" y="220" width="50" height="40" class="neutral"/>
+<text x="590" y="247" class="" text-anchor="start">2</text>
+<rect x="630" y="220" width="90" height="40" class="neutral"/>
+<text x="640" y="247" class="" text-anchor="start">1</text>
+<rect x="720" y="220" width="90" height="40" class="neutral"/>
+<text x="730" y="247" class="" text-anchor="start">2</text>
+<rect x="810" y="220" width="70" height="40" class="neutral"/>
+<text x="820" y="247" class="" text-anchor="start">3</text>
+<rect x="880" y="220" width="210" height="40" class="acc2"/>
+<text x="890" y="247" class="mono" text-anchor="start">[1, -1, 0, 0]</text>
+<rect x="580" y="260" width="50" height="40" class="neutral"/>
+<text x="590" y="287" class="" text-anchor="start">3</text>
+<rect x="630" y="260" width="90" height="40" class="neutral"/>
+<text x="640" y="287" class="" text-anchor="start">0</text>
+<rect x="720" y="260" width="90" height="40" class="neutral"/>
+<text x="730" y="287" class="" text-anchor="start">1</text>
+<rect x="810" y="260" width="70" height="40" class="neutral"/>
+<text x="820" y="287" class="" text-anchor="start">1</text>
+<rect x="880" y="260" width="210" height="40" class="neutral"/>
+<text x="890" y="287" class="mono" text-anchor="start">[0, 0, 0, 0]</text>
+<text x="580" y="330" class="t2" text-anchor="start">第 2 轮 rank 1 发出 3 > 盈余 2：翻为 -1，</text>
+<text x="580" y="354" class="t2" text-anchor="start">下一轮改作接收方（发送方也可能接收）</text>
+<text x="580" y="388" class="t1" text-anchor="start">u 被置 0 后不再变化 ⇒ 每个 rank 至多被选作</text>
+<text x="580" y="412" class="t1" text-anchor="start">接收方一次，只从一个 home group 收 token</text>
+<text x="580" y="434" class="cap" text-anchor="start">迁移 9 个，下界 Σ正 balance = 8</text>
+<text x="30" y="490" class="heading" text-anchor="start">③ Step 3  配额摊到本地剩余最多的专家</text>
+<text x="580" y="490" class="heading" text-anchor="start">④ Step 4  每 rank 的 2·epn 个 VM 组</text>
+<text x="30" y="520" class="mono" text-anchor="start">z[0,3]=5 → e0；z[0,1]=1 → e1；z[1,2]=3 → e2</text>
+<text x="120" y="554" class="cap" text-anchor="start">← 8 个 token 槽（物理行号 0…7）→</text>
+<text x="640" y="554" class="cap" text-anchor="start">experts_to_copy</text>
+<text x="840" y="554" class="cap" text-anchor="start">cu_seqlens</text>
+<text x="30" y="595" class="" text-anchor="start">rank 0</text>
+<rect x="120" y="566" width="58" height="44" class="neutral"/>
+<text x="149" y="595" class="" text-anchor="middle">e0</text>
+<rect x="178" y="566" width="58" height="44" class="neutral"/>
+<text x="207" y="595" class="" text-anchor="middle">e0</text>
+<rect x="236" y="566" width="58" height="44" class="neutral"/>
+<text x="265" y="595" class="" text-anchor="middle">e0</text>
+<rect x="294" y="566" width="58" height="44" class="neutral"/>
+<text x="323" y="595" class="" text-anchor="middle">e0</text>
+<rect x="352" y="566" width="58" height="44" class="neutral"/>
+<text x="381" y="595" class="" text-anchor="middle">e1</text>
+<rect x="410" y="566" width="58" height="44" class="neutral"/>
+<text x="439" y="595" class="" text-anchor="middle">e1</text>
+<rect x="468" y="566" width="58" height="44" class="neutral"/>
+<text x="497" y="595" class="" text-anchor="middle">e1</text>
+<rect x="526" y="566" width="58" height="44" class="neutral"/>
+<text x="555" y="595" class="" text-anchor="middle">e1</text>
+<line x1="352" y1="562" x2="352" y2="614" class="sep"/>
+<rect x="296" y="568" width="54" height="40" class="hot"/>
+<text x="640" y="595" class="mono" text-anchor="start">[-1, -1]</text>
+<text x="840" y="595" class="mono" text-anchor="start">[4, 8, 8, 8]</text>
+<text x="30" y="655" class="" text-anchor="start">rank 1</text>
+<rect x="120" y="626" width="58" height="44" class="neutral"/>
+<text x="149" y="655" class="" text-anchor="middle">e2</text>
+<rect x="178" y="626" width="58" height="44" class="neutral"/>
+<text x="207" y="655" class="" text-anchor="middle">e2</text>
+<rect x="236" y="626" width="58" height="44" class="neutral"/>
+<text x="265" y="655" class="" text-anchor="middle">e2</text>
+<rect x="294" y="626" width="58" height="44" class="neutral"/>
+<text x="323" y="655" class="" text-anchor="middle">e2</text>
+<rect x="352" y="626" width="58" height="44" class="neutral"/>
+<text x="381" y="655" class="" text-anchor="middle">e3</text>
+<rect x="410" y="626" width="58" height="44" class="neutral"/>
+<text x="439" y="655" class="" text-anchor="middle">e3</text>
+<rect x="468" y="626" width="58" height="44" class="neutral"/>
+<text x="497" y="655" class="" text-anchor="middle">e3</text>
+<line x1="352" y1="622" x2="352" y2="674" class="sep"/>
+<rect x="526" y="626" width="58" height="44" class="acc1"/>
+<text x="555" y="655" class="" text-anchor="middle">e1</text>
+<line x1="526" y1="622" x2="526" y2="674" class="sep"/>
+<text x="640" y="655" class="mono" text-anchor="start">[1, -1]</text>
+<text x="840" y="655" class="mono" text-anchor="start">[4, 7, 8, 8]</text>
+<text x="30" y="715" class="" text-anchor="start">rank 2</text>
+<rect x="120" y="686" width="58" height="44" class="neutral"/>
+<text x="149" y="715" class="" text-anchor="middle">e4</text>
+<rect x="178" y="686" width="58" height="44" class="neutral"/>
+<text x="207" y="715" class="" text-anchor="middle">e4</text>
+<rect x="236" y="686" width="58" height="44" class="neutral"/>
+<text x="265" y="715" class="" text-anchor="middle">e4</text>
+<rect x="294" y="686" width="58" height="44" class="neutral"/>
+<text x="323" y="715" class="" text-anchor="middle">e5</text>
+<rect x="352" y="686" width="58" height="44" class="neutral"/>
+<text x="381" y="715" class="" text-anchor="middle">e5</text>
+<line x1="294" y1="682" x2="294" y2="734" class="sep"/>
+<rect x="410" y="686" width="58" height="44" class="acc1"/>
+<text x="439" y="715" class="" text-anchor="middle">e2</text>
+<rect x="468" y="686" width="58" height="44" class="acc1"/>
+<text x="497" y="715" class="" text-anchor="middle">e2</text>
+<rect x="526" y="686" width="58" height="44" class="acc1"/>
+<text x="555" y="715" class="" text-anchor="middle">e2</text>
+<line x1="410" y1="682" x2="410" y2="734" class="sep"/>
+<text x="640" y="715" class="mono" text-anchor="start">[2, -1]</text>
+<text x="840" y="715" class="mono" text-anchor="start">[3, 5, 8, 8]</text>
+<text x="30" y="775" class="" text-anchor="start">rank 3</text>
+<rect x="120" y="746" width="58" height="44" class="neutral"/>
+<text x="149" y="775" class="" text-anchor="middle">e6</text>
+<rect x="178" y="746" width="58" height="44" class="neutral"/>
+<text x="207" y="775" class="" text-anchor="middle">e6</text>
+<rect x="236" y="746" width="58" height="44" class="neutral"/>
+<text x="265" y="775" class="" text-anchor="middle">e7</text>
+<line x1="236" y1="742" x2="236" y2="794" class="sep"/>
+<rect x="294" y="746" width="58" height="44" class="acc1"/>
+<text x="323" y="775" class="" text-anchor="middle">e0</text>
+<rect x="352" y="746" width="58" height="44" class="acc1"/>
+<text x="381" y="775" class="" text-anchor="middle">e0</text>
+<rect x="410" y="746" width="58" height="44" class="acc1"/>
+<text x="439" y="775" class="" text-anchor="middle">e0</text>
+<rect x="468" y="746" width="58" height="44" class="acc1"/>
+<text x="497" y="775" class="" text-anchor="middle">e0</text>
+<rect x="526" y="746" width="58" height="44" class="acc1"/>
+<text x="555" y="775" class="" text-anchor="middle">e0</text>
+<line x1="294" y1="742" x2="294" y2="794" class="sep"/>
+<rect x="296" y="748" width="54" height="40" class="hot"/>
+<text x="640" y="775" class="mono" text-anchor="start">[0, -1]</text>
+<text x="840" y="775" class="mono" text-anchor="start">[2, 3, 8, 8]</text>
+<rect x="640" y="804" width="22" height="18" class="neutral"/>
+<text x="670" y="819" class="cap" text-anchor="start">本地专家组 g0、g1</text>
+<rect x="850" y="804" width="22" height="18" class="acc1"/>
+<text x="880" y="819" class="cap" text-anchor="start">预取槽 g2、g3</text>
+<text x="30" y="830" class="t2" text-anchor="start">⑤ src1 的两个 e0 条目全局序号 3、4，alloc_cumsum[e0]=[4, 4, 4, 9]：</text>
+<text x="30" y="856" class="t2" text-anchor="start">   → rank 0 行 3，rank 3 行 3（dst = 3·NvS + 3 = 27，NvS=8）；橙框即这两个落点</text>
+<text x="30" y="886" class="t1" text-anchor="start">每行恰好 8 个 token；每行的远端专家 ≤ epn=2 且来自同一 home group，所以 epn 个预取槽就够</text>
+</svg>

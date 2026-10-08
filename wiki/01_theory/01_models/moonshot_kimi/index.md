@@ -248,7 +248,7 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 | K3 后训练案例（kb-reorg P5 迁入,原 D12） | 官方报告 2026-07-28 | [[24_kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理的统一综合案例 |
 | K3 训练稳定性（横切报告 §2.3/§2.4/§2.5/§3.2/§3.3/§4.1.2/App. C） | 官方报告 2026-07-28 | [[25_kimi_k3_stability_analysis]] |
 | K3 开源栈全景（逐仓 GitHub API 核对） | 仓库快照 2026-07-28 | [[26_kimi_k3_open_source_stack_analysis]] |
-| MoonEP：动态冗余专家的全平衡 EP | `MoonEP@0f385f03` | [[27_moonep_analysis]] |
+| MoonEP：动态冗余专家的全平衡 EP | `MoonEP@33327eb9` | [[27_moonep_analysis]] |
 
 ---
 

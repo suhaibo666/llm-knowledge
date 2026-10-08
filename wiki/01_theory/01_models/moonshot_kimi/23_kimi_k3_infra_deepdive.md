@@ -265,7 +265,7 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 |---|---|---|
 | Per-Head Muon | Q/K/V momentum matrix 沿 head 维切分并分别做 Newton–Schulz；改善 head 间更新均衡与稳定性、略降 optimizer overhead（§2.5）。**与 K2 weight-clipping + QB 并用已由 §3.3 明确** | 联合消融、clip 阈值与触发频率、完整超参数与实现 |
 | Quantile Balancing | balanced assignment 推导、token/expert 两轴分位数更新、部署时 frozen bias + Top-k（§2.3.3；App. C） | trainer 代码、超参数、独立消融 |
-| MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | **✅ 已兑现（2026-07-28）**：七条说法逐条对上 `MoonEP@0f385f03` 源码，见 [[27_moonep_analysis]]。**仍缺**：K3 生产配置（896 选 16、实际 EP 度、卡型、跨节点）下的端到端数据——仓库基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 |
+| MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | **✅ 已兑现（2026-07-28）**：七条说法逐条对上 `MoonEP@0f385f03` 源码，2026-09-23 复核至 `33327eb9` 仍成立（冗余槽数已直接固定为 `E/R`），见 [[27_moonep_analysis]]。**仍缺**：K3 生产配置（896 选 16、实际 EP 度、卡型、跨节点）下的端到端数据——仓库基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 |
 | MXFP4/MXFP8 QAT | QAT 覆盖 SFT + RL；routed expert 权重 MXFP4、输入 MXFP8；rollout 与 training 同量化方案（§4.1.4） | fake/native quant 边界、trainer kernel、硬件和吞吐 |
 | 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | **AgentENV 已开源**（`kvcache-ai/AgentENV`，Rust/MIT，2026-07-23 建仓）：Firecracker microVM、overlaybd 按需镜像、memory ballooning、E2B 兼容 API，见 [[26_kimi_k3_open_source_stack_analysis]] §3.2。**仍缺**：核心 trainer/rollout 源码、生产配置与复现实验；详见 [[24_kimi_k3_posttraining_case_study_analysis\|D12]] |
 | K3 训练集群/成本 | 无任何可靠数字(TechCrunch 亦无)| 卡型、规模、token 数 |

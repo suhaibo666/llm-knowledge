@@ -57,7 +57,7 @@ K3 发布的官方口径是"开放的不止权重，还有背后的一部分栈�
 
 一句话：**它把 MoE 负载均衡从"训练期的软约束"改成"执行期的硬保证"——无论路由多偏，每个 rank 恰好收 `S×K` 个 token。** 做法是在线把热门 home group 的溢出 token 迁移到空闲 rank，并把对应专家权重预取过去（dynamic redundant experts）。
 
-这是本次开源里**信息量最大**的一个仓：K3 报告 §5.2.1 的七条项目级说法，在 `0f385f03` 这个 commit 里逐条找得到实现，包括那个只有读算法才知道为什么成立的结论——贪心"一次填满最空的接收方"意味着每个 rank 至多从**一个**远端 home group 接收，因此训练时 `B = E/R` 的冗余槽就够。
+这是本次开源里**信息量最大**的一个仓：K3 报告 §5.2.1 的七条项目级说法，在 `0f385f03` 这个 commit 里逐条找得到实现，包括那个只有读算法才知道为什么成立的结论——贪心"一次填满最空的接收方"意味着每个 rank 至多从**一个**远端 home group 接收，因此训练时 `B = E/R` 的冗余槽就够。2026-09-20 的 `33327eb9` 删除了 `B` 参数，槽数直接固定为 `E/R`，推理可调小 `B` 的路径随之消失（[[27_moonep_analysis]] §5.4）。
 
 完整的算法五步、CuTe DSL 工程形态、梯度回收闭环、基准口径与代价清单，见 **[[27_moonep_analysis]]**。
 
@@ -163,12 +163,12 @@ flowchart TB
 
 | 断言 | 本次开源后的等级 | 依据 |
 |---|---|---|
-| "每 rank 恰收 `S×K`、`E/R` 冗余槽、GPU planning、zero-copy、静态 shape" | **从项目级升级为源码级** | [[27_moonep_analysis]]，`MoonEP@0f385f03` |
+| "每 rank 恰收 `S×K`、`E/R` 冗余槽、GPU planning、zero-copy、静态 shape" | **从项目级升级为源码级** | [[27_moonep_analysis]]，`MoonEP@0f385f03`；2026-09-23 复核至 `33327eb9` 仍成立 |
 | "AgentENV 提供 Pause/Fork/Snapshot 与 microVM 隔离" | **从报告自报升级为可下载实现**（性能数字仍为自报） | `kvcache-ai/AgentENV` README |
 | "K3 能从零写 GPU 编译器 / 设计芯片" | **从博客自报升级为可复跑证物**（本库未复跑） | minitriton、nano-kpu |
 | "K3 随发布新开源了高性能注意力 kernel" | **更正为不成立**：FlashKDA 早于 K3 三个月，且未为 K3 更新 | GitHub API `created_at` / 最新 commit `d2ff19a` |
 | "K3 的 MLA / AttnRes kernel 可查" | **仍不成立**：无任何开源实现 | 全仓扫描 |
-| "MoonEP 在 K3 生产配置下的收益" | **仍不成立**：基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 | `bench_vs_deepep.py:344-361` |
+| "MoonEP 在 K3 生产配置下的收益" | **仍不成立**：基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 | `benchmarks/bench_vs_deepep.py` 的命令行默认值（`0f385f03` 与 `33327eb9` 相同），见 [[27_moonep_analysis]] §5.1 |
 
 ---
 
